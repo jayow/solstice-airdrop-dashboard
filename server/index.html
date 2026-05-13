@@ -1,0 +1,1209 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Solstice S2 Flares · Hanyon Analytics</title>
+<style>
+:root {
+  --ink-50: rgb(232, 232, 237);
+  --ink-100: rgb(232, 232, 237);
+  --ink-200: rgb(201, 201, 208);
+  --ink-300: rgb(155, 155, 163);
+  --ink-400: rgb(122, 122, 131);
+  --ink-500: rgb(84, 84, 92);
+  --ink-700: rgb(40, 40, 46);
+  --ink-900: rgb(17, 17, 20);
+  --ink-950: rgb(10, 10, 12);
+  --accent-200: rgb(253, 230, 138);
+  --accent-300: rgb(252, 211, 77);
+  --accent-400: rgb(251, 191, 36);
+  --accent-500: rgb(245, 158, 11);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--ink-950); color: var(--ink-100);
+             font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+             font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+.tabular { font-variant-numeric: tabular-nums; }
+.display { font-family: "Inter", ui-sans-serif, system-ui; font-weight: 600; letter-spacing: -0.02em; }
+.label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.14em; color: var(--ink-400); }
+
+main { max-width: 1200px; margin: 0 auto; padding: 64px 24px; }
+
+header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 40px; }
+.brand { display: flex; align-items: center; gap: 16px; color: var(--ink-300); }
+.brand a { color: inherit; text-decoration: none; transition: color .15s; display: inline-flex; align-items: center; gap: 8px; font-size: 13px; }
+.brand a:hover { color: var(--ink-50); }
+.brand .sep { color: var(--ink-500); }
+.right-links { display: flex; align-items: center; gap: 16px; font-size: 11px; }
+.right-links a { color: var(--ink-500); text-decoration: none; text-transform: uppercase; letter-spacing: 0.14em; transition: color .15s; }
+.right-links a.featured { color: var(--accent-300); }
+.right-links a:hover { color: var(--ink-200); }
+.right-links a.featured:hover { color: var(--accent-200); }
+.right-links .sep { color: var(--ink-500); }
+
+/* 5-card stats grid */
+.stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1px;
+         background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.06);
+         border-radius: 16px; overflow: hidden; margin-bottom: 40px; }
+@media (min-width: 768px) { .stats { grid-template-columns: repeat(4, 1fr); } }
+.stat { background: var(--ink-950); padding: 20px; }
+.stat .v { font-size: 22px; margin-top: 8px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.stat .v.accent { color: var(--accent-300); }
+.stat .sub { font-size: 11px; color: var(--ink-400); font-variant-numeric: tabular-nums; margin-top: 2px; }
+
+section { margin-bottom: 56px; }
+section h2 { font-size: 18px; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 16px; }
+.section-sub { font-size: 11px; color: var(--ink-500); font-variant-numeric: tabular-nums; }
+.section-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 16px; }
+
+.surface { background: rgba(255,255,255,.015); border: 1px solid rgba(255,255,255,.06); border-radius: 16px; overflow: hidden; }
+.surface > * + * { border-top: 1px solid rgba(255,255,255,.06); }
+
+.controls { display: flex; gap: 8px; padding: 14px 20px; align-items: center; flex-wrap: wrap; }
+.controls input, .controls select, .controls button {
+  background: rgba(255,255,255,.03); color: var(--ink-100); border: 1px solid rgba(255,255,255,.08);
+  padding: 8px 12px; border-radius: 8px; font: inherit; font-size: 12px;
+}
+.controls input { width: 360px; }
+.controls input:focus, .controls select:focus { outline: 1px solid var(--accent-400); border-color: var(--accent-400); }
+.controls button { cursor: pointer; transition: background .15s, border-color .15s; }
+.controls button:hover { background: rgba(255,255,255,.05); }
+.controls .btn-active { background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.30); color: var(--accent-200); }
+
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th, td { text-align: right; padding: 10px 14px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+th { font-weight: 500; color: var(--ink-400); cursor: pointer; user-select: none; text-transform: uppercase; font-size: 10px; letter-spacing: 0.14em; }
+th.asc::after  { content: ' ▲'; color: var(--accent-300); }
+th.desc::after { content: ' ▼'; color: var(--accent-300); }
+td.left, th.left { text-align: left; }
+tbody tr { border-top: 1px solid rgba(255,255,255,.04); transition: background .1s; }
+tbody tr:hover { background: rgba(255,255,255,.015); }
+
+.wallet { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11.5px; }
+.wallet a { color: var(--ink-200); text-decoration: none; transition: color .1s; }
+.wallet a:hover { color: var(--accent-300); }
+.tag { display: inline-block; padding: 2px 7px; border-radius: 999px; font-size: 9.5px;
+       text-transform: uppercase; letter-spacing: 0.06em; border: 1px solid; margin-left: 6px;
+       font-variant-numeric: tabular-nums; vertical-align: 1px; }
+.tag.s1 { color: var(--accent-300); border-color: rgba(245, 158, 11, 0.25); }
+.tag.new { color: var(--ink-400); border-color: rgba(255,255,255,0.10); }
+.tag.cohort { color: var(--ink-200); border-color: rgba(255,255,255,0.12); background: rgba(255,255,255,0.02); }
+.tag.pda { color: #fda4af; border-color: rgba(253, 164, 175, 0.3); background: rgba(253, 164, 175, 0.06); cursor: help; }
+
+.zero { color: var(--ink-500); }
+
+.pagination { display: flex; gap: 8px; align-items: center; padding: 14px 20px; justify-content: space-between;
+              border-top: 1px solid rgba(255,255,255,.06); font-size: 11px; color: var(--ink-400); }
+.pagination button { background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.08);
+                     color: var(--ink-200); padding: 6px 12px; border-radius: 6px; cursor: pointer; font: inherit; }
+.pagination button:disabled { opacity: .35; cursor: default; }
+
+footer { text-align: center; color: var(--ink-500); font-size: 11px; margin-top: 40px; }
+
+@media (max-width: 720px) {
+  .controls input { width: 100%; }
+  th, td { padding: 8px 10px; }
+}
+</style>
+</head>
+<body>
+
+<main>
+  <header>
+    <div class="brand">
+      <a href="https://solstice.finance" target="_blank" rel="noopener noreferrer">
+        <span class="display tabular">Solstice</span>
+      </a>
+      <span class="sep">·</span>
+      <span class="display" style="font-size: 13px;">S2 Flares Tracker</span>
+    </div>
+    <div class="right-links">
+      <a href="/" class="featured">Season 1 ↗</a>
+      <span class="sep">·</span>
+      <a href="https://hanyon.app" target="_blank" rel="noopener noreferrer">Made by Hanyon Analytics</a>
+    </div>
+  </header>
+
+  <section class="stats" id="stats"></section>
+
+  <section id="chart-section" style="margin-bottom:40px;">
+    <div class="section-head">
+      <h2 class="display">Daily flares</h2>
+      <span class="section-sub">
+        <button id="chart-mode" onclick="toggleChartMode()" style="background:transparent; border:1px solid rgba(255,255,255,.1); color:var(--ink-300); padding:4px 10px; border-radius:6px; cursor:pointer; font-size:11px;">Daily emission ▼</button>
+      </span>
+    </div>
+    <div class="surface" style="padding:24px;">
+      <div id="chart-wrap" style="position:relative;">
+        <div id="chart-y-axis" style="position:absolute; left:0; right:0; top:0; height:240px; pointer-events:none;"></div>
+        <div id="chart" style="position:relative; display:flex; align-items:flex-end; gap:4px; height:240px; padding-left:54px;"></div>
+      </div>
+      <div id="chart-x-axis" style="display:flex; gap:4px; margin-top:8px; font-size:10px; color:var(--ink-500); font-variant-numeric:tabular-nums; padding-left:54px;"></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2 class="display">Season 2 Flares</h2>
+      <span class="section-sub" id="updated"></span>
+    </div>
+    <div class="surface">
+      <div class="controls">
+        <input id="search" placeholder="Search wallet (pubkey or prefix)…" autocomplete="off"/>
+        <select id="protocol-filter">
+          <option value="">Any protocol</option>
+          <option value="solstice">Has Hold USX</option>
+          <option value="yield_vault">Has Hold eUSX</option>
+          <option value="exponent">Has Exponent</option>
+          <option value="kamino">Has Kamino</option>
+          <option value="whirlpool">Has Orca</option>
+          <option value="raydium">Has Raydium</option>
+          <option value="loopscale">Has Loopscale</option>
+        </select>
+        <button id="toggle-pdas" onclick="togglePDAs()" title="Show or hide protocol-internal PDA addresses (vault contracts, strategy aggregators, etc.). Totals and ranks update accordingly.">Hide PDAs</button>
+      </div>
+      <table id="t">
+        <thead>
+          <tr>
+            <th data-key="rank" class="left">#</th>
+            <th data-key="wallet" class="left">Wallet</th>
+            <th data-key="total" class="desc">Total</th>
+            <th data-key="solstice">Hold USX</th>
+            <th data-key="yield_vault">Hold eUSX</th>
+            <th data-key="exponent">Exponent</th>
+            <th data-key="kamino">Kamino</th>
+            <th data-key="whirlpool">Orca</th>
+            <th data-key="raydium">Raydium</th>
+            <th data-key="loopscale">Loop</th>
+          </tr>
+        </thead>
+        <tbody id="tb"></tbody>
+      </table>
+      <div class="pagination">
+        <span id="pageinfo"></span>
+        <span style="display:flex; gap:8px;">
+          <button id="prev">‹ Prev</button>
+          <button id="next">Next ›</button>
+        </span>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    Estimated S2 Flares per wallet · TWAB-based per-protocol calculations · Updated <span id="footer-time"></span>
+  </footer>
+</main>
+
+<!-- Wallet detail (full screen overlay) -->
+<div id="drawer" style="display:none; position:fixed; inset:0; background:var(--ink-950); z-index:51; overflow-y:auto;">
+  <div style="max-width: 960px; margin: 0 auto; padding: 32px 24px;">
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:24px;">
+      <div>
+        <div class="label" style="margin-bottom:4px;">Wallet detail</div>
+        <div id="dr-addr" style="font-family:ui-monospace,monospace; font-size:13px; word-break:break-all;"></div>
+        <div id="dr-meta" style="font-size:11px; color:var(--ink-400); margin-top:6px;"></div>
+      </div>
+      <div style="display:flex; gap:8px;">
+        <button id="dr-sort" onclick="toggleDrawerSort()" style="background:transparent; border:1px solid rgba(255,255,255,.1); color:var(--ink-200); padding:8px 14px; border-radius:8px; cursor:pointer; font-size:12px;">newest first ▼</button>
+        <button onclick="closeDrawer()" style="background:transparent; border:1px solid rgba(255,255,255,.1); color:var(--ink-200); padding:8px 14px; border-radius:8px; cursor:pointer; font-size:12px;">Close ✕</button>
+      </div>
+    </div>
+    <div id="dr-total" style="margin-bottom:24px;"></div>
+    <div id="dr-pda-warning" style="display:none; background:rgba(253,164,175,.08); border:1px solid rgba(253,164,175,.25); color:#fda4af; padding:12px 16px; border-radius:10px; margin-bottom:24px; font-size:12px; line-height:1.5;">
+      <strong>Protocol-internal PDA.</strong> This address is not a user wallet — it's a program-derived account (e.g. a strategy contract, kVault aggregator, or vault PDA) that holds positions on behalf of many underlying depositors. The flares shown here should pass through to the real users who deposited, but redistribution is not yet implemented.
+    </div>
+    <div id="dr-content"></div>
+  </div>
+</div>
+
+<style>
+  tr.row-click { cursor: pointer; }
+  tr.row-click:hover { background: rgba(255,255,255,.025); }
+  tr.row-click:hover .wallet { color: var(--accent-200); }
+  .qsum-box { background: rgba(255,255,255,.02); border:1px solid rgba(255,255,255,.06); border-radius:12px; padding:18px 22px; margin-bottom:32px; }
+  .qsum-head { font-size:10px; color:var(--ink-400); text-transform:uppercase; letter-spacing:.16em; margin-bottom:14px; font-weight:600; }
+  .qsum { display:flex; justify-content:space-between; align-items:baseline; padding:8px 0; font-size:13px; border-top:1px dashed rgba(255,255,255,.04); }
+  .qsum:first-of-type { border-top:0; }
+  .qsum-v { color:var(--accent-300); font-variant-numeric:tabular-nums; font-weight:600; font-size:14px; }
+
+  .evt-section-head { font-size:10px; color:var(--ink-400); text-transform:uppercase; letter-spacing:.16em; margin:0 0 14px; font-weight:600; }
+
+  /* Partner section wrapper — visual grouping of header + position cards.
+     Uses a thick top border + slight indent so each partner block reads as one unit. */
+  .proto-block { margin: 28px 0 0; padding: 20px 0 8px; border-top: 1px solid rgba(255,255,255,.10); }
+  .proto-block:first-of-type { margin-top: 0; border-top: 0; padding-top: 0; }
+  .proto-block .pos-card { margin-left: 0; }   /* keep alignment with header */
+  .proto-block .pos-card + .pos-card { margin-top: 8px; }
+
+  /* Position card (Exponent etc.) */
+  .pos-card { background:rgba(255,255,255,.02); border:1px solid rgba(255,255,255,.06); border-radius:12px; padding:18px 22px; margin-bottom:14px; }
+  .pos-head { display:flex; justify-content:space-between; align-items:baseline; gap:16px; }
+  .pos-name { font-size:14px; font-weight:600; color:var(--ink-100); }
+  .pos-name .market-chip { display:inline-block; padding:2px 8px; background:rgba(252,211,77,.12); color:var(--accent-200); border-radius:4px; font-size:10px; font-weight:600; letter-spacing:.06em; margin-right:8px; vertical-align:middle; }
+  .pos-flares { font-size:18px; color:var(--accent-300); font-variant-numeric:tabular-nums; font-weight:600; }
+  .pos-meta { font-size:12px; color:var(--ink-400); margin-top:6px; display:flex; gap:14px; flex-wrap:wrap; }
+  .pos-meta .badge-earning { color:#86efac; font-weight:600; }
+  .pos-meta .badge-dim { color:var(--ink-500); }
+
+  /* Trade history table (inside position card) */
+  .trades { margin-top:14px; border-top:1px dashed rgba(255,255,255,.06); padding-top:10px; }
+  .trades-empty { font-size:11px; color:var(--ink-500); padding:4px 0; font-style:italic; }
+  .trade { display:grid; grid-template-columns:auto 70px 1fr auto; gap:12px; padding:5px 0; font-size:12px; font-variant-numeric:tabular-nums; align-items:baseline; }
+  .trade-ts { color:var(--ink-500); font-size:11px; font-family:ui-monospace,monospace; }
+  .trade-side { font-weight:600; font-size:10px; letter-spacing:.08em; }
+  .trade-side.buy { color:#86efac; }
+  .trade-side.sell { color:#fda4af; }
+  .trade-amt { color:var(--ink-100); }
+  .trade-bal { color:var(--ink-400); }
+
+  /* Section header with protocol name + total flares right-aligned */
+  .proto-head { display:flex; justify-content:space-between; align-items:baseline; }
+  .proto-name { font-size:14px; font-weight:600; color:var(--ink-100); text-transform:none; letter-spacing:0; display:inline-flex; align-items:center; gap:8px; }
+  .proto-dot { font-size:14px; line-height:1; }
+  .proto-dot.earning { color:#86efac; text-shadow: 0 0 6px rgba(134,239,172,.5); }
+  .proto-dot.dim { color:var(--ink-500); }
+  .proto-status { font-size:10px; font-weight:600; letter-spacing:.08em; padding:2px 6px; border-radius:4px; text-transform:uppercase; }
+  .proto-status.earning { background:rgba(134,239,172,.12); color:#86efac; }
+  .proto-status.dim { background:rgba(255,255,255,.04); color:var(--ink-500); }
+  .proto-flares { font-size:16px; color:var(--accent-300); font-variant-numeric:tabular-nums; font-weight:600; text-transform:none; letter-spacing:0; }
+  .pos-sub { font-size:10px; color:var(--ink-400); text-transform:uppercase; letter-spacing:.14em; margin-bottom:8px; font-weight:600; }
+  .pos-meta-line { display:flex; justify-content:space-between; align-items:baseline; padding:5px 0; font-size:13px; border-top:1px dashed rgba(255,255,255,.04); }
+  .pos-meta-line:first-of-type { border-top:0; }
+  .pos-meta-v { color:var(--accent-300); font-variant-numeric:tabular-nums; font-weight:500; }
+
+  /* Per-protocol tx list (compact) */
+  .tx-list { padding:8px 0 0; }
+  .tx-row { display:grid; grid-template-columns:130px 1fr; gap:14px; padding:6px 0; font-size:12px; line-height:1.4; }
+  .tx-ts { color:var(--ink-500); font-family:ui-monospace,monospace; }
+  .tx-action { color:var(--ink-100); }
+  .tx-sub { color:var(--ink-400); }
+
+  /* Activity row (legacy / fallback) */
+  .evt { display:grid; grid-template-columns:54px 1fr auto; gap:14px; padding:12px 0; border-top:1px solid rgba(255,255,255,.04); align-items:flex-start; }
+  .evt:first-of-type { border-top:0; }
+  .evt-cat { font-size:10px; font-weight:600; letter-spacing:.08em; padding:3px 6px; background:rgba(255,255,255,.04); border-radius:4px; text-align:center; }
+  .evt-body { font-size:13px; color:var(--ink-100); line-height:1.5; }
+  .evt-body .amt { font-variant-numeric:tabular-nums; font-weight:600; }
+  .evt-sub { font-size:11px; color:var(--ink-400); margin-top:3px; }
+  .evt-quest { display:inline-block; margin-left:8px; padding:1px 6px; border:1px solid rgba(255,255,255,.08); border-radius:4px; font-size:10px; color:var(--ink-300); }
+  .evt-ts { font-size:11px; color:var(--ink-500); white-space:nowrap; padding-top:2px; font-family:ui-monospace,monospace; }
+  .quest-card { background: rgba(255,255,255,.02); border: 1px solid rgba(255,255,255,.06); border-radius: 10px; padding: 14px 16px; margin-bottom: 8px; }
+  .quest-card.zero { opacity: .35; }
+  .quest-card .qh { display:flex; justify-content:space-between; align-items:baseline; }
+  .quest-card .qname { font-size: 12px; color: var(--ink-200); font-weight: 500; }
+  .quest-card .qflares { font-size: 14px; font-variant-numeric: tabular-nums; color: var(--accent-300); }
+  .quest-card.zero .qflares { color: var(--ink-500); }
+  .quest-card .qsrc { font-size: 10px; color: var(--ink-500); margin-top:4px; text-transform: uppercase; letter-spacing: 0.1em; }
+  .ev { font-size: 11px; color: var(--ink-300); margin-top: 10px; padding-top: 10px; border-top: 1px dashed rgba(255,255,255,.06); font-variant-numeric: tabular-nums; }
+  .ev table { width:100%; font-size: 11px; }
+  .ev th, .ev td { padding: 4px 8px; text-align: right; }
+  .ev th { color: var(--ink-500); font-weight: 500; }
+  .ev th.left, .ev td.left { text-align: left; }
+  .ev .mono { font-family: ui-monospace, monospace; }
+</style>
+
+<script>
+const QUEST_META = {
+  S2_HOLD_USX_DAILY: { mult: 10, label: 'Hold USX (daily)' },
+  S2_HOLD_USX_1MO:   { mult: 6,  label: 'Hold USX (1mo bonus)' },
+  S2_HOLD_USX_3MO:   { mult: 15, label: 'Hold USX (3mo bonus)' },
+  S2_HOLD_EUSX_DAILY:{ mult: 2,  label: 'Hold eUSX (daily)' },
+  S2_HOLD_EUSX_1MO:  { mult: 4,  label: 'Hold eUSX (1mo bonus)' },
+  S2_HOLD_EUSX_3MO:  { mult: 10, label: 'Hold eUSX (3mo bonus)' },
+  S2_EXPONENT_YIELD_USX_JUN26:  { mult: 30, label: 'Exponent YT — USX-Jun26' },
+  S2_EXPONENT_YIELD_EUSX_JUN26: { mult: 15, label: 'Exponent YT — eUSX-Jun26' },
+  S2_EXPONENT_LP_USX_JUN26:  { mult: 20, label: 'Exponent LP — USX-Jun26' },
+  S2_EXPONENT_LP_EUSX_JUN26: { mult: 10, label: 'Exponent LP — eUSX-Jun26' },
+  S2_KAMINO_LEND_USX:  { mult: 5, label: 'Kamino lend USX' },
+  S2_KAMINO_LEND_EUSX: { mult: 1, label: 'Kamino lend eUSX' },
+  S2_KAMINO_LEND_USDG: { mult: 5, label: 'Kamino lend USDG' },
+  S2_KAMINO_BORROW_USX:  { mult: 1, label: 'Kamino borrow USX' },
+  S2_KAMINO_BORROW_USDG: { mult: 1, label: 'Kamino borrow USDG' },
+  S2_KAMINO_KVAULT_USDG_USX: { mult: 10, label: 'Kamino kVault USDG/USX' },
+  S2_LOOPSCALE_SUPPLY_USX_ONE: { mult: 5, label: 'Loopscale supply USX ONE' },
+  S2_LOOPSCALE_BORROW_USX:     { mult: 1, label: 'Loopscale borrow USX' },
+  S2_ORCA_USX_USDC: { mult: 9, label: 'Orca USX/USDC' },
+  S2_ORCA_EUSX_USX: { mult: 4, label: 'Orca eUSX/USX' },
+  S2_ORCA_USX_USDG: { mult: 9, label: 'Orca USX/USDG' },
+  S2_RAYDIUM_USX_USDC: { mult: 9, label: 'Raydium USX/USDC' },
+  S2_RAYDIUM_EUSX_USX: { mult: 4, label: 'Raydium eUSX/USX' },
+  S2_REFERRAL_BONUS: { mult: 0, label: 'Referral bonus' },
+};
+const QUEST_EV_KEY = {
+  S2_HOLD_USX_DAILY:'S2_HOLD_USX', S2_HOLD_USX_1MO:'S2_HOLD_USX', S2_HOLD_USX_3MO:'S2_HOLD_USX',
+  S2_HOLD_EUSX_DAILY:'S2_HOLD_EUSX', S2_HOLD_EUSX_1MO:'S2_HOLD_EUSX', S2_HOLD_EUSX_3MO:'S2_HOLD_EUSX',
+  S2_EXPONENT_YIELD_USX_JUN26:'S2_EXPONENT_YT', S2_EXPONENT_YIELD_EUSX_JUN26:'S2_EXPONENT_YT',
+  S2_EXPONENT_LP_USX_JUN26:'S2_EXPONENT_LP', S2_EXPONENT_LP_EUSX_JUN26:'S2_EXPONENT_LP',
+  S2_KAMINO_LEND_USX:'S2_KAMINO', S2_KAMINO_LEND_EUSX:'S2_KAMINO', S2_KAMINO_LEND_USDG:'S2_KAMINO',
+  S2_KAMINO_BORROW_USX:'S2_KAMINO', S2_KAMINO_BORROW_USDG:'S2_KAMINO', S2_KAMINO_KVAULT_USDG_USX:'S2_KAMINO',
+  S2_LOOPSCALE_SUPPLY_USX_ONE:'S2_LOOPSCALE', S2_LOOPSCALE_BORROW_USX:'S2_LOOPSCALE',
+  S2_ORCA_USX_USDC:'S2_ORCA', S2_ORCA_EUSX_USX:'S2_ORCA', S2_ORCA_USX_USDG:'S2_ORCA',
+  S2_RAYDIUM_USX_USDC:'S2_RAYDIUM', S2_RAYDIUM_EUSX_USX:'S2_RAYDIUM',
+};
+const POS_KEY = {
+  S2_KAMINO_LEND_USX:'kamino_supply_usx', S2_KAMINO_LEND_EUSX:'kamino_supply_eusx', S2_KAMINO_LEND_USDG:'kamino_supply_usdg',
+  S2_KAMINO_BORROW_USX:'kamino_borrow_usx', S2_KAMINO_BORROW_USDG:'kamino_borrow_usdg',
+  S2_KAMINO_KVAULT_USDG_USX:'kamino_kvault_usx_usdg',
+  S2_LOOPSCALE_SUPPLY_USX_ONE:'loopscale_supply_usx', S2_LOOPSCALE_BORROW_USX:'loopscale_borrow_usx',
+  S2_ORCA_USX_USDC:'orca_usx_usdc', S2_ORCA_EUSX_USX:'orca_eusx_usx', S2_ORCA_USX_USDG:'orca_usx_usdg',
+  S2_RAYDIUM_USX_USDC:'raydium_usx_usdc', S2_RAYDIUM_EUSX_USX:'raydium_eusx_usx',
+};
+const USX_MARKET  = 'BxbiZpzj32nrVGecFy8VQ1HohaW7ryhas1k9aiETDWdm';
+const EUSX_MARKET = 'rBbzpGk3PTX8mvQg95VWJ24EDgvxyDJYrEo9jtauvjP';
+
+function fmtTs(t) { if (!t) return '—'; return new Date(t*1000).toISOString().replace('T',' ').slice(0,16) + 'Z'; }
+function fmtAge(t) { if (!t) return '—'; const a = Math.floor(Date.now()/1000) - t; if (a<3600) return Math.floor(a/60)+'m ago'; if (a<86400) return Math.floor(a/3600)+'h ago'; return Math.floor(a/86400)+'d ago'; }
+
+// Build a list of human-readable events from a wallet's cached evidence.
+// Each event = { ts, action, detail, link?, quest_label, mult }
+// Returns chronological order (oldest first).
+function buildEvents(payload) {
+  const evs = []; const ev = payload.evidence || {};
+  const seenQuests = new Set();
+  function pushQ(q) { seenQuests.add(q); }
+
+  // HOLD timelines: balance changes = deposits/withdrawals
+  for (const [label, ek, qDaily] of [['USX','S2_HOLD_USX','S2_HOLD_USX_DAILY'], ['eUSX','S2_HOLD_EUSX','S2_HOLD_EUSX_DAILY']]) {
+    const h = ev[ek]; if (!h || !h.timeline) continue;
+    const tl = h.timeline;
+    if (tl.length && tl[0][1] > 0) {
+      evs.push({ ts: tl[0][0], cat: 'hold', label, action: `Started S2 holding ${tl[0][1].toFixed(2)} ${label}`,
+                 sub: `Pre-existing balance carried into season` , quest: qDaily });
+    }
+    for (let i = 1; i < tl.length; i++) {
+      const [ts, bal] = tl[i]; const prev = tl[i-1][1]; const d = bal - prev;
+      if (Math.abs(d) < 0.0001) continue;
+      evs.push({
+        ts, cat: 'hold', label,
+        action: `${d > 0 ? 'Deposited' : 'Withdrew'} ${Math.abs(d).toFixed(2)} ${label}`,
+        sub: `New balance: ${bal.toFixed(2)} ${label}`,
+        quest: qDaily,
+      });
+    }
+    pushQ(qDaily);
+  }
+
+  // YT positions: each timeline change = bought/sold YT
+  const yt = ev.S2_EXPONENT_YT;
+  if (yt && yt.by_market) {
+    for (const mb of yt.by_market) {
+      const isUsx = mb.market === USX_MARKET; const isEusx = mb.market === EUSX_MARKET;
+      if (!isUsx && !isEusx) continue;  // skip non-Solstice markets
+      const ylabel = isUsx ? 'USX-Jun26' : 'eUSX-Jun26';
+      const qcode  = isUsx ? 'S2_EXPONENT_YIELD_USX_JUN26' : 'S2_EXPONENT_YIELD_EUSX_JUN26';
+      for (const p of mb.positions || []) {
+        const tl = p.timeline || []; if (tl.length < 2) continue;
+        // skip v1 LP residue: method=current_state_fallback with no emit
+        if (p.method === 'current_state_fallback' && !p.emit) continue;
+        // First point: opened position
+        if (tl[0][1] > 0) {
+          evs.push({ ts: tl[0][0], cat: 'yt', label: ylabel,
+                     action: `Held ${tl[0][1].toFixed(2)} YT (${ylabel}) at S2 start`,
+                     sub: `Position ${p.pubkey.slice(0,10)}… (${p.method})`,
+                     link: `https://solscan.io/account/${p.pubkey}`, quest: qcode });
+        }
+        for (let i = 1; i < tl.length; i++) {
+          const [ts, yt] = tl[i]; const prev = tl[i-1][1]; const d = yt - prev;
+          if (Math.abs(d) < 0.0001) continue;
+          const action = d > 0 ? `Bought ${d.toFixed(2)} YT (${ylabel})`
+                               : (yt === 0 ? `Sold all ${Math.abs(d).toFixed(2)} YT (${ylabel})` : `Sold ${Math.abs(d).toFixed(2)} YT (${ylabel})`);
+          evs.push({ ts, cat: 'yt', label: ylabel, action,
+                     sub: `New YT balance: ${yt.toFixed(2)}  ·  pos ${p.pubkey.slice(0,10)}…`,
+                     link: `https://solscan.io/account/${p.pubkey}`, quest: qcode });
+        }
+        pushQ(qcode);
+      }
+    }
+  }
+
+  evs.sort((a, b) => b.ts - a.ts);  // newest first
+
+  // Snapshot-only positions (no historical events): show as "Currently …"
+  // for any quest with current flares not represented above
+  const lp = ev.S2_EXPONENT_LP;
+  if (lp && lp.positions) {
+    for (const p of lp.positions) {
+      if ((p.lp_balance || 0) <= 0) continue;
+      evs.push({ ts: 0, cat: 'lp', label: p.label,
+                 action: `Currently supplying ${p.lp_balance.toFixed(2)} LP ($${(p.lp_value_usd||0).toFixed(2)}) on Exponent ${p.label}`,
+                 sub: `per-LP value $${(p.per_lp_usd||0).toFixed(4)}`,
+                 quest: p.quest });
+    }
+  }
+  const SNAP = [
+    ['S2_KAMINO','kamino_supply_usx',  'S2_KAMINO_LEND_USX',  'Supplying USX to Kamino'],
+    ['S2_KAMINO','kamino_supply_eusx', 'S2_KAMINO_LEND_EUSX', 'Supplying eUSX to Kamino'],
+    ['S2_KAMINO','kamino_supply_usdg', 'S2_KAMINO_LEND_USDG', 'Supplying USDG to Kamino'],
+    ['S2_KAMINO','kamino_borrow_usx',  'S2_KAMINO_BORROW_USX','Borrowing USX from Kamino'],
+    ['S2_KAMINO','kamino_borrow_usdg', 'S2_KAMINO_BORROW_USDG','Borrowing USDG from Kamino'],
+    ['S2_KAMINO','kamino_kvault_usx_usdg', 'S2_KAMINO_KVAULT_USDG_USX', 'kVault USDG/USX (Kamino)'],
+    ['S2_LOOPSCALE','loopscale_supply_usx', 'S2_LOOPSCALE_SUPPLY_USX_ONE','Supplying USX to Loopscale USX-ONE vault'],
+    ['S2_LOOPSCALE','loopscale_borrow_usx', 'S2_LOOPSCALE_BORROW_USX',    'Borrowing USX from Loopscale'],
+    ['S2_ORCA','orca_usx_usdc','S2_ORCA_USX_USDC','LP on Orca USX/USDC whirlpool'],
+    ['S2_ORCA','orca_eusx_usx','S2_ORCA_EUSX_USX','LP on Orca eUSX/USX whirlpool'],
+    ['S2_ORCA','orca_usx_usdg','S2_ORCA_USX_USDG','LP on Orca USX/USDG whirlpool'],
+    ['S2_RAYDIUM','raydium_usx_usdc','S2_RAYDIUM_USX_USDC','LP on Raydium USX/USDC'],
+    ['S2_RAYDIUM','raydium_eusx_usx','S2_RAYDIUM_EUSX_USX','LP on Raydium eUSX/USX'],
+  ];
+  for (const [ek, key, qcode, action] of SNAP) {
+    const blk = ev[ek]; if (!blk || !blk.positions) continue;
+    const v = (blk.positions || {})[key] || 0;
+    if (v <= 0) continue;
+    evs.push({ ts: 0, cat: 'snap', label: action.split(' ').slice(-2).join(' '),
+               action: `${action} — current value $${v.toLocaleString(undefined,{maximumFractionDigits:2})}`,
+               sub: 'Snapshot — historical event log not available for this quest yet',
+               quest: qcode });
+  }
+
+  return evs;
+}
+
+const CAT_LABEL = { hold: 'HOLD', yt: 'YT', lp: 'LP', snap: 'POS' };
+const CAT_COLOR = { hold: '#86efac', yt: '#fcd34d', lp: '#a5b4fc', snap: '#94a3b8' };
+
+function renderEventLog(events) {
+  if (!events.length) return '<div style="color:var(--ink-400); padding:24px 0;">No on-chain activity recorded yet.</div>';
+  const live = events.filter(e => e.ts > 0);
+  const snaps = events.filter(e => e.ts === 0);
+  const fmtRow = e => {
+    const tsStr = e.ts ? `<span class="mono" style="color:var(--ink-400); font-size:11px;">${fmtTs(e.ts)}</span>` : `<span class="mono" style="color:var(--ink-400); font-size:11px;">current</span>`;
+    const linkBit = e.link ? ` <a href="${e.link}" target="_blank" style="color:var(--ink-500); text-decoration:none;">↗</a>` : '';
+    return `<div class="evt">
+      <span class="evt-cat" style="color:${CAT_COLOR[e.cat]||'var(--ink-400)'};">${CAT_LABEL[e.cat]||'•'}</span>
+      <div class="evt-body">
+        <div>${e.action}${linkBit}</div>
+        <div class="evt-sub">${e.sub || ''} ${e.quest ? `<span class="evt-quest">${(QUEST_META[e.quest]||{}).label || e.quest}</span>` : ''}</div>
+      </div>
+      <div class="evt-ts">${tsStr}</div>
+    </div>`;
+  };
+  let html = '';
+  if (live.length) html += `<div class="evt-section-head">Activity (newest first)</div>` + live.map(fmtRow).join('');
+  if (snaps.length) html += `<div class="evt-section-head" style="margin-top:24px;">Current positions (full tx history not yet indexed)</div>` + snaps.map(fmtRow).join('');
+  return html;
+}
+
+let DRAWER_PAYLOAD = null;
+let DRAWER_SORT = 'desc';   // 'desc' = newest first, 'asc' = oldest first
+
+function toggleDrawerSort() {
+  DRAWER_SORT = DRAWER_SORT === 'desc' ? 'asc' : 'desc';
+  document.getElementById('dr-sort').textContent = DRAWER_SORT === 'desc' ? 'newest first ▼' : 'oldest first ▲';
+  if (DRAWER_PAYLOAD) renderDrawerBody(DRAWER_PAYLOAD);
+}
+
+async function openDrawer(addr) {
+  document.getElementById('drawer').style.display = 'block';
+  document.body.style.overflow = 'hidden';
+  document.getElementById('dr-addr').textContent = addr;
+  document.getElementById('dr-content').innerHTML = '<div style="color:var(--ink-400); padding:20px 0;">Loading…</div>';
+  document.getElementById('dr-total').innerHTML = '';
+  document.getElementById('dr-meta').textContent = '';
+  if (!location.hash.endsWith(addr)) history.replaceState(null,'','#w/'+addr);
+  let p;
+  try {
+    const r = await fetch('wallets/' + addr + '.json');
+    if (!r.ok) throw new Error('not found');
+    p = await r.json();
+  } catch (e) {
+    document.getElementById('dr-content').innerHTML = '<div style="color:#f87171; padding:20px 0;">No data found for this wallet.</div>';
+    return;
+  }
+  const meta = p.meta || {};
+  const bits = [];
+  if (meta.classification) bits.push(meta.classification);
+  if (meta.cohort) bits.push('cohort ' + meta.cohort);
+  if (meta.is_s1) bits.push('S1');
+  document.getElementById('dr-meta').textContent = bits.join(' · ');
+  const isPda = meta.is_protocol_pda || meta.classification === 'pda_protocol';
+  const pdaSource = meta.pda_source;
+  const pdaLabel  = meta.pda_label;
+  const banner = document.getElementById('dr-pda-warning');
+  if (isPda) {
+    const heading = pdaSource === 'manual' && pdaLabel
+      ? `Protocol PDA — ${pdaLabel}`
+      : (pdaSource === 'manual' ? 'Known protocol PDA' : 'Auto-detected protocol PDA');
+    const note = pdaSource === 'manual'
+      ? 'Address manually labeled as a protocol-internal account (vault, strategy, or aggregator). Flares accrued here should pass through to the real users who deposited.'
+      : 'Address has no on-chain account or is owned by a non-System program. Likely a strategy contract or aggregator holding positions on behalf of many users. Flares should pass through to those underlying depositors.';
+    banner.innerHTML = `<strong>${heading}.</strong> ${note}`;
+    banner.style.display = 'block';
+  } else {
+    banner.style.display = 'none';
+  }
+  const earning = p.by_quest.filter(q => q.flares > 0).length;
+  document.getElementById('dr-total').innerHTML = `
+    <div class="label">Total flares</div>
+    <div style="font-size:28px; font-weight:600; color:var(--accent-300); font-variant-numeric:tabular-nums; margin-top:4px;">${p.total_flares.toLocaleString(undefined,{maximumFractionDigits:0})}</div>
+    <div style="font-size:11px; color:var(--ink-400); margin-top:4px;">${earning} of ${p.by_quest.length} quests earning · <a href="https://solscan.io/account/${p.wallet}" target="_blank" style="color:inherit;text-decoration:underline dotted;">solscan ↗</a></div>`;
+  DRAWER_PAYLOAD = p;
+  renderDrawerBody(p);
+}
+
+function renderDrawerBody(p) {
+  const earningQs = p.by_quest.filter(q => q.flares > 0).sort((a,b) => b.flares - a.flares);
+  const summaryRows = earningQs.map(q => {
+    const m = QUEST_META[q.quest] || {};
+    return `<div class="qsum"><span>${m.label || q.quest}</span><span class="qsum-v">${q.flares.toLocaleString(undefined,{maximumFractionDigits:0})}</span></div>`;
+  }).join('');
+  const summary = earningQs.length ? `<div class="qsum-box"><div class="qsum-head">Earning quests</div>${summaryRows}</div>` : '';
+
+  const dir = DRAWER_SORT === 'asc' ? 1 : -1;
+  const activity = (p.activity || []).slice().sort((a,b) => dir * (a.ts - b.ts));
+
+  // Wrap each partner section in its own container so the position cards
+  // inside are visually grouped under their partner header.
+  const wrap = (html, key) => html ? `<section class="proto-block proto-${key}">${html}</section>` : '';
+  let body = summary;
+  body += wrap(renderHoldBlock(p, 'USX'), 'hold-usx');
+  body += wrap(renderHoldBlock(p, 'eUSX'), 'hold-eusx');
+  body += wrap(renderExponentPositions(p), 'exponent');
+  body += wrap(renderKaminoBlock(p, activity.filter(e => (e.protocol||'').startsWith('kamino'))), 'kamino');
+  body += wrap(renderLoopscaleBlock(p, activity.filter(e => e.protocol === 'loopscale')), 'loopscale');
+  body += wrap(renderAmmBlock(p, 'orca',    'Orca',    activity.filter(e => e.protocol === 'orca')), 'orca');
+  body += wrap(renderAmmBlock(p, 'raydium', 'Raydium', activity.filter(e => e.protocol === 'raydium')), 'raydium');
+  document.getElementById('dr-content').innerHTML = body;
+}
+
+function _protoHeader(label, flares, earning) {
+  const dot = earning
+    ? `<span class="proto-dot earning" title="Currently earning flares">●</span>`
+    : `<span class="proto-dot dim" title="Not currently earning (no active position)">○</span>`;
+  const status = earning
+    ? `<span class="proto-status earning">earning</span>`
+    : `<span class="proto-status dim">not earning</span>`;
+  return `<div class="proto-head">
+    <span class="proto-name">${dot}${label}${status}</span>
+    <span class="proto-flares">${flares.toLocaleString(undefined,{maximumFractionDigits:0})}<span style="font-size:10px; color:var(--ink-400); margin-left:6px; font-weight:400;">flares</span></span>
+  </div>`;
+}
+
+function _txRows(events) {
+  if (!events.length) return '';
+  return '<div class="tx-list">' + events.map(e => {
+    const link = e.tx ? `https://solscan.io/tx/${e.tx}` : null;
+    return `<div class="tx-row">
+      <span class="tx-ts">${fmtTs(e.ts)}</span>
+      <span class="tx-action">${e.action}${e.sub ? `<span class="tx-sub"> — ${e.sub}</span>` : ''}${link ? ` <a href="${link}" target="_blank" style="color:var(--ink-500); text-decoration:none;">↗</a>` : ''}</span>
+    </div>`;
+  }).join('') + '</div>';
+}
+
+function _flaresByQuest(p) {
+  const out = {};
+  for (const q of p.by_quest) out[q.quest] = q.flares || 0;
+  return out;
+}
+
+function renderHoldBlock(p, kind) {
+  const ek = kind === 'USX' ? 'S2_HOLD_USX' : 'S2_HOLD_EUSX';
+  const ev = (p.evidence || {})[ek];
+  if (!ev) return '';
+  const flaresMap = _flaresByQuest(p);
+  const dailyQ = `S2_HOLD_${kind === 'USX' ? 'USX' : 'EUSX'}_DAILY`;
+  const moQ    = `S2_HOLD_${kind === 'USX' ? 'USX' : 'EUSX'}_1MO`;
+  const triMoQ = `S2_HOLD_${kind === 'USX' ? 'USX' : 'EUSX'}_3MO`;
+  const total = (flaresMap[dailyQ]||0) + (flaresMap[moQ]||0) + (flaresMap[triMoQ]||0);
+  const tl = ev.timeline || [];
+  if (!tl.length && total === 0) return '';
+  const currentBal = tl.length ? tl[tl.length-1][1] : 0;
+  if (currentBal === 0 && total === 0) return '';   // skip empty
+
+  // Build deposit/withdraw events from timeline
+  const trades = [];
+  for (let i = 1; i < tl.length; i++) {
+    const d = tl[i][1] - tl[i-1][1];
+    if (Math.abs(d) > 0.0001) trades.push({ ts: tl[i][0], delta: d, new_bal: tl[i][1] });
+  }
+  if (DRAWER_SORT === 'desc') trades.reverse();
+
+  const tradesHtml = trades.length
+    ? '<div class="trades">' + trades.map(t => `
+        <div class="trade">
+          <span class="trade-ts">${fmtTs(t.ts)}</span>
+          <span class="trade-side ${t.delta>0?'buy':'sell'}">${t.delta>0?'DEPOSIT':'WITHDRAW'}</span>
+          <span class="trade-amt">${Math.abs(t.delta).toLocaleString(undefined,{maximumFractionDigits:4})} ${kind}</span>
+          <span class="trade-bal">→ ${t.new_bal.toLocaleString(undefined,{maximumFractionDigits:2})}</span>
+        </div>`).join('') + '</div>'
+    : '<div class="trades"><div class="trades-empty">No deposits or withdrawals during S2</div></div>';
+
+  const atas = (ev.atas || []).map(a => `<a href="https://solscan.io/account/${a}" target="_blank" style="color:inherit;text-decoration:underline dotted;">${a.slice(0,10)}…</a>`).join(', ');
+
+  const moStatus = (flaresMap[moQ]||0) > 0 ? '<span class="badge-earning">● 1MO bonus active</span>' : '<span class="badge-dim">○ 1MO not yet</span>';
+  const triStatus = (flaresMap[triMoQ]||0) > 0 ? '<span class="badge-earning">● 3MO bonus active</span>' : '<span class="badge-dim">○ 3MO not yet</span>';
+
+  const earning = currentBal > 0;
+  return `<div class="evt-section-head">${_protoHeader(`Hold ${kind}`, total, earning)}</div>
+  <div class="pos-card">
+    <div class="pos-meta">
+      <span><strong style="color:var(--ink-200);">${currentBal.toLocaleString(undefined,{maximumFractionDigits:4})}</strong> ${kind} held</span>
+      ${atas ? `<span>ATA ${atas}</span>` : ''}
+      ${moStatus} ${triStatus}
+    </div>
+    ${tradesHtml}
+  </div>`;
+}
+
+function renderKaminoBlock(p, txs) {
+  const ev = (p.evidence || {}).S2_KAMINO; if (!ev) return '';
+  const flaresMap = _flaresByQuest(p);
+  const KQ = ['S2_KAMINO_LEND_USX','S2_KAMINO_LEND_EUSX','S2_KAMINO_LEND_USDG','S2_KAMINO_BORROW_USX','S2_KAMINO_BORROW_USDG','S2_KAMINO_KVAULT_USDG_USX'];
+  const total = KQ.reduce((s,q)=>s+(flaresMap[q]||0),0);
+  const events = ev.events || [];
+  if (total === 0 && !txs.length && !events.length) return '';
+  const pos = ev.positions || {};
+  const lines = [];
+  const POSMAP = [
+    ['kamino_supply_usx',    'Supplying USX'],
+    ['kamino_supply_eusx',   'Supplying eUSX'],
+    ['kamino_supply_usdg',   'Supplying USDG'],
+    ['kamino_borrow_usx',    'Borrowing USX'],
+    ['kamino_borrow_usdg',   'Borrowing USDG'],
+    ['kamino_kvault_usx_usdg','kVault USDG/USX'],
+  ];
+  for (const [k, lbl] of POSMAP) {
+    const v = pos[k] || 0;
+    if (v > 0) lines.push(`<div class="pos-meta-line"><span>${lbl}</span><span class="pos-meta-v">$${v.toLocaleString(undefined,{maximumFractionDigits:2})}</span></div>`);
+  }
+  const earning = lines.length > 0;
+  const head = _protoHeader('Kamino', total, earning);
+  // Group events by obligation account
+  const byPosition = {};
+  for (const e of events) { (byPosition[e.pos_pubkey] = byPosition[e.pos_pubkey] || []).push(e); }
+  const posCards = Object.entries(byPosition).map(([pk, list]) => `
+    <div class="pos-card">
+      <div class="pos-head">
+        <div class="pos-name"><a href="https://solscan.io/account/${pk}" target="_blank" style="color:inherit;text-decoration:underline dotted;">${pk.slice(0,10)}…</a></div>
+        <div style="font-size:11px; color:var(--ink-500);">${list.length} event${list.length===1?'':'s'}</div>
+      </div>
+      ${_renderPositionEvents(list)}
+    </div>`).join('');
+  const positions = lines.length ? `<div class="pos-card"><div class="pos-sub">Current positions</div>${lines.join('')}</div>` : '';
+  return `<div class="evt-section-head">${head}</div>${positions}${posCards}`;
+}
+
+function renderLoopscaleBlock(p, txs) {
+  const ev = (p.evidence || {}).S2_LOOPSCALE; if (!ev) return '';
+  const flaresMap = _flaresByQuest(p);
+  const total = (flaresMap.S2_LOOPSCALE_SUPPLY_USX_ONE||0) + (flaresMap.S2_LOOPSCALE_BORROW_USX||0);
+  if (total === 0 && !txs.length) return '';
+  const pos = ev.positions || {};
+  const lines = [];
+  if ((pos.loopscale_supply_usx||0) > 0) lines.push(`<div class="pos-meta-line"><span>Supplying USX to USX-ONE vault</span><span class="pos-meta-v">$${pos.loopscale_supply_usx.toLocaleString(undefined,{maximumFractionDigits:2})}</span></div>`);
+  if ((pos.loopscale_borrow_usx||0) > 0) lines.push(`<div class="pos-meta-line"><span>Borrowing USX</span><span class="pos-meta-v">$${pos.loopscale_borrow_usx.toLocaleString(undefined,{maximumFractionDigits:2})}</span></div>`);
+  const earning = lines.length > 0;
+  const head = _protoHeader('Loopscale', total, earning);
+  const events = ev.events || [];
+  // Group events by position PDA (Loan vs VaultStake)
+  const byPosition = {};
+  for (const e of events) { (byPosition[e.pos_pubkey] = byPosition[e.pos_pubkey] || []).push(e); }
+  const posCards = Object.entries(byPosition).map(([pk, list]) => {
+    const sideLbl = list[0]?.side === 'borrow' ? 'Loan' : (list[0]?.side === 'supply' ? 'Supply stake' : 'Position');
+    return `<div class="pos-card">
+      <div class="pos-head">
+        <div class="pos-name"><span class="market-chip">${sideLbl}</span><a href="https://solscan.io/account/${pk}" target="_blank" style="color:inherit;text-decoration:underline dotted;">${pk.slice(0,10)}…</a></div>
+        <div style="font-size:11px; color:var(--ink-500);">${list.length} event${list.length===1?'':'s'}</div>
+      </div>
+      ${_renderPositionEvents(list)}
+    </div>`;
+  }).join('');
+  const positions = lines.length ? `<div class="pos-card"><div class="pos-sub">Current positions</div>${lines.join('')}</div>` : '';
+  return `<div class="evt-section-head">${head}</div>${positions}${posCards}`;
+}
+
+const TOKEN_LABEL_JS = {
+  '6FrrzDk5mQARGc1TDYoyVnSyRdds1t4PbtohCD6p3tgG': 'USX',
+  '3ThdFZQKM6kRyVGLG48kaPg5TRMhYMKY1iCRa9xop1WC': 'eUSX',
+  '2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH': 'USDG',
+  'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v': 'USDC',
+};
+const POOL_LABEL_BY_NFT_PREFIX = {};   // optional future enrichment
+const IX_VERBS_JS = {
+  openposition: 'OPENED',
+  openpositionwithmetadata: 'OPENED',
+  openpositionwithtokenextensions: 'OPENED',
+  openpositionwithtoken22nft: 'OPENED',
+  closepositionwithtoken22nft: 'CLOSED',
+  openpositionv2: 'OPENED',
+  increaseliquidity: 'DEPOSIT',
+  increaseliquidityv2: 'DEPOSIT',
+  decreaseliquidity: 'WITHDRAW',
+  decreaseliquidityv2: 'WITHDRAW',
+  closeposition: 'CLOSED',
+  closepositionwithtokenextensions: 'CLOSED',
+  collectfees: 'CLAIM FEES',
+  collectfeesv2: 'CLAIM FEES',
+  collectreward: 'CLAIM REWARD',
+  collectrewardv2: 'CLAIM REWARD',
+  swap: 'SWAP',
+  swapv2: 'SWAP',
+  twohopswap: 'SWAP',
+  twohopswapv2: 'SWAP',
+  updatefeesandrewards: 'UPDATE',
+  // Kamino
+  depositreserveliquidityandobligationcollateral: 'DEPOSIT',
+  depositreserveliquidity: 'DEPOSIT',
+  depositobligationcollateral: 'DEPOSIT COLLATERAL',
+  withdrawreserveliquidity: 'WITHDRAW',
+  withdrawobligationcollateralandredeemreservecollateral: 'WITHDRAW',
+  withdrawobligationcollateral: 'WITHDRAW COLLATERAL',
+  borrowobligationliquidity: 'BORROW',
+  repayobligationliquidity: 'REPAY',
+  liquidateobligationandredeemreservecollateral: 'LIQUIDATED',
+  // Loopscale
+  borrow_principal: 'BORROW',
+  borrowprincipal: 'BORROW',
+  repay_principal: 'REPAY',
+  repayprincipal: 'REPAY',
+  create_loan: 'BORROWED',
+  createloan: 'BORROWED',
+  close_loan: 'CLOSED LOAN',
+  closeloan: 'CLOSED LOAN',
+  deposit_collateral: 'DEPOSIT COLLATERAL',
+  depositcollateral: 'DEPOSIT COLLATERAL',
+  withdraw_collateral: 'WITHDRAW COLLATERAL',
+  withdrawcollateral: 'WITHDRAW COLLATERAL',
+  deposit_principal: 'SUPPLY',
+  depositprincipal: 'SUPPLY',
+  withdraw_principal: 'WITHDRAW',
+  withdrawprincipal: 'WITHDRAW',
+  stake: 'STAKE LP',
+  unstake: 'UNSTAKE LP',
+  lock_loan: 'LOCKED LOAN',
+  lockloan: 'LOCKED LOAN',
+};
+
+function _renderPositionEvents(events) {
+  if (!events || !events.length) return '<div class="trades"><div class="trades-empty">No on-chain events</div></div>';
+  const S2_START = 1776038400;
+  const dir = DRAWER_SORT === 'desc' ? -1 : 1;
+  const sorted = events.slice().sort((a,b) => dir * (b.ts - a.ts));
+  return '<div class="trades">' + sorted.map(e => {
+    const verb = IX_VERBS_JS[(e.ix || '').toLowerCase()] || (e.ix || '').toUpperCase();
+    const side = (verb.startsWith('DEPOSIT') || verb === 'OPENED') ? 'sell'
+               : (verb.startsWith('WITHDRAW') || verb === 'CLOSED' || verb.includes('CLAIM')) ? 'buy'
+               : '';
+    const preS2 = e.ts && e.ts < S2_START;
+    const amts = (e.deltas || []).map(d => {
+      const lbl = TOKEN_LABEL_JS[d.mint] || (d.mint || '').slice(0,6)+'…';
+      return `${d.amt > 0 ? '+' : ''}${d.amt.toLocaleString(undefined,{maximumFractionDigits:2})} ${lbl}`;
+    }).join('  ');
+    const link = e.sig ? `https://solscan.io/tx/${e.sig}` : null;
+    const preTag = preS2 ? ' <span style="color:var(--ink-500); font-size:9px; letter-spacing:.06em;">pre-S2</span>' : '';
+    return `<div class="trade">
+      <span class="trade-ts">${fmtTs(e.ts)}</span>
+      <span class="trade-side ${side}">${verb}${preTag}</span>
+      <span class="trade-amt">${amts || '—'}</span>
+      <span class="trade-bal">${link ? `<a href="${link}" target="_blank" style="color:var(--ink-500);text-decoration:none;">↗</a>` : ''}</span>
+    </div>`;
+  }).join('') + '</div>';
+}
+
+function renderAmmBlock(p, key, label, txs) {
+  const ekMap = { orca: 'S2_ORCA', raydium: 'S2_RAYDIUM' };
+  const ev = (p.evidence || {})[ekMap[key]]; if (!ev) return '';
+  const flaresMap = _flaresByQuest(p);
+  const QPRE = key === 'orca' ? 'S2_ORCA_' : 'S2_RAYDIUM_';
+  const total = Object.entries(flaresMap).filter(([q]) => q.startsWith(QPRE)).reduce((s,[,v])=>s+v,0);
+  if (total === 0 && !txs.length && !(ev.events||[]).length) return '';
+  const pos = ev.positions || {};
+  const lines = [];
+  for (const [k, v] of Object.entries(pos)) {
+    if (!v) continue;
+    const pretty = k.replace(key+'_','').replace('_','/').toUpperCase();
+    lines.push(`<div class="pos-meta-line"><span>${pretty} pool</span><span class="pos-meta-v">$${v.toLocaleString(undefined,{maximumFractionDigits:2})}</span></div>`);
+  }
+  const earning = lines.length > 0;
+  const head = _protoHeader(label, total, earning);
+  // Group events by position NFT
+  const events = ev.events || [];
+  const byPosition = {};
+  for (const e of events) { (byPosition[e.mint_position] = byPosition[e.mint_position] || []).push(e); }
+  const posCards = Object.entries(byPosition).map(([nft, list]) => {
+    return `<div class="pos-card">
+      <div class="pos-head">
+        <div class="pos-name"><a href="https://solscan.io/account/${nft}" target="_blank" style="color:inherit;text-decoration:underline dotted;">${nft.slice(0,10)}…</a></div>
+        <div style="font-size:11px; color:var(--ink-500);">${list.length} event${list.length===1?'':'s'}</div>
+      </div>
+      ${_renderPositionEvents(list)}
+    </div>`;
+  }).join('');
+  // Current positions summary block (still useful)
+  const positions = lines.length ? `<div class="pos-card"><div class="pos-sub">Current positions</div>${lines.join('')}</div>` : '';
+  return `<div class="evt-section-head">${head}</div>${positions}${posCards}`;
+}
+
+function renderExponentPositions(p, txs) {
+  txs = txs || [];
+  const ev = (p.evidence || {}).S2_EXPONENT_YT;
+  if (!ev || !ev.by_market) return '';
+  const NOW = Math.floor(Date.now()/1000);
+  const S2_START = 1776038400;
+  const MARKET_INFO = {
+    [USX_MARKET]:  { label: 'USX-Jun26',  mult: 30, quest: 'S2_EXPONENT_YIELD_USX_JUN26' },
+    [EUSX_MARKET]: { label: 'eUSX-Jun26', mult: 15, quest: 'S2_EXPONENT_YIELD_EUSX_JUN26' },
+  };
+  // earning flares by quest (from by_quest)
+  const flaresByQuest = {};
+  for (const q of p.by_quest) flaresByQuest[q.quest] = q.flares || 0;
+
+  const rows = [];
+  for (const mb of ev.by_market) {
+    const info = MARKET_INFO[mb.market]; if (!info) continue;
+    const positions = (mb.positions || []).slice();
+    if (!positions.length) continue;
+    // Sum YT × elapsed × mult per-position to give a contribution estimate
+    const totalQuestFlares = flaresByQuest[info.quest] || 0;
+    // Compute each position's share proportional to its yt×days
+    const posMetrics = positions.map(pos => {
+      const tl = pos.timeline || [];
+      let yt_days = 0;
+      for (let i = 0; i < tl.length - 1; i++) {
+        const [t0, b0] = tl[i]; const [t1] = tl[i+1];
+        yt_days += b0 * Math.max(0, (t1 - Math.max(t0, S2_START))) / 86400;
+      }
+      // Tail extension to now
+      if (tl.length) {
+        const [last_t, last_b] = tl[tl.length-1];
+        if (last_b > 0 && last_t < NOW) {
+          yt_days += last_b * (NOW - last_t) / 86400;
+        }
+      }
+      // Days the position has been held in S2 (from first nonzero balance)
+      const firstNonzero = tl.find(([, b]) => b > 0);
+      const days_held = firstNonzero ? Math.max(0, (NOW - Math.max(firstNonzero[0], S2_START)) / 86400) : 0;
+      // Detect buy/sell events from timeline
+      const trades = [];
+      for (let i = 1; i < tl.length; i++) {
+        const d = tl[i][1] - tl[i-1][1];
+        if (Math.abs(d) > 0.0001) trades.push({ ts: tl[i][0], delta: d, new_bal: tl[i][1] });
+      }
+      if (DRAWER_SORT === 'desc') trades.reverse();
+      return { pos, yt_days, days_held, trades };
+    });
+    const total_yt_days = posMetrics.reduce((s, m) => s + m.yt_days, 0);
+    for (const m of posMetrics) {
+      const share = total_yt_days > 0 ? m.yt_days / total_yt_days : 0;
+      const flares = totalQuestFlares * share;
+      const cur = m.pos.yt || 0;
+      const earning = m.pos.emit && cur > 0 ? 'EARNING' : (m.pos.method === 'current_state_fallback' ? 'LP residue (0 flares)' : 'closed');
+      rows.push({ market: info.label, mult: info.mult, pos: m.pos, flares, days_held: m.days_held, trades: m.trades, earning });
+    }
+  }
+  if (!rows.length) return '';
+  const tradesHtml = (trades) => {
+    if (!trades.length) return '<div class="trades"><div class="trades-empty">No buys or sells during S2 — held the same balance throughout</div></div>';
+    return '<div class="trades">' + trades.map(t => {
+      const side = t.delta > 0 ? 'buy' : 'sell';
+      const sideLbl = t.delta > 0 ? 'BUY' : 'SELL';
+      return `<div class="trade">
+        <span class="trade-ts">${fmtTs(t.ts)}</span>
+        <span class="trade-side ${side}">${sideLbl}</span>
+        <span class="trade-amt">${Math.abs(t.delta).toLocaleString(undefined,{maximumFractionDigits:2})} YT</span>
+        <span class="trade-bal">→ ${t.new_bal.toLocaleString(undefined,{maximumFractionDigits:2})}</span>
+      </div>`;
+    }).join('') + '</div>';
+  };
+  const tbody = rows.map(r => `<div class="pos-card">
+      <div class="pos-head">
+        <div class="pos-name"><span class="market-chip">${r.market}</span><a href="https://solscan.io/account/${r.pos.pubkey}" target="_blank" style="color:inherit;text-decoration:underline dotted;">${r.pos.pubkey.slice(0,10)}…</a></div>
+        <div class="pos-flares">${r.flares.toLocaleString(undefined,{maximumFractionDigits:0})}<span style="font-size:10px; color:var(--ink-400); margin-left:6px; font-weight:400;">flares</span></div>
+      </div>
+      <div class="pos-meta">
+        <span><strong style="color:var(--ink-200);">${(r.pos.yt||0).toLocaleString(undefined,{maximumFractionDigits:2})}</strong> YT held</span>
+        <span>${r.mult}× multiplier</span>
+        <span>${r.days_held.toFixed(2)} days in S2</span>
+        ${r.trades.length ? `<span>${r.trades.length} trade${r.trades.length===1?'':'s'}</span>` : ''}
+      </div>
+      ${tradesHtml(r.trades)}
+    </div>`).join('');
+  // Add Exponent LP cards (one per market with events)
+  const lpEv = (p.evidence || {}).S2_EXPONENT_LP || {};
+  const lpEvents = lpEv.events || [];
+  const lpFlaresByQuest = {
+    'S2_EXPONENT_LP_USX_JUN26':  flaresByQuest['S2_EXPONENT_LP_USX_JUN26'] || 0,
+    'S2_EXPONENT_LP_EUSX_JUN26': flaresByQuest['S2_EXPONENT_LP_EUSX_JUN26'] || 0,
+  };
+  const lpByMarket = {};
+  for (const e of lpEvents) {
+    const k = e.pos_pubkey;
+    (lpByMarket[k] = lpByMarket[k] || []).push(e);
+  }
+  const lpCards = Object.entries(lpByMarket).map(([market, list]) => {
+    const isUsx = market === USX_MARKET;
+    const quest = isUsx ? 'S2_EXPONENT_LP_USX_JUN26' : 'S2_EXPONENT_LP_EUSX_JUN26';
+    const mult = isUsx ? 20 : 10;
+    const label = isUsx ? 'USX-Jun26 LP' : 'eUSX-Jun26 LP';
+    const currentUsd = (lpEv.positions || {})[isUsx ? 'usx_jun26_lp_usd' : 'eusx_jun26_lp_usd'] || 0;
+    const flares = lpFlaresByQuest[quest];
+    return `<div class="pos-card">
+      <div class="pos-head">
+        <div class="pos-name"><span class="market-chip">${label}</span><a href="https://solscan.io/account/${market}" target="_blank" style="color:inherit;text-decoration:underline dotted;">${market.slice(0,10)}…</a></div>
+        <div class="pos-flares">${flares.toLocaleString(undefined,{maximumFractionDigits:0})}<span style="font-size:10px; color:var(--ink-400); margin-left:6px; font-weight:400;">flares</span></div>
+      </div>
+      <div class="pos-meta">
+        ${currentUsd > 0 ? `<span><strong style="color:var(--ink-200);">$${currentUsd.toLocaleString(undefined,{maximumFractionDigits:2})}</strong> LP held</span>` : '<span class="badge-dim">no current LP</span>'}
+        <span>${mult}× multiplier</span>
+        <span>${list.length} event${list.length===1?'':'s'}</span>
+      </div>
+      ${_renderPositionEvents(list)}
+    </div>`;
+  }).join('');
+
+  const ytFlares = (p.by_quest||[]).reduce((s,q) => s + (q.quest.startsWith('S2_EXPONENT_YIELD_') ? (q.flares||0) : 0), 0);
+  const lpFlares = lpFlaresByQuest['S2_EXPONENT_LP_USX_JUN26'] + lpFlaresByQuest['S2_EXPONENT_LP_EUSX_JUN26'];
+  const totalFlares = ytFlares + lpFlares;
+  const ytEarning = rows.some(r => r.earning === 'EARNING');
+  const lpEarning = ((lpEv.positions || {}).usx_jun26_lp_usd || 0) + ((lpEv.positions || {}).eusx_jun26_lp_usd || 0) > 0;
+  const earning = ytEarning || lpEarning;
+  const head = _protoHeader('Exponent', totalFlares, earning);
+  return `<div class="evt-section-head">${head}</div>${tbody}${lpCards}`;
+}
+
+const PROTO_LABEL = {
+  exponent: 'EXP', orca: 'ORCA', raydium: 'RAY', kamino_lend: 'KAM',
+  kamino_kvault: 'KVT', loopscale: 'LOOP',
+};
+const PROTO_COLOR = {
+  exponent: '#fcd34d', orca: '#a5b4fc', raydium: '#fda4af',
+  kamino_lend: '#86efac', kamino_kvault: '#67e8f9', loopscale: '#fb923c',
+};
+
+function renderRealActivity(events) {
+  const rows = events.map(e => {
+    const link = e.tx ? `https://solscan.io/tx/${e.tx}` : null;
+    const proto = PROTO_LABEL[e.protocol] || e.protocol;
+    const color = PROTO_COLOR[e.protocol] || 'var(--ink-300)';
+    return `<div class="evt">
+      <span class="evt-cat" style="color:${color}; border:1px solid ${color}33;">${proto}</span>
+      <div class="evt-body">
+        <div>${e.action}${link ? ` <a href="${link}" target="_blank" style="color:var(--ink-500); text-decoration:none; margin-left:4px;">↗</a>` : ''}</div>
+        ${e.sub ? `<div class="evt-sub">${e.sub}</div>` : ''}
+      </div>
+      <div class="evt-ts">${fmtTs(e.ts)}</div>
+    </div>`;
+  }).join('');
+  return `<div class="evt-section-head">All on-chain transactions <span style="color:var(--ink-500); letter-spacing:0; text-transform:none; font-weight:400; margin-left:8px;">${events.length} txs, newest first</span></div>` + rows;
+}
+function closeDrawer() {
+  document.getElementById('drawer').style.display = 'none';
+  document.body.style.overflow = '';
+  if (location.hash.startsWith('#w/')) history.replaceState(null,'',location.pathname);
+}
+window.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
+window.addEventListener('hashchange', () => { if (location.hash.startsWith('#w/')) openDrawer(location.hash.slice(3)); });
+
+<!-- main dashboard script below -->
+<!--ORIGINAL_SCRIPT_BELOW-->
+const PAGE_SIZE = 100;
+let RAW = null, sortKey = "total", sortDir = "desc", page = 0, filtered = [];
+
+const fmt = n => {
+  if (n == null) return "";
+  if (n === 0) return `<span class="zero">0</span>`;
+  if (Math.abs(n) >= 1e9) return (n/1e9).toFixed(2) + "B";
+  if (Math.abs(n) >= 1e6) return (n/1e6).toFixed(2) + "M";
+  if (Math.abs(n) >= 1e3) return Math.round(n).toLocaleString();
+  return n.toFixed(2);
+};
+const fmtUsd = n => n ? "$" + Math.round(n).toLocaleString() : `<span class="zero">$0</span>`;
+const short = w => w.slice(0,6) + "…" + w.slice(-4);
+
+let HIDE_PDAS = localStorage.getItem('hidePDAs') !== '0';  // default: hide
+
+let DAILY = null;
+let CHART_MODE = 'inflation';   // 'inflation' or 'cumulative'
+
+async function load() {
+  const r = await fetch("data.json");
+  RAW = await r.json();
+  // Daily-totals chart data (best-effort; chart hides if file missing)
+  try {
+    const dr = await fetch("daily_totals.json");
+    if (dr.ok) DAILY = await dr.json();
+  } catch (e) {}
+  renderChart();
+  // Compute two ranks: full leaderboard and real-users-only. The displayed
+  // rank flips when the user toggles "Hide PDAs" so #1 always reflects what's
+  // visible.
+  const byTotalAll = [...RAW.records].sort((a, b) => (b.total || 0) - (a.total || 0));
+  byTotalAll.forEach((r, i) => { r._globalRank = i + 1; });
+  const byTotalReal = byTotalAll.filter(r => !r.is_protocol_pda);
+  byTotalReal.forEach((r, i) => { r._realRank = i + 1; });
+  const updated = new Date(RAW.generated_at_utc).toLocaleString();
+  document.getElementById("updated").textContent = "updated " + updated;
+  document.getElementById("footer-time").textContent = updated;
+  // Sync toggle button state
+  const btn = document.getElementById('toggle-pdas');
+  if (btn) btn.textContent = HIDE_PDAS ? 'Show PDAs' : 'Hide PDAs';
+  renderStats();
+  applyFilters();
+}
+
+function toggleChartMode() {
+  CHART_MODE = CHART_MODE === 'inflation' ? 'cumulative' : 'inflation';
+  document.getElementById('chart-mode').textContent = CHART_MODE === 'inflation' ? 'Daily emission ▼' : 'Cumulative total ▼';
+  renderChart();
+}
+
+function renderChart() {
+  if (!DAILY || !DAILY.days || !DAILY.days.length) {
+    const sec = document.getElementById('chart-section');
+    if (sec) sec.style.display = 'none';
+    return;
+  }
+  const days = DAILY.days;
+  // Each row is a completed day boundary at 00:00 UTC (Solstice snapshot
+  // cadence). Today is omitted entirely until tomorrow's 00:00 UTC.
+  const values = days.map(d => CHART_MODE === 'inflation' ? d.inflation : d.cumulative);
+  const max = Math.max(...values, 1);
+  const chart = document.getElementById('chart');
+  const xax = document.getElementById('chart-x-axis');
+  const fmtAxis = v => v >= 1e9 ? (v/1e9).toFixed(1)+'B' : v >= 1e6 ? (v/1e6).toFixed(0)+'M' : v >= 1e3 ? (v/1e3).toFixed(0)+'K' : Math.round(v).toLocaleString();
+  // Y-axis grid + labels (5 levels)
+  const yax = document.getElementById('chart-y-axis');
+  if (yax) {
+    let yhtml = '';
+    for (let k = 0; k <= 4; k++) {
+      const frac = 1 - k / 4;
+      const lvl = max * frac;
+      yhtml += `<div style="position:absolute; left:0; right:0; top:${k*60}px; border-top:1px dashed rgba(255,255,255,.06); padding-left:0;"><span style="position:absolute; left:0; top:-7px; font-size:10px; color:var(--ink-500); font-variant-numeric:tabular-nums;">${fmtAxis(lvl)}</span></div>`;
+    }
+    yax.innerHTML = yhtml;
+  }
+  chart.innerHTML = days.map((d, i) => {
+    const v = values[i];
+    const h = Math.max(1, Math.round(v / max * 240));
+    const fmtV = fmtAxis(v);
+    const tooltip = `${d.date}: ${v.toLocaleString(undefined,{maximumFractionDigits:0})} flares`;
+    const bg = 'linear-gradient(180deg, var(--accent-300), var(--accent-500))';
+    return `<div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; min-width:0; gap:3px;" title="${tooltip}">
+      <div style="font-size:9px; color:var(--ink-300); font-variant-numeric:tabular-nums; line-height:1; white-space:nowrap;">${fmtV}</div>
+      <div style="width:100%; max-width:18px; height:${h}px; background:${bg}; border-radius:2px 2px 0 0; transition:height .2s;"></div>
+    </div>`;
+  }).join('');
+  // X-axis: show every 3rd day's date for readability
+  xax.innerHTML = days.map((d, i) => {
+    const show = (i % 3 === 0) || i === days.length - 1;
+    const lbl = show ? d.date.slice(5) : '';
+    return `<div style="flex:1; text-align:center; min-width:0; overflow:hidden;">${lbl}</div>`;
+  }).join('');
+}
+
+function togglePDAs() {
+  HIDE_PDAS = !HIDE_PDAS;
+  localStorage.setItem('hidePDAs', HIDE_PDAS ? '1' : '0');
+  document.getElementById('toggle-pdas').textContent = HIDE_PDAS ? 'Show PDAs' : 'Hide PDAs';
+  renderStats();
+  applyFilters();
+}
+
+function renderStats() {
+  const all = HIDE_PDAS ? RAW.records.filter(r => !r.is_protocol_pda) : RAW.records;
+  const totalFlares = all.reduce((a, r) => a + r.total, 0);
+  const s1 = all.filter(r => r.is_s1).length;
+  const newS2 = all.length - s1;
+  const subSuffix = HIDE_PDAS ? '(excl. protocol PDAs)' : '(incl. protocol PDAs)';
+
+  document.getElementById("stats").innerHTML = `
+    <div class="stat" title="Wallets earning S2 Flares on-chain. ${HIDE_PDAS ? 'Protocol PDAs hidden — toggle to include.' : 'All addresses incl. protocol PDAs.'}">
+      <div class="label">Earners</div>
+      <div class="v tabular">${all.length.toLocaleString()}</div>
+      <div class="sub">${subSuffix}</div>
+    </div>
+    <div class="stat" title="Total Flares ${HIDE_PDAS ? 'across real-user wallets only.' : 'incl. all addresses.'}">
+      <div class="label">Total flares</div>
+      <div class="v tabular accent">${fmt(totalFlares)}</div>
+      <div class="sub">${subSuffix}</div>
+    </div>
+    <div class="stat" title="Earners that registered for the Season 1 airdrop.">
+      <div class="label">S1 retained</div>
+      <div class="v tabular">${s1.toLocaleString()}</div>
+      <div class="sub">${all.length ? (s1/all.length*100).toFixed(1) : '0'}% of earners</div>
+    </div>
+    <div class="stat" title="Earners that didn't register for S1 but are accruing S2 flares.">
+      <div class="label">New in S2</div>
+      <div class="v tabular">${newS2.toLocaleString()}</div>
+      <div class="sub">${all.length ? (newS2/all.length*100).toFixed(1) : '0'}% of earners</div>
+    </div>
+  `;
+}
+
+function applyFilters() {
+  const q = document.getElementById("search").value.trim().toLowerCase();
+  const proto = document.getElementById("protocol-filter").value;
+  let rs = RAW.records;
+  if (HIDE_PDAS) rs = rs.filter(r => !r.is_protocol_pda);
+  if (proto) rs = rs.filter(r => (r[proto] || 0) > 0);
+  if (q) rs = rs.filter(r => r.wallet.toLowerCase().includes(q));
+  const dir = sortDir === "asc" ? 1 : -1;
+  const rankField = HIDE_PDAS ? '_realRank' : '_globalRank';
+  rs.sort((a, b) => {
+    if (sortKey === "wallet") return dir * a.wallet.localeCompare(b.wallet);
+    if (sortKey === "rank") return dir * ((a[rankField] || 0) - (b[rankField] || 0));
+    return dir * ((a[sortKey] || 0) - (b[sortKey] || 0));
+  });
+  filtered = rs;
+  page = 0;
+  render();
+}
+
+function render() {
+  const start = page * PAGE_SIZE;
+  const end = Math.min(start + PAGE_SIZE, filtered.length);
+  const rows = filtered.slice(start, end);
+  const tb = document.getElementById("tb");
+  tb.innerHTML = rows.map(r => {
+    const tags = [];
+    if (r.is_s1) tags.push(`<span class="tag s1">S1</span>`);
+    else tags.push(`<span class="tag new">NEW</span>`);
+    if (r.cohort) tags.push(`<span class="tag cohort">C${r.cohort}</span>`);
+    if (r.is_protocol_pda) {
+      const lbl = r.pda_label ? ` · ${r.pda_label}` : '';
+      const tip = r.pda_source === 'manual'
+        ? `Known protocol PDA${lbl} — flares should pass through to underlying user-depositors`
+        : `Auto-detected protocol PDA — uninit account or program-owned, not a real wallet`;
+      tags.push(`<span class="tag pda" title="${tip}">${r.pda_source === 'manual' ? 'PDA ✓' : 'PDA'}</span>`);
+    }
+    return `<tr class="row-click" onclick="openDrawer('${r.wallet}')" title="${r.wallet}">
+      <td class="left tabular">${HIDE_PDAS ? (r._realRank ?? '—') : r._globalRank}</td>
+      <td class="left wallet">${short(r.wallet)} ${tags.join(' ')}</td>
+      <td><span style="color: var(--accent-300); font-weight: 500;">${fmt(r.total)}</span></td>
+      <td>${fmt(r.solstice)}</td>
+      <td>${fmt(r.yield_vault)}</td>
+      <td>${fmt(r.exponent)}</td>
+      <td>${fmt(r.kamino)}</td>
+      <td>${fmt(r.whirlpool)}</td>
+      <td>${fmt(r.raydium)}</td>
+      <td>${fmt(r.loopscale)}</td>
+    </tr>`;
+  }).join("");
+  document.getElementById("pageinfo").textContent =
+    `${start+1}–${end} of ${filtered.length.toLocaleString()}`;
+  document.getElementById("prev").disabled = page === 0;
+  document.getElementById("next").disabled = end >= filtered.length;
+}
+
+document.getElementById("search").addEventListener("input", applyFilters);
+document.getElementById("protocol-filter").addEventListener("change", applyFilters);
+document.getElementById("prev").addEventListener("click", () => { if (page>0) { page--; render(); window.scrollTo(0,0); }});
+document.getElementById("next").addEventListener("click", () => { page++; render(); window.scrollTo(0,0); });
+document.querySelectorAll("th[data-key]").forEach(th => {
+  th.addEventListener("click", () => {
+    const key = th.dataset.key;
+    if (sortKey === key) sortDir = sortDir === "asc" ? "desc" : "asc";
+    else { sortKey = key; sortDir = (key === "wallet" || key === "rank") ? "asc" : "desc"; }
+    document.querySelectorAll("th").forEach(t => t.classList.remove("asc","desc"));
+    th.classList.add(sortDir);
+    applyFilters();
+  });
+});
+
+load();
+// Deep-link support: open drawer if URL has #w/<addr>
+if (location.hash.startsWith('#w/')) openDrawer(location.hash.slice(3));
+</script>
+</body>
+</html>

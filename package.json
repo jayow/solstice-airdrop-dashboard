@@ -1,0 +1,16 @@
+{
+  "name": "solstice-airdrop-users",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "fee-payers": "node src/scrape_fee_payers.js",
+    "exponent": "node src/exponent_activity.js",
+    "report": "node src/report.js"
+  },
+  "dependencies": {
+    "@solana/web3.js": "^1.95.4",
+    "dotenv": "^16.4.5",
+    "p-limit": "^6.1.0"
+  }
+}

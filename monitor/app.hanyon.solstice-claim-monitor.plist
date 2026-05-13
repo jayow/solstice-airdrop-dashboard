@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>app.hanyon.solstice-claim-monitor</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/jakeolaso/Downloads/Claude Projects/SolsticeAirdropUsers/monitor/check_claim.sh</string>
+  </array>
+
+  <key>StartInterval</key>
+  <integer>900</integer>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/jakeolaso/Library/Application Support/solstice-claim-monitor/launchd.out</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/jakeolaso/Library/Application Support/solstice-claim-monitor/launchd.err</string>
+</dict>
+</plist>
