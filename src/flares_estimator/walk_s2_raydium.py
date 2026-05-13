@@ -119,14 +119,14 @@ def main():
         current_tick = get_pool_tick(pool_addr)
         print(f'  current_tick={current_tick}', flush=True)
 
-        # Find Raydium positions by pool_id. Retry 3× on empty result if pool
-        # has TVL (RPC flakiness can return [] under load).
+        # Find Raydium positions by pool_id. Always retry on empty for our
+        # hardcoded S2 pools — they're known-active. (The previous tick-based
+        # heuristic failed because Raydium API often returns tickCurrent=null
+        # which falls back to 0, defeating the guard.)
         pool_bytes = base58.b58encode(base58.b58decode(pool_addr)).decode()
-        # Probe pool TVL via tick (non-zero tick = active pool)
-        pool_has_activity = current_tick != 0
         accs = []
         import time as _t
-        for attempt in range(3):
+        for attempt in range(4):
             r = rpc('getProgramAccounts', [RAYDIUM_CLMM, {
                 'encoding': 'base64',
                 'filters': [
@@ -135,12 +135,12 @@ def main():
                 ]
             }], timeout=120, force_refresh=(attempt > 0))
             accs = r.get('result', []) or []
-            if accs or not pool_has_activity: break
-            print(f'  retry {attempt+1}: 0 positions but pool tick={current_tick} — retry in {2*(attempt+1)}s', flush=True)
+            if accs: break
+            print(f'  retry {attempt+1}: 0 positions — retry in {2*(attempt+1)}s', flush=True)
             _t.sleep(2 * (attempt + 1))
         print(f'  {len(accs)} positions', flush=True)
-        if pool_has_activity and len(accs) == 0:
-            print(f'  WARN: skipping {quest} sync — RPC empty for active pool', flush=True)
+        if len(accs) == 0:
+            print(f'  WARN: skipping {quest} sync — RPC empty after 4 retries', flush=True)
             skipped_quests.add(quest)
             continue
 

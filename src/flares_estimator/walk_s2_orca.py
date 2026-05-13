@@ -135,15 +135,15 @@ def main():
         tvl = pool.get('tvlUsdc', '0')
         print(f'  pool TVL=${float(tvl):,.2f}  priceA=${price_a:.4f}  priceB=${price_b:.4f}  tick={current_tick}', flush=True)
 
-        # Find all positions in this pool via getProgramAccounts. Retry up to 3
-        # times if the result is empty — Helius/RPC occasionally returns []
-        # under load even when positions exist. If the pool has TVL > 0 but
-        # we get 0 positions, that's almost certainly a stale RPC response.
+        # Find all positions in this pool via getProgramAccounts. Always retry
+        # on empty for our hardcoded S2 pools (they're known-active). RPC
+        # occasionally returns [] for active pools under load; the dataset is
+        # too small to safely auto-detect "actually empty" vs "RPC flake," so
+        # we just retry and skip-sync if all retries fail.
         pool_bytes = base58.b58encode(base58.b58decode(pool_addr)).decode()
-        pool_has_tvl = float(pool.get('tvlUsdc', 0) or 0) > 1000
         accs = []
         import time as _t
-        for attempt in range(3):
+        for attempt in range(4):
             r = rpc('getProgramAccounts', [WHIRL_PROG, {
                 'encoding': 'base64',
                 'filters': [
@@ -152,15 +152,12 @@ def main():
                 ]
             }], timeout=120, force_refresh=(attempt > 0))
             accs = r.get('result', []) or []
-            if accs or not pool_has_tvl: break
-            print(f'  retry {attempt+1}: got 0 positions but pool TVL=${pool.get("tvlUsdc","?")} — retrying in {2 * (attempt+1)}s', flush=True)
+            if accs: break
+            print(f'  retry {attempt+1}: 0 positions — retry in {2*(attempt+1)}s', flush=True)
             _t.sleep(2 * (attempt + 1))
         print(f'  {len(accs)} positions in pool', flush=True)
-        # Safety guard: if pool has TVL but we still got 0 positions after retries,
-        # don't include this market in the walker output (would otherwise zero out
-        # existing wallet_quests data for these quests).
-        if pool_has_tvl and len(accs) == 0:
-            print(f'  WARN: skipping {quest} sync — RPC returned empty positions for active pool', flush=True)
+        if len(accs) == 0:
+            print(f'  WARN: skipping {quest} sync — RPC empty after 4 retries', flush=True)
             skipped_quests.add(quest)
             continue
 
