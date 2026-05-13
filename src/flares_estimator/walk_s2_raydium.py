@@ -75,6 +75,7 @@ def main():
     all_results = defaultdict(lambda: defaultdict(float))
     all_positions = defaultdict(lambda: defaultdict(float))
     position_events_by_owner = defaultdict(list)
+    skipped_quests = set()
 
     # Preload cached per-(owner, position) events for incremental walking.
     _db.init()
@@ -118,18 +119,30 @@ def main():
         current_tick = get_pool_tick(pool_addr)
         print(f'  current_tick={current_tick}', flush=True)
 
-        # Find Raydium positions by pool_id
+        # Find Raydium positions by pool_id. Retry 3× on empty result if pool
+        # has TVL (RPC flakiness can return [] under load).
         pool_bytes = base58.b58encode(base58.b58decode(pool_addr)).decode()
-        # In Raydium PersonalPositionState, pool_id is at offset 41
-        r = rpc('getProgramAccounts', [RAYDIUM_CLMM, {
-            'encoding': 'base64',
-            'filters': [
-                {'dataSize': 281},
-                {'memcmp': {'offset': 41, 'bytes': pool_bytes}}
-            ]
-        }], timeout=120)
-        accs = r.get('result', []) or []
+        # Probe pool TVL via tick (non-zero tick = active pool)
+        pool_has_activity = current_tick != 0
+        accs = []
+        import time as _t
+        for attempt in range(3):
+            r = rpc('getProgramAccounts', [RAYDIUM_CLMM, {
+                'encoding': 'base64',
+                'filters': [
+                    {'dataSize': 281},
+                    {'memcmp': {'offset': 41, 'bytes': pool_bytes}}
+                ]
+            }], timeout=120, force_refresh=(attempt > 0))
+            accs = r.get('result', []) or []
+            if accs or not pool_has_activity: break
+            print(f'  retry {attempt+1}: 0 positions but pool tick={current_tick} — retry in {2*(attempt+1)}s', flush=True)
+            _t.sleep(2 * (attempt + 1))
         print(f'  {len(accs)} positions', flush=True)
+        if pool_has_activity and len(accs) == 0:
+            print(f'  WARN: skipping {quest} sync — RPC empty for active pool', flush=True)
+            skipped_quests.add(quest)
+            continue
 
         positions = []
         for a in accs:
@@ -262,7 +275,9 @@ def main():
     print(f'\nSaved {len(out)} wallets to {out_path}')
 
     # DB: walker_outputs + sync to wallet_quests
-    WALKER_QUESTS_DB = ['S2_RAYDIUM_USX_USDC', 'S2_RAYDIUM_EUSX_USX']
+    WALKER_QUESTS_DB = [q for q in ['S2_RAYDIUM_USX_USDC', 'S2_RAYDIUM_EUSX_USX'] if q not in skipped_quests]
+    if skipped_quests:
+        print(f'NOTE: skipped sync for {skipped_quests}', flush=True)
     walker_db.prune('walk_s2_raydium')
     rows_db = []
     for w_, pq_ in out.items():
