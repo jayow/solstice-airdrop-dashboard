@@ -19,4 +19,8 @@ echo "=== Building daily_totals.json (chart) ==="
 python3 server/build_daily_totals.py | tail -5
 
 echo
+echo "=== Building per-wallet detail JSONs (server/wallets/) ==="
+python3 server/build_wallet_details.py | tail -3
+
+echo
 echo "=== Done. Hard-refresh browser at http://localhost:8000 to pick up changes ==="
