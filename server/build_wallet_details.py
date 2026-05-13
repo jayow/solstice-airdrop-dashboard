@@ -67,6 +67,105 @@ def decode_evidence(qk: str, raw: dict) -> dict:
     return {'type': 'unknown', 'raw_keys': list(raw.keys())}
 
 
+# Per-quest multipliers (matches quest_map.py and the transform code).
+# Used to compute the wallet's CURRENT daily flare emission rate from its
+# present-day positions — for the projection calculator in the drawer.
+QUEST_MULT = {
+    'S2_HOLD_USX_DAILY': 10,
+    'S2_HOLD_EUSX_DAILY': 2,
+    'S2_EXPONENT_YIELD_USX_JUN26': 30,
+    'S2_EXPONENT_YIELD_EUSX_JUN26': 15,
+    'S2_EXPONENT_LP_USX_JUN26': 20,
+    'S2_EXPONENT_LP_EUSX_JUN26': 10,
+    'S2_KAMINO_LEND_USX': 5,    'S2_KAMINO_LEND_EUSX': 1,    'S2_KAMINO_LEND_USDG': 5,
+    'S2_KAMINO_BORROW_USX': 1,  'S2_KAMINO_BORROW_USDG': 1,
+    'S2_KAMINO_KVAULT_USDG_USX': 10,
+    'S2_LOOPSCALE_SUPPLY_USX_ONE': 5,  'S2_LOOPSCALE_BORROW_USX': 1,
+    'S2_ORCA_USX_USDC': 9,   'S2_ORCA_EUSX_USX': 4,   'S2_ORCA_USX_USDG': 9,
+    'S2_RAYDIUM_USX_USDC': 9,  'S2_RAYDIUM_EUSX_USX': 4,
+}
+
+EUSX_PEG = 1.156  # close enough for daily-rate calc; exact peg interpolation lives in eusx_peg.py
+
+
+def compute_daily_emission(evidence: dict) -> dict:
+    """Best-effort estimate of the wallet's CURRENT flare emission rate per quest
+    (flares per day at present-day position sizes). Used to extrapolate forward
+    in the projection calculator. Returns {quest_code: flares_per_day}."""
+    rates = {}
+
+    # HOLD: balance at end of timeline × mult × peg
+    for ek, qcode, peg in [('S2_HOLD_USX', 'S2_HOLD_USX_DAILY', 1.0),
+                            ('S2_HOLD_EUSX', 'S2_HOLD_EUSX_DAILY', EUSX_PEG)]:
+        ev = evidence.get(ek) or {}
+        tl = ev.get('timeline') or []
+        if not tl: continue
+        bal = tl[-1][1] if tl else 0
+        if bal > 0:
+            rates[qcode] = bal * peg * QUEST_MULT[qcode]
+
+    # YT: sum yt × mult for currently-emitting positions per market
+    yt = evidence.get('S2_EXPONENT_YT') or {}
+    for mkt in (yt.get('by_market') or []):
+        market_pk = mkt.get('market')
+        mult = QUEST_MULT.get('S2_EXPONENT_YIELD_USX_JUN26' if market_pk.startswith('Bxbi')
+                              else 'S2_EXPONENT_YIELD_EUSX_JUN26', 0)
+        for p in mkt.get('positions') or []:
+            # Trust on-chain: any non-zero YT balance earns flares.
+            yt_amt = p.get('yt') or 0
+            if yt_amt > 0:
+                q = 'S2_EXPONENT_YIELD_USX_JUN26' if market_pk.startswith('Bxbi') else 'S2_EXPONENT_YIELD_EUSX_JUN26'
+                rates[q] = rates.get(q, 0) + yt_amt * mult
+
+    # LP: snapshot lp_value × mult (positions list has lp_value_usd per market).
+    # Some legacy cache entries store LP positions as strings or partial dicts —
+    # defensively skip anything that doesn't look like our expected shape.
+    lp = evidence.get('S2_EXPONENT_LP') or {}
+    for p in (lp.get('positions') or []):
+        if not isinstance(p, dict): continue
+        v_usd = p.get('lp_value_usd') or 0
+        if v_usd <= 0: continue
+        m_pk = p.get('market', '')
+        q = 'S2_EXPONENT_LP_USX_JUN26' if m_pk.startswith('Bxbi') else 'S2_EXPONENT_LP_EUSX_JUN26'
+        rates[q] = rates.get(q, 0) + v_usd * QUEST_MULT[q]
+
+    # Kamino / Loopscale / Orca / Raydium: positions dict has USD per position-key
+    pos_to_quest = {
+        'kamino_supply_usx':   'S2_KAMINO_LEND_USX',
+        'kamino_supply_eusx':  'S2_KAMINO_LEND_EUSX',
+        'kamino_supply_usdg':  'S2_KAMINO_LEND_USDG',
+        'kamino_borrow_usx':   'S2_KAMINO_BORROW_USX',
+        'kamino_borrow_usdg':  'S2_KAMINO_BORROW_USDG',
+        'kamino_kvault_usx_usdg': 'S2_KAMINO_KVAULT_USDG_USX',
+        'loopscale_supply_usx': 'S2_LOOPSCALE_SUPPLY_USX_ONE',
+        'loopscale_borrow_usx': 'S2_LOOPSCALE_BORROW_USX',
+        'orca_usx_usdc': 'S2_ORCA_USX_USDC',
+        'orca_eusx_usx': 'S2_ORCA_EUSX_USX',
+        'orca_usx_usdg': 'S2_ORCA_USX_USDG',
+        'raydium_usx_usdc': 'S2_RAYDIUM_USX_USDC',
+        'raydium_eusx_usx': 'S2_RAYDIUM_EUSX_USX',
+    }
+    for ek in ('S2_KAMINO', 'S2_LOOPSCALE', 'S2_ORCA', 'S2_RAYDIUM'):
+        ev = evidence.get(ek) or {}
+        positions = ev.get('positions') or {}
+        for pk, usd in positions.items():
+            if not isinstance(usd, (int, float)) or usd <= 0: continue
+            q = pos_to_quest.get(pk)
+            if not q: continue
+            rates[q] = rates.get(q, 0) + usd * QUEST_MULT[q]
+
+    return rates
+
+
+def _safe_daily_emission(evidence: dict, wallet: str) -> dict:
+    try:
+        return compute_daily_emission(evidence)
+    except Exception as e:
+        # Defensive — one weird cache shape shouldn't kill the whole batch.
+        print(f'  WARN daily_emission failed for {wallet[:10]}: {e}', flush=True)
+        return {}
+
+
 def main():
     os.makedirs(OUT_DIR, exist_ok=True)
     con = sqlite3.connect(DB)
@@ -157,6 +256,9 @@ def main():
             'by_quest': quest_rows,
             'evidence': evidence,
             'activity': activity_events,
+            # Daily emission rate per quest at CURRENT position sizes — used
+            # by the drawer's projection calculator to extrapolate forward.
+            'daily_emission_by_quest': _safe_daily_emission(evidence, w),
         }
         with open(os.path.join(OUT_DIR, f'{w}.json'), 'w') as f:
             json.dump(payload, f, separators=(',', ':'))

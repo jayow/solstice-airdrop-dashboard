@@ -172,14 +172,52 @@ class QuestExtractor(ABC):
         Returns a dict because some modules own multiple quest codes."""
         ...
 
+    # ── Double-source validation hooks ──────────────────────────────────────
+    # The walker's primary extract() (Source A) can silently miss a wallet
+    # for many reasons: transient RPC failure, enumeration bug, classification
+    # heuristic gone wrong, etc. To avoid caching false-empties:
+    #
+    #   1. `looks_empty(raw)` — did extract() return effectively nothing?
+    #   2. `quick_validate(wallet)` — one cheap independent on-chain query
+    #       (Source B) that returns True if the wallet shows ANY evidence of
+    #       activity for this quest.
+    #
+    # If A says empty but B finds activity → the extract failed. Don't cache;
+    # let the next run retry. If A and B agree (both empty), it's a real zero
+    # and gets cached so future runs short-circuit.
+
+    def looks_empty(self, raw: dict) -> bool:
+        """Override to detect 'extract returned nothing'. Default: never."""
+        return False
+
+    def quick_validate(self, wallet: str) -> bool:
+        """Override with a one-shot Source-B on-chain check. Return True if the
+        wallet has any activity for this quest. Default: returns False
+        (no validation → assume empty extracts are correct)."""
+        return False
+
     def run(self, wallet: str, now_ts: int, force_refresh: bool = False) -> dict:
-        """End-to-end: extract (if needed) → load → transform.
+        """End-to-end: extract (if needed) → validate → save → transform.
         Returns {quest_code: flares} for all quests this module owns."""
         cached = None
         if not force_refresh:
             cached = load_quest_cache(self.cache_key(), wallet)
         if cached is None:
             raw = self.extract(wallet)
+            # Double-source validation: if extract returned empty but the
+            # quick validate finds on-chain evidence of activity, don't cache
+            # the empty result. Caller still gets `transform(raw, now_ts)` for
+            # this call (returns 0), but next run will re-extract.
+            if self.looks_empty(raw):
+                try:
+                    if self.quick_validate(wallet):
+                        # Source A empty, Source B says active → A failed.
+                        return self.transform(raw, now_ts)
+                except Exception:
+                    # If validation itself fails, fall through and cache —
+                    # better to have stale empty than to retry indefinitely
+                    # on a wallet whose Source-B path is also broken.
+                    pass
             wm = raw.get("_watermark", {})
             save_quest_cache(self.cache_key(), wallet, raw,
                              watermark_slot=wm.get("slot", 0),

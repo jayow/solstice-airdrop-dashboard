@@ -232,6 +232,40 @@ def _integrate_qualified_bonus(timeline: list, min_bal: float, qualify_days: int
 _integrate_min_balance_bonus = _integrate_qualified_bonus
 
 
+def _hold_looks_empty(raw: dict) -> bool:
+    """Empty extract = no ATAs discovered AND timeline is all-zero placeholder."""
+    if (raw.get("atas") or []): return False
+    tl = raw.get("timeline") or []
+    if any(b > 0 for _, b in tl): return False
+    return True
+
+
+def _hold_quick_validate(wallet: str, mint: str) -> bool:
+    """Source B: does the wallet currently hold any token at `mint`?
+    Uses getTokenAccountsByOwner directly — different code path than the
+    walker's _list_atas+sig-walk pipeline."""
+    r = rpc("getTokenAccountsByOwner",
+            [wallet, {"mint": mint}, {"encoding": "jsonParsed"}],
+            timeout=15, force_refresh=True)
+    for acc in (r.get("result", {}).get("value", []) or []):
+        info = acc.get("account", {}).get("data", {})
+        if not isinstance(info, dict): continue
+        info = info.get("parsed", {}).get("info", {})
+        amt = float((info.get("tokenAmount") or {}).get("uiAmount") or 0)
+        if amt > 0: return True
+    # Also check canonical ATA via getAccountInfo as a second safeguard
+    canon = _canonical_ata(wallet, mint)
+    if canon:
+        ai = rpc("getAccountInfo", [canon, {"encoding": "jsonParsed"}],
+                 timeout=15, force_refresh=True)
+        v = (ai.get("result") or {}).get("value")
+        if v:
+            info = (v.get("data") or {}).get("parsed", {}).get("info", {}) if isinstance(v.get("data"), dict) else {}
+            amt = float((info.get("tokenAmount") or {}).get("uiAmount") or 0)
+            if amt > 0: return True
+    return False
+
+
 class HoldUSXExtractor(QuestExtractor):
     QUEST_CODE = ("S2_HOLD_USX_DAILY", "S2_HOLD_USX_1MO", "S2_HOLD_USX_3MO")
     MULTIPLIER = {"S2_HOLD_USX_DAILY": 10, "S2_HOLD_USX_1MO": 6, "S2_HOLD_USX_3MO": 15}
@@ -241,6 +275,12 @@ class HoldUSXExtractor(QuestExtractor):
         prior = load_quest_cache(self.cache_key(), wallet)
         prior_atas = ((prior or {}).get("raw") or {}).get("atas") or []
         return _build_timeline(wallet, USX_MINT, int(time.time()), prior_atas)
+
+    def looks_empty(self, raw: dict) -> bool:
+        return _hold_looks_empty(raw)
+
+    def quick_validate(self, wallet: str) -> bool:
+        return _hold_quick_validate(wallet, USX_MINT)
 
     def transform(self, raw: dict, now_ts: int) -> dict:
         timeline = raw.get("timeline") or []

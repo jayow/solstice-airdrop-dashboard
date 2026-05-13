@@ -308,6 +308,30 @@ class ExponentYTExtractor(QuestExtractor):
     def extract(self, wallet: str) -> dict:
         return _build_yt_timeline(wallet)
 
+    def looks_empty(self, raw: dict) -> bool:
+        # Empty = no positions found in any market.
+        return not (raw.get("positions_by_market") or {})
+
+    def quick_validate(self, wallet: str) -> bool:
+        # Source B: does the wallet currently hold any of the YT mints
+        # corresponding to our tracked markets? Uses getTokenAccountsByOwner,
+        # a different code path than the walker's getProgramAccounts.
+        for market_pk in MARKETS.keys():
+            try:
+                yt_mint = _get_yt_mint(market_pk)
+                if not yt_mint: continue
+                r = rpc("getTokenAccountsByOwner",
+                        [wallet, {"mint": yt_mint}, {"encoding": "jsonParsed"}],
+                        timeout=15, force_refresh=True)
+                for acc in (r.get("result", {}).get("value", []) or []):
+                    info = acc.get("account", {}).get("data", {})
+                    if not isinstance(info, dict): continue
+                    info = info.get("parsed", {}).get("info", {})
+                    amt = float((info.get("tokenAmount") or {}).get("uiAmount") or 0)
+                    if amt > 0: return True
+            except Exception: continue
+        return False
+
     def transform(self, raw: dict, now_ts: int) -> dict:
         out = {q: 0.0 for q in self.QUEST_CODE}
         end_ts = min(now_ts, S2_END_TS)
@@ -316,13 +340,12 @@ class ExponentYTExtractor(QuestExtractor):
             if not cfg: continue
             rate = BASE_RATE_PER_YT_PER_DAY_PER_MULT * cfg["mult"]
             for p in positions:
-                method = p.get("method")
-                is_emitting = p.get("is_emitting", False)
-                # Skip v1 LP residue / data-less positions: current_state_fallback + not currently emitting.
-                # KEEP v2 closed positions: method='history' with timeline showing actual past YT decay,
-                # even if current yt is 0 (they earned flares during their active S2 window).
-                if method == "current_state_fallback" and not is_emitting:
-                    continue
+                # On-chain rule: any YT held during S2 earns flares. We used to
+                # filter V1 "LP residue" positions out via an is_emitting flag,
+                # but Solstice's actual reward logic credits whatever YT the
+                # wallet holds, so we trust the on-chain timeline as-is.
+                # _integrate_yt is naturally zero when the timeline is all zeros,
+                # so this only adds credit where there's a real non-zero balance.
                 f = _integrate_yt(p["timeline"], rate, end_ts)
                 out[cfg["quest"]] += f
         return out

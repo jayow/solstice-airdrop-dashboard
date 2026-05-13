@@ -4,7 +4,7 @@ constant would systematically under- or over-count depending on snapshot age).""
 import os, sys, time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from .base import QuestExtractor, S2_START_TS, S2_END_TS, load_quest_cache
-from .hold_usx import _build_timeline, _integrate_twab, _integrate_min_balance_bonus
+from .hold_usx import _build_timeline, _integrate_twab, _integrate_min_balance_bonus, _hold_looks_empty, _hold_quick_validate
 from .eusx_peg import peg_at
 
 EUSX_MINT = "3ThdFZQKM6kRyVGLG48kaPg5TRMhYMKY1iCRa9xop1WC"
@@ -19,6 +19,12 @@ class HoldEUSXExtractor(QuestExtractor):
         prior = load_quest_cache(self.cache_key(), wallet)
         prior_atas = ((prior or {}).get("raw") or {}).get("atas") or []
         return _build_timeline(wallet, EUSX_MINT, int(time.time()), prior_atas)
+
+    def looks_empty(self, raw: dict) -> bool:
+        return _hold_looks_empty(raw)
+
+    def quick_validate(self, wallet: str) -> bool:
+        return _hold_quick_validate(wallet, EUSX_MINT)
 
     def transform(self, raw: dict, now_ts: int) -> dict:
         timeline = raw.get("timeline") or []

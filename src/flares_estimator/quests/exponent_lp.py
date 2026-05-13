@@ -161,3 +161,26 @@ class ExponentLPExtractor(QuestExtractor):
             if q in out:
                 out[q] += float(p.get("lp_value_usd") or 0) * float(p.get("mult") or 0)
         return out
+
+    def looks_empty(self, raw: dict) -> bool:
+        # Empty = no positions with non-zero lp_balance.
+        for p in raw.get("positions", []) or []:
+            if float(p.get("lp_balance") or 0) > 0: return False
+        return True
+
+    def quick_validate(self, wallet: str) -> bool:
+        # Source B: does the wallet currently hold any LP-mint tokens?
+        # Independent of _wallet_lp_balance — direct token-account query.
+        for m_pk, cfg in MARKETS.items():
+            try:
+                r = rpc("getTokenAccountsByOwner",
+                        [wallet, {"mint": cfg["lp_mint"]}, {"encoding": "jsonParsed"}],
+                        timeout=15, force_refresh=True)
+                for acc in (r.get("result", {}).get("value", []) or []):
+                    info = acc.get("account", {}).get("data", {})
+                    if not isinstance(info, dict): continue
+                    info = info.get("parsed", {}).get("info", {})
+                    amt = float((info.get("tokenAmount") or {}).get("uiAmount") or 0)
+                    if amt > 0: return True
+            except Exception: continue
+        return False

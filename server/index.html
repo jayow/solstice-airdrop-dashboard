@@ -573,6 +573,129 @@ async function openDrawer(addr) {
   renderDrawerBody(p);
 }
 
+// === Projection calculator (in-drawer) ====================================
+// State kept on window so the inline onchange handlers can read it without
+// passing the whole payload through arg threading.
+const SLX_TOTAL_SUPPLY = 1_000_000_000;     // SLX max supply
+const S2_AIRDROP_PCT   = 0.03;              // 3% allocated to S2 flares
+const FDV_SCENARIOS_M  = [50, 100, 250, 500, 1000];   // sensitivity table in $M
+let PROJ = null;   // { current_flares, daily_emission, system_today, system_daily, end_iso }
+
+function _computeProjection() {
+  if (!PROJ) return null;
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  const endDate = new Date(PROJ.end_iso + 'T00:00:00Z');
+  const daysAhead = Math.max(0, Math.round((endDate - today) / 86400000));
+  const yourTotal = PROJ.current_flares + daysAhead * PROJ.daily_emission;
+  const systemTotal = PROJ.system_today + daysAhead * PROJ.system_daily;
+  const share = systemTotal > 0 ? yourTotal / systemTotal : 0;
+  const slx = share * SLX_TOTAL_SUPPLY * S2_AIRDROP_PCT;
+  return { daysAhead, yourTotal, systemTotal, share, slx };
+}
+
+function _renderProjResults() {
+  const out = _computeProjection();
+  if (!out) return;
+  const fmtPct = v => (v * 100).toFixed(3) + '%';
+  const fmtNum = v => v.toLocaleString(undefined, { maximumFractionDigits: 0 });
+  document.getElementById('proj-days').textContent = out.daysAhead;
+  document.getElementById('proj-you').textContent = fmtNum(out.yourTotal);
+  document.getElementById('proj-sys').textContent = fmtNum(out.systemTotal);
+  document.getElementById('proj-share').textContent = fmtPct(out.share);
+  document.getElementById('proj-slx').textContent = fmtNum(out.slx);
+  // FDV sensitivity table — same SLX, varying $ per token
+  const tbody = document.getElementById('proj-fdv-rows');
+  if (tbody) {
+    tbody.innerHTML = FDV_SCENARIOS_M.map(fdvM => {
+      const price = (fdvM * 1e6) / SLX_TOTAL_SUPPLY;
+      const usd = out.slx * price;
+      return `<tr>
+        <td style="padding:6px 12px; color:var(--ink-400);">$${fdvM}M</td>
+        <td style="padding:6px 12px; text-align:right; color:var(--ink-500); font-size:11px;">$${price.toFixed(3)}/SLX</td>
+        <td class="tabular" style="padding:6px 12px; text-align:right; color:var(--accent-300); font-weight:600;">$${fmtNum(usd)}</td>
+      </tr>`;
+    }).join('');
+  }
+}
+
+function _onProjInput() {
+  PROJ.end_iso     = document.getElementById('proj-end').value;
+  PROJ.system_daily = parseFloat(document.getElementById('proj-sys-rate').value) * 1e9 || 1e9;
+  _renderProjResults();
+}
+
+function renderProjector(p) {
+  // Hide for PDAs (not a real user)
+  if (p.meta && p.meta.is_protocol_pda) return '';
+  const dailyByQuest = p.daily_emission_by_quest || {};
+  const dailyTotal = Object.values(dailyByQuest).reduce((a, b) => a + (b || 0), 0);
+  if (dailyTotal <= 0 && (p.total_flares || 0) <= 0) return '';
+  // System current state from RAW (already loaded) — fall back to last day in
+  // daily_totals.json if RAW.totals doesn't carry the snapshot.
+  const sysToday = (DAILY && DAILY.days && DAILY.days.length)
+    ? DAILY.days[DAILY.days.length - 1].cumulative : (RAW.records || []).reduce((a, r) => a + (r.total || 0), 0);
+  // Estimate today's system daily emission from last 3 days' inflation avg.
+  let sysDaily = 1e9;
+  if (DAILY && DAILY.days && DAILY.days.length >= 3) {
+    const recent = DAILY.days.slice(-3);
+    sysDaily = recent.reduce((a, d) => a + (d.inflation || 0), 0) / recent.length;
+  }
+  PROJ = {
+    current_flares: p.total_flares || 0,
+    daily_emission: dailyTotal,
+    system_today: sysToday,
+    system_daily: sysDaily,
+    end_iso: '2026-08-01',
+  };
+  // Defer rendering of computed values to after element insertion.
+  setTimeout(_renderProjResults, 0);
+  const dailyRows = Object.entries(dailyByQuest)
+    .filter(([_, v]) => v > 0)
+    .sort((a, b) => b[1] - a[1])
+    .map(([q, v]) => {
+      const lbl = (QUEST_META[q] && QUEST_META[q].label) || q;
+      return `<div style="display:flex; justify-content:space-between; font-size:11px; color:var(--ink-400); padding:2px 0;">
+        <span>${lbl}</span>
+        <span class="tabular">+${v.toLocaleString(undefined,{maximumFractionDigits:0})}/day</span>
+      </div>`;
+    }).join('');
+  return `<div class="qsum-box" style="background:rgba(124,92,255,.04); border-color:rgba(124,92,255,.18);">
+    <div class="qsum-head">Projection · if positions stay the same</div>
+    <div style="font-size:11px; color:var(--ink-400); margin-bottom:10px;">Daily emission at current positions: <strong class="tabular" style="color:var(--ink-100);">${dailyTotal.toLocaleString(undefined,{maximumFractionDigits:0})}</strong> flares/day</div>
+    ${dailyRows ? `<div style="margin-bottom:14px; padding-bottom:10px; border-bottom:1px dashed rgba(255,255,255,.08);">${dailyRows}</div>` : ''}
+    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-bottom:14px;">
+      <label style="font-size:11px; color:var(--ink-500);">End date
+        <input type="date" id="proj-end" value="2026-08-01" oninput="_onProjInput()" min="2026-04-13" max="2026-12-31"
+               style="width:100%; margin-top:4px; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.1); color:var(--ink-100); padding:6px 8px; border-radius:6px; font:inherit; font-size:12px;" />
+      </label>
+      <label style="font-size:11px; color:var(--ink-500);">System rate (B/day)
+        <input type="number" id="proj-sys-rate" value="${(PROJ.system_daily / 1e9).toFixed(2)}" step="0.05" min="0.1"
+               oninput="_onProjInput()"
+               style="width:100%; margin-top:4px; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.1); color:var(--ink-100); padding:6px 8px; border-radius:6px; font:inherit; font-size:12px;" />
+      </label>
+    </div>
+    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px 18px; font-size:12px; padding:10px 0; border-top:1px dashed rgba(255,255,255,.08);">
+      <div style="color:var(--ink-500);">Days ahead</div><div class="tabular" style="text-align:right;"><span id="proj-days">—</span></div>
+      <div style="color:var(--ink-500);">You at end date</div><div class="tabular" style="text-align:right;"><span id="proj-you">—</span> flares</div>
+      <div style="color:var(--ink-500);">System total</div><div class="tabular" style="text-align:right;"><span id="proj-sys">—</span> flares</div>
+      <div style="color:var(--ink-500);">Your share</div><div class="tabular" style="text-align:right; color:var(--accent-300); font-weight:600;"><span id="proj-share">—</span></div>
+      <div style="color:var(--ink-500);">SLX allocation</div><div class="tabular" style="text-align:right;"><span id="proj-slx">—</span> SLX</div>
+    </div>
+    <div style="margin-top:10px;">
+      <div style="font-size:10px; color:var(--ink-500); text-transform:uppercase; letter-spacing:0.14em; padding:6px 0;">USD value by FDV</div>
+      <table style="width:100%; border-collapse:collapse; font-size:12px;">
+        <tbody id="proj-fdv-rows"></tbody>
+      </table>
+    </div>
+    <div style="font-size:10px; color:var(--ink-500); margin-top:10px; line-height:1.5;">
+      Assumes your positions and Solstice's daily emission stay constant.
+      Doesn't model new wallets joining (would dilute) or your position growing
+      (would concentrate). 3% of 1B SLX (30M) allocated to S2 flares.
+    </div>
+  </div>`;
+}
+
 function renderDrawerBody(p) {
   const earningQs = p.by_quest.filter(q => q.flares > 0).sort((a,b) => b.flares - a.flares);
   const summaryRows = earningQs.map(q => {
@@ -581,6 +704,8 @@ function renderDrawerBody(p) {
   }).join('');
   const summary = earningQs.length ? `<div class="qsum-box"><div class="qsum-head">Earning quests</div>${summaryRows}</div>` : '';
 
+  const projector = renderProjector(p);
+
   const dir = DRAWER_SORT === 'asc' ? 1 : -1;
   const activity = (p.activity || []).slice().sort((a,b) => dir * (a.ts - b.ts));
 
@@ -588,6 +713,7 @@ function renderDrawerBody(p) {
   // inside are visually grouped under their partner header.
   const wrap = (html, key) => html ? `<section class="proto-block proto-${key}">${html}</section>` : '';
   let body = summary;
+  body += projector;
   body += wrap(renderHoldBlock(p, 'USX'), 'hold-usx');
   body += wrap(renderHoldBlock(p, 'eUSX'), 'hold-eusx');
   body += wrap(renderExponentPositions(p), 'exponent');
