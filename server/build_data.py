@@ -16,7 +16,7 @@ import db
 from quest_map import QUESTS
 
 QUEST_PROTO = {q['code']: q['protocol'] for q in QUESTS}
-QUEST_CODES = [q['code'] for q in QUESTS]
+QUEST_CODES = [q['code'] for q in QUESTS if not q.get('disabled')]
 PROTOCOLS = ['solstice', 'yield_vault', 'exponent', 'kamino', 'whirlpool', 'raydium', 'loopscale']
 
 
@@ -112,9 +112,14 @@ def main():
     real_only.sort(key=lambda x: -x['total'])
     for i, r in enumerate(real_only): r['rank_real'] = i + 1
 
-    # 6. Per-quest totals (top-line)
+    # 6. Per-quest + per-partner totals. Two views:
+    #   `quest_totals`: sum across ALL records (incl. tagged PDAs that the
+    #                   frontend toggle can show)
+    #   `partner_totals_real`: sum across real-user records only (excludes PDAs)
     qt = {q: round(sum(r['by_quest'].get(q, 0) for r in records), 2) for q in QUEST_CODES}
     grand_total = round(sum(qt.values()), 2)
+    partner_totals = {p: round(sum(r.get(p, 0) for r in records), 2) for p in PROTOCOLS}
+    partner_totals_real = {p: round(sum(r.get(p, 0) for r in records if not r.get('is_protocol_pda')), 2) for p in PROTOCOLS}
 
     # 7. Snapshot: append a row to flares_snapshots (DB) with inflation delta if prior exists
     s1_count = sum(1 for r in records if r.get('is_s1'))
@@ -122,6 +127,9 @@ def main():
         'generated_at_utc': __import__('datetime').datetime.now(__import__('datetime').UTC).isoformat(),
         'quest_codes': QUEST_CODES,
         'quest_totals': qt,
+        'partners': PROTOCOLS,
+        'partner_totals': partner_totals,            # all records (incl tagged PDAs)
+        'partner_totals_real': partner_totals_real,  # real users only — matches dashboard headline
         'totals': {
             'all_earners': len(records),
             's1_registered_earners': len(s1_only),

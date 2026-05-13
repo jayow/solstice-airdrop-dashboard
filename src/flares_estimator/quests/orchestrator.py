@@ -13,6 +13,13 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from .base import QuestExtractor, load_quest_cache
+
+# Solstice publishes once per day at 00:00 UTC. Every transform integrates
+# through that boundary so wallet_quests matches Solstice's leaderboard
+# cadence instead of drifting up live.
+import os, sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from snapshot_ts import last_snapshot_ts
 from .hold_usx import HoldUSXExtractor
 from .hold_eusx import HoldEUSXExtractor
 from .exponent_yt import ExponentYTExtractor
@@ -42,7 +49,7 @@ GATED_OFF_QUESTS: set = set()
 def run_wallet(wallet: str, now_ts: int = None, force_refresh: bool = False) -> Dict[str, float]:
     """Run every quest module for this wallet. Returns {quest_code: flares}.
     First call extracts (RPC-bound). Subsequent calls hit cache (fast)."""
-    if now_ts is None: now_ts = int(time.time())
+    if now_ts is None: now_ts = last_snapshot_ts()
     flares: Dict[str, float] = {}
     for cls in QUEST_MODULES:
         try:
@@ -60,7 +67,7 @@ def run_wallet(wallet: str, now_ts: int = None, force_refresh: bool = False) -> 
 def transform_wallet_from_cache(wallet: str, now_ts: int = None) -> Dict[str, float]:
     """Pure transform: read each cached quest entry, compute flares. NO RPC.
     Returns empty dict when cache is missing — caller handles fallback."""
-    if now_ts is None: now_ts = int(time.time())
+    if now_ts is None: now_ts = last_snapshot_ts()
     flares: Dict[str, float] = {}
     for cls in QUEST_MODULES:
         m = cls()

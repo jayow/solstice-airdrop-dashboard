@@ -46,6 +46,13 @@ log "[3/6] orchestrator bulk over fresh universe"
         --bulk ../data/universe_today.txt \
         --workers 16 ) 2>&1 | tee -a "$LOG"
 
+# 3.5. Retry wallets whose HOLD/YT caches look empty. Catches users whose
+#      previous extract hit a transient RPC failure and got an empty result
+#      cached — without this step, those wallets stay stuck at zero forever
+#      because subsequent runs short-circuit on "cache exists → skip extract".
+log "[3.5/7] retry empty caches (self-healing)"
+python3 src/flares_estimator/retry_empty_caches.py --workers 4 2>&1 | tee -a "$LOG"
+
 # 4. Re-apply improved transforms (event-integrated Kamino/Loopscale,
 #    CLMM in-range gating). These overwrite the walker's approximations
 #    in wallet_quests with proper time-integrated / in-range-gated values.

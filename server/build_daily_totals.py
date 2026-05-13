@@ -187,16 +187,19 @@ def main():
     con = sqlite3.connect(DB); con.row_factory = sqlite3.Row
     now = int(time.time())
 
-    # Exclude protocol PDAs (auto-classified + manual list) — Solstice's
-    # leaderboard doesn't count internal protocol vault addresses.
+    # Exclude every wallet the dashboard hides. build_data.py filters records
+    # by `classification in ('pda', 'pda_or_uninit')` (line 71) — match that
+    # exactly so daily-chart totals reconcile with the headline number.
+    # `pda_protocol` is kept here too because the dashboard hides it by
+    # default via the Hide-PDAs toggle.
     pda_set = set()
-    for r in con.execute("SELECT wallet FROM wallets WHERE classification='pda_protocol'"):
+    for r in con.execute("SELECT wallet FROM wallets WHERE classification IN ('pda','pda_or_uninit','pda_protocol')"):
         pda_set.add(r['wallet'])
     p_pdas = os.path.join(ROOT, 'data', 'protocol_pdas.json')
     if os.path.exists(p_pdas):
         manual = json.load(open(p_pdas)).get('addresses') or {}
         for a in manual.keys(): pda_set.add(a)
-    print(f'Excluding {len(pda_set):,} protocol-PDA wallets.')
+    print(f'Excluding {len(pda_set):,} PDA / uninit wallets (matches dashboard filter).')
 
     # Day-end boundaries at 00:00 UTC. Each "day D" bucket covers
     # [D 00:00, D+1 00:00). The chart shows days where end-of-bucket has
@@ -215,15 +218,26 @@ def main():
     print(f'Reconstructing {n_days} complete S2 days through {datetime.fromtimestamp(end_ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M")} UTC (yesterday 00:00 UTC).')
 
     day_totals = [0.0] * n_days
+    # Per-partner daily inflation. Keys match `PROTOCOLS` in build_data.py so the
+    # frontend can render a stacked-bar view with the same color scheme as the
+    # leaderboard's protocol columns.
+    partner_day_totals = defaultdict(lambda: [0.0] * n_days)
+    def _add(partner_key, per_day):
+        for i, v in enumerate(per_day):
+            day_totals[i] += v
+            partner_day_totals[partner_key][i] += v
 
     # === HOLD ===
     # Per-wallet scaling: walk each wallet's full quest, normalize emitted to
     # match wallet_quests.flares, then only the day_ends portion contributes
     # to the chart.
     HOLD_QUEST = {'USX': 'S2_HOLD_USX_DAILY', 'eUSX': 'S2_HOLD_EUSX_DAILY'}
+    # HOLD USX → "solstice" partner; HOLD eUSX → "yield_vault" (matches quest_map.py)
+    HOLD_PARTNER = {'USX': 'solstice', 'eUSX': 'yield_vault'}
     for ek, lbl in [('S2_HOLD_USX','USX'), ('S2_HOLD_EUSX','eUSX')]:
         mult = HOLD_MULT[lbl]
         qcode = HOLD_QUEST[lbl]
+        partner = HOLD_PARTNER[lbl]
         for r in con.execute("SELECT wallet, raw_json FROM quest_cache WHERE quest_key=?", (ek,)):
             if r['wallet'] in pda_set: continue
             raw = json.loads(r['raw_json'])
@@ -236,7 +250,11 @@ def main():
             if emitted > 0 and target > 0:
                 k = target / emitted
                 per_day = [v * k for v in per_day]
-            for i, v in enumerate(per_day): day_totals[i] += v
+            elif target <= 0:
+                # wallet_quests has 0 for this (wallet, quest) → wallet's cache may
+                # have closed events the dashboard hides. Don't bloat the chart.
+                per_day = [0.0] * n_days
+            _add(partner, per_day)
 
     # === Exponent YT ===
     YT_QUEST = {
@@ -270,7 +288,11 @@ def main():
             if emitted > 0 and target > 0:
                 k = target / emitted
                 per_day = [v * k for v in per_day]
-            for i, v in enumerate(per_day): day_totals[i] += v
+            elif target <= 0:
+                # wallet_quests has 0 for this (wallet, quest) → wallet's cache may
+                # have closed events the dashboard hides. Don't bloat the chart.
+                per_day = [0.0] * n_days
+            _add('exponent', per_day)
 
     # === Exponent LP: events have lp_delta + rate → reconstruct lp_balance(t) ===
     LP_QUEST_CODE = {
@@ -317,20 +339,22 @@ def main():
                 target = tr[0] if tr else 0
                 if emitted > 0 and target > 0:
                     per_day = [v * (target/emitted) for v in per_day]
-            for i, v in enumerate(per_day): day_totals[i] += v
+                elif target <= 0:
+                    per_day = [0.0] * n_days
+            _add('exponent', per_day)
 
     # === Kamino / Loopscale / Orca / Raydium: reconstruct USD over time ===
     PROTOCOL_SPECS = [
-        ('S2_ORCA',     ORCA_RAY_SIGN, {
+        ('S2_ORCA',     'whirlpool', ORCA_RAY_SIGN, {
             'orca_usx_usdc': ('S2_ORCA_USX_USDC', 9),
             'orca_eusx_usx': ('S2_ORCA_EUSX_USX', 4),
             'orca_usx_usdg': ('S2_ORCA_USX_USDG', 9),
         }),
-        ('S2_RAYDIUM',  ORCA_RAY_SIGN, {
+        ('S2_RAYDIUM',  'raydium', ORCA_RAY_SIGN, {
             'raydium_usx_usdc': ('S2_RAYDIUM_USX_USDC', 9),
             'raydium_eusx_usx': ('S2_RAYDIUM_EUSX_USX', 4),
         }),
-        ('S2_KAMINO',   KAMINO_SIGN, {
+        ('S2_KAMINO',   'kamino', KAMINO_SIGN, {
             'kamino_supply_usx':       ('S2_KAMINO_LEND_USX',  5),
             'kamino_supply_eusx':      ('S2_KAMINO_LEND_EUSX', 1),
             'kamino_supply_usdg':      ('S2_KAMINO_LEND_USDG', 5),
@@ -338,14 +362,14 @@ def main():
             'kamino_borrow_usdg':      ('S2_KAMINO_BORROW_USDG', 1),
             'kamino_kvault_usx_usdg':  ('S2_KAMINO_KVAULT_USDG_USX', 10),
         }),
-        ('S2_LOOPSCALE', LOOP_SIGN, {
+        ('S2_LOOPSCALE', 'loopscale', LOOP_SIGN, {
             'loopscale_supply_usx':    ('S2_LOOPSCALE_SUPPLY_USX_ONE', 5),
             'loopscale_borrow_usx':    ('S2_LOOPSCALE_BORROW_USX', 1),
         }),
     ]
     # For each cache, integrate per-position USD-over-time, summed across the
     # wallet's positions, weighted by each quest's multiplier.
-    for cache_key, sign_map, pos_to_quest_mult in PROTOCOL_SPECS:
+    for cache_key, partner, sign_map, pos_to_quest_mult in PROTOCOL_SPECS:
         for r in con.execute("SELECT wallet, raw_json FROM quest_cache WHERE quest_key=?", (cache_key,)):
             if r['wallet'] in pda_set: continue
             try: raw = json.loads(r['raw_json'])
@@ -375,20 +399,35 @@ def main():
                     per_day = [v * k for v in per_day]
                 elif target > 0 and not segs:
                     per_day = [target / n_days] * n_days
-                for i, v in enumerate(per_day): day_totals[i] += v
+                elif target <= 0:
+                    # wallet_quests zeroed this (CLMM in-range gating, Kamino
+                    # event integration with closed positions, etc.) — keep chart
+                    # in lock-step with the dashboard.
+                    per_day = [0.0] * n_days
+                _add(partner, per_day)
 
     # Build output: day_totals[i] = inflation on day i; cumulative is the running sum.
+    # Also emit per-partner cumulative + inflation so the frontend can render a
+    # stacked / filtered view.
+    partners = sorted(partner_day_totals.keys())
+    partner_cum = {p: 0.0 for p in partners}
     out_days = []
     cum = 0.0
     for i, end in enumerate(day_ends):
         cum += day_totals[i]
-        d = datetime.fromtimestamp(end - 1, tz=timezone.utc)
-        out_days.append({
-            'date': d.strftime('%Y-%m-%d'),
-            'cumulative': round(cum, 0),
-            'inflation': round(day_totals[i], 0),
-        })
+        row = {'date': datetime.fromtimestamp(end - 1, tz=timezone.utc).strftime('%Y-%m-%d'),
+               'cumulative': round(cum, 0),
+               'inflation': round(day_totals[i], 0),
+               'by_partner': {}}
+        for p in partners:
+            partner_cum[p] += partner_day_totals[p][i]
+            row['by_partner'][p] = {
+                'cumulative': round(partner_cum[p], 0),
+                'inflation': round(partner_day_totals[p][i], 0),
+            }
+        out_days.append(row)
     final_cum = cum
+    partner_grand_totals = {p: round(partner_cum[p], 0) for p in partners}
 
     grand_db = con.execute("SELECT SUM(flares) FROM wallet_quests WHERE flares > 0").fetchone()[0] or 0
     pda_excl = con.execute(
@@ -401,6 +440,8 @@ def main():
         'generated_at_utc': datetime.now(timezone.utc).isoformat(),
         's2_start_ts': S2_START_TS,
         'last_complete_midnight_ts': end_ts,
+        'partners': partners,
+        'partner_totals': partner_grand_totals,
         'days': out_days,
         'sources': {
             'reconstructed_through_last_midnight': round(final_cum, 0),

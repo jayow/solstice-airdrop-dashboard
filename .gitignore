@@ -52,3 +52,6 @@ web/.vercel/
 # Root-level Next or Node build artifacts
 .next/
 node_modules/
+
+# Static-flares Vercel deploy staging dir (regenerated from server/ each deploy)
+flares-deploy/

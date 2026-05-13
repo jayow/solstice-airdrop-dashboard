@@ -17,6 +17,7 @@ from collections import defaultdict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import db as fdb
+from snapshot_ts import last_snapshot_ts
 
 S2_START_TS = 1776038400
 S2_END_TS   = 1785024000
@@ -104,7 +105,7 @@ def run_all():
     rows = con.execute(
         "SELECT wallet, raw_json FROM quest_cache WHERE quest_key='S2_LOOPSCALE'"
     ).fetchall()
-    now_ts = int(time.time())
+    now_ts = last_snapshot_ts()
     n_updated = 0
     old_sum = 0.0; new_sum = 0.0
     for r in rows:

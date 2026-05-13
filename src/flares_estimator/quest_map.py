@@ -28,10 +28,10 @@ QUESTS = [
      "qualifier": "daily"},
     {"code": "S2_HOLD_USX_1MO",     "type": "HOLD",     "protocol": "solstice",   "mult": 6,
      "mint": "6FrrzDk5mQARGc1TDYoyVnSyRdds1t4PbtohCD6p3tgG",  "min": 100,
-     "qualifier": "held_30d"},
+     "qualifier": "held_30d", "disabled": True},  # not activated by Solstice yet
     {"code": "S2_HOLD_USX_3MO",     "type": "HOLD",     "protocol": "solstice",   "mult": 15,
      "mint": "6FrrzDk5mQARGc1TDYoyVnSyRdds1t4PbtohCD6p3tgG",  "min": 100,
-     "qualifier": "held_90d"},
+     "qualifier": "held_90d", "disabled": True},  # not activated by Solstice yet
 
     # YIELD VAULT — eUSX holdings
     {"code": "S2_HOLD_EUSX_DAILY",  "type": "HOLD",     "protocol": "yield_vault","mult": 2,
@@ -39,10 +39,10 @@ QUESTS = [
      "qualifier": "daily"},
     {"code": "S2_HOLD_EUSX_1MO",    "type": "HOLD",     "protocol": "yield_vault","mult": 4,
      "mint": "3ThdFZQKM6kRyVGLG48kaPg5TRMhYMKY1iCRa9xop1WC",  "min": 100,
-     "qualifier": "held_30d"},
+     "qualifier": "held_30d", "disabled": True},  # not activated by Solstice yet
     {"code": "S2_HOLD_EUSX_3MO",    "type": "HOLD",     "protocol": "yield_vault","mult": 10,
      "mint": "3ThdFZQKM6kRyVGLG48kaPg5TRMhYMKY1iCRa9xop1WC",  "min": 100,
-     "qualifier": "held_90d"},
+     "qualifier": "held_90d", "disabled": True},  # not activated by Solstice yet
 
     # EXPONENT — yield trading + LP
     {"code": "S2_EXPONENT_YIELD_USX_JUN26",   "type": "YIELD_TRADE",        "protocol": "exponent",  "mult": 30,

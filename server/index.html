@@ -43,15 +43,30 @@ header { display: flex; align-items: center; justify-content: space-between; mar
 .right-links a.featured:hover { color: var(--accent-200); }
 .right-links .sep { color: var(--ink-500); }
 
-/* 5-card stats grid */
-.stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1px;
-         background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.06);
-         border-radius: 16px; overflow: hidden; margin-bottom: 40px; }
-@media (min-width: 768px) { .stats { grid-template-columns: repeat(4, 1fr); } }
-.stat { background: var(--ink-950); padding: 20px; }
-.stat .v { font-size: 22px; margin-top: 8px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+/* Stats + donut: side-by-side on desktop, stacked on mobile.
+   Stats are bare text (no card enclosure) so they sit lightly next to the donut. */
+.stats-row { display: grid; grid-template-columns: 1fr; gap: 24px;
+             margin-bottom: 48px; align-items: center; }
+@media (min-width: 980px) { .stats-row { grid-template-columns: 1fr 340px; } }
+
+.stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 28px 40px;
+         margin-bottom: 0; }
+.stat { padding: 0; background: transparent; }
+.stat .v { font-size: 26px; margin-top: 6px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
 .stat .v.accent { color: var(--accent-300); }
-.stat .sub { font-size: 11px; color: var(--ink-400); font-variant-numeric: tabular-nums; margin-top: 2px; }
+.stat .sub { font-size: 11px; color: var(--ink-500); font-variant-numeric: tabular-nums; margin-top: 4px; }
+
+/* Custom tooltip — appears instantly on hover, follows cursor */
+#hover-tooltip {
+  position: fixed; pointer-events: none; z-index: 9999;
+  background: rgba(15, 17, 22, 0.96); border: 1px solid rgba(255,255,255,.12);
+  border-radius: 8px; padding: 8px 12px; font-size: 12px; color: var(--ink-100);
+  font-variant-numeric: tabular-nums; white-space: pre-line;
+  box-shadow: 0 8px 24px rgba(0,0,0,.4);
+  opacity: 0; transition: opacity .08s;
+}
+#hover-tooltip.visible { opacity: 1; }
+.has-hover-tip { cursor: default; }
 
 section { margin-bottom: 56px; }
 section h2 { font-size: 18px; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 16px; }
@@ -81,7 +96,7 @@ td.left, th.left { text-align: left; }
 tbody tr { border-top: 1px solid rgba(255,255,255,.04); transition: background .1s; }
 tbody tr:hover { background: rgba(255,255,255,.015); }
 
-.wallet { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11.5px; }
+.wallet { font-family: inherit; font-variant-numeric: tabular-nums; font-size: 13px; }
 .wallet a { color: var(--ink-200); text-decoration: none; transition: color .1s; }
 .wallet a:hover { color: var(--accent-300); }
 .tag { display: inline-block; padding: 2px 7px; border-radius: 999px; font-size: 9.5px;
@@ -113,26 +128,33 @@ footer { text-align: center; color: var(--ink-500); font-size: 11px; margin-top:
 <main>
   <header>
     <div class="brand">
-      <a href="https://solstice.finance" target="_blank" rel="noopener noreferrer">
-        <span class="display tabular">Solstice</span>
+      <a href="https://solstice.finance" target="_blank" rel="noopener noreferrer" style="display:inline-flex; align-items:center;">
+        <img src="logos/solstice-text.svg" alt="Solstice" style="height: 33px; display:block; filter: invert(1);" />
       </a>
       <span class="sep">·</span>
-      <span class="display" style="font-size: 13px;">S2 Flares Tracker</span>
+      <span class="display" style="font-size: 12px; color: var(--ink-400);">
+        Unofficial S2 Flares by
+        <a href="https://hanyon.app" target="_blank" rel="noopener noreferrer" style="color: var(--ink-200); text-decoration: underline dotted; text-underline-offset: 3px;">Hanyon Analytics</a>
+      </span>
     </div>
     <div class="right-links">
-      <a href="/" class="featured">Season 1 ↗</a>
+      <a href="https://airdrop.solstice.hanyon.app/" target="_blank" rel="noopener noreferrer">Season 1 ↗</a>
       <span class="sep">·</span>
-      <a href="https://hanyon.app" target="_blank" rel="noopener noreferrer">Made by Hanyon Analytics</a>
+      <a href="https://app.solstice.finance/?ref=z763qy4JcE" class="featured" target="_blank" rel="noopener noreferrer">Join Solstice ↗</a>
     </div>
   </header>
 
-  <section class="stats" id="stats"></section>
+  <div class="stats-row">
+    <section class="stats" id="stats"></section>
+    <section id="partner-stats" style="margin: 0;"></section>
+  </div>
+  <div id="hover-tooltip"></div>
 
   <section id="chart-section" style="margin-bottom:40px;">
     <div class="section-head">
-      <h2 class="display">Daily flares</h2>
+      <h2 class="display">Flares by partner</h2>
       <span class="section-sub">
-        <button id="chart-mode" onclick="toggleChartMode()" style="background:transparent; border:1px solid rgba(255,255,255,.1); color:var(--ink-300); padding:4px 10px; border-radius:6px; cursor:pointer; font-size:11px;">Daily emission ▼</button>
+        <button id="chart-mode" onclick="toggleChartMode()" style="background:transparent; border:1px solid rgba(255,255,255,.1); color:var(--ink-300); padding:4px 10px; border-radius:6px; cursor:pointer; font-size:11px;">Cumulative ▼</button>
       </span>
     </div>
     <div class="surface" style="padding:24px;">
@@ -147,7 +169,6 @@ footer { text-align: center; color: var(--ink-500); font-size: 11px; margin-top:
   <section>
     <div class="section-head">
       <h2 class="display">Season 2 Flares</h2>
-      <span class="section-sub" id="updated"></span>
     </div>
     <div class="surface">
       <div class="controls">
@@ -511,6 +532,16 @@ async function openDrawer(addr) {
     document.getElementById('dr-content').innerHTML = '<div style="color:#f87171; padding:20px 0;">No data found for this wallet.</div>';
     return;
   }
+  // Hide quests that Solstice hasn't activated yet (currently 1MO/3MO HOLD bonuses).
+  // Filter at render time so we can re-enable instantly when Solstice flips the switch
+  // without re-running the pipeline.
+  const DISABLED_QUESTS = new Set([
+    'S2_HOLD_USX_1MO', 'S2_HOLD_USX_3MO',
+    'S2_HOLD_EUSX_1MO', 'S2_HOLD_EUSX_3MO',
+  ]);
+  if (Array.isArray(p.by_quest)) {
+    p.by_quest = p.by_quest.filter(q => !DISABLED_QUESTS.has(q.quest));
+  }
   const meta = p.meta || {};
   const bits = [];
   if (meta.classification) bits.push(meta.classification);
@@ -603,9 +634,8 @@ function renderHoldBlock(p, kind) {
   if (!ev) return '';
   const flaresMap = _flaresByQuest(p);
   const dailyQ = `S2_HOLD_${kind === 'USX' ? 'USX' : 'EUSX'}_DAILY`;
-  const moQ    = `S2_HOLD_${kind === 'USX' ? 'USX' : 'EUSX'}_1MO`;
-  const triMoQ = `S2_HOLD_${kind === 'USX' ? 'USX' : 'EUSX'}_3MO`;
-  const total = (flaresMap[dailyQ]||0) + (flaresMap[moQ]||0) + (flaresMap[triMoQ]||0);
+  // 1MO / 3MO bonuses aren't activated by Solstice yet — hide entirely until they are.
+  const total = (flaresMap[dailyQ]||0);
   const tl = ev.timeline || [];
   if (!tl.length && total === 0) return '';
   const currentBal = tl.length ? tl[tl.length-1][1] : 0;
@@ -631,16 +661,12 @@ function renderHoldBlock(p, kind) {
 
   const atas = (ev.atas || []).map(a => `<a href="https://solscan.io/account/${a}" target="_blank" style="color:inherit;text-decoration:underline dotted;">${a.slice(0,10)}…</a>`).join(', ');
 
-  const moStatus = (flaresMap[moQ]||0) > 0 ? '<span class="badge-earning">● 1MO bonus active</span>' : '<span class="badge-dim">○ 1MO not yet</span>';
-  const triStatus = (flaresMap[triMoQ]||0) > 0 ? '<span class="badge-earning">● 3MO bonus active</span>' : '<span class="badge-dim">○ 3MO not yet</span>';
-
   const earning = currentBal > 0;
   return `<div class="evt-section-head">${_protoHeader(`Hold ${kind}`, total, earning)}</div>
   <div class="pos-card">
     <div class="pos-meta">
       <span><strong style="color:var(--ink-200);">${currentBal.toLocaleString(undefined,{maximumFractionDigits:4})}</strong> ${kind} held</span>
       ${atas ? `<span>ATA ${atas}</span>` : ''}
-      ${moStatus} ${triStatus}
     </div>
     ${tradesHtml}
   </div>`;
@@ -1014,7 +1040,7 @@ const short = w => w.slice(0,6) + "…" + w.slice(-4);
 let HIDE_PDAS = localStorage.getItem('hidePDAs') !== '0';  // default: hide
 
 let DAILY = null;
-let CHART_MODE = 'inflation';   // 'inflation' or 'cumulative'
+let CHART_MODE = 'cumulative';   // default; toggle flips to 'inflation' (daily emission)
 
 async function load() {
   const r = await fetch("data.json");
@@ -1033,7 +1059,7 @@ async function load() {
   const byTotalReal = byTotalAll.filter(r => !r.is_protocol_pda);
   byTotalReal.forEach((r, i) => { r._realRank = i + 1; });
   const updated = new Date(RAW.generated_at_utc).toLocaleString();
-  document.getElementById("updated").textContent = "updated " + updated;
+  // (updated-timestamp label removed)
   document.getElementById("footer-time").textContent = updated;
   // Sync toggle button state
   const btn = document.getElementById('toggle-pdas');
@@ -1043,8 +1069,8 @@ async function load() {
 }
 
 function toggleChartMode() {
-  CHART_MODE = CHART_MODE === 'inflation' ? 'cumulative' : 'inflation';
-  document.getElementById('chart-mode').textContent = CHART_MODE === 'inflation' ? 'Daily emission ▼' : 'Cumulative total ▼';
+  CHART_MODE = CHART_MODE === 'cumulative' ? 'inflation' : 'cumulative';
+  document.getElementById('chart-mode').textContent = CHART_MODE === 'cumulative' ? 'Cumulative ▼' : 'Daily emission ▼';
   renderChart();
 }
 
@@ -1055,9 +1081,11 @@ function renderChart() {
     return;
   }
   const days = DAILY.days;
-  // Each row is a completed day boundary at 00:00 UTC (Solstice snapshot
-  // cadence). Today is omitted entirely until tomorrow's 00:00 UTC.
-  const values = days.map(d => CHART_MODE === 'inflation' ? d.inflation : d.cumulative);
+  const partners = DAILY.partners || [];
+  // Per-bar total used for axis scaling — depends on mode.
+  // - cumulative: each bar height = cumulative total through that day
+  // - inflation:  each bar height = day's emission
+  const values = days.map(d => CHART_MODE === 'cumulative' ? d.cumulative : d.inflation);
   const max = Math.max(...values, 1);
   const chart = document.getElementById('chart');
   const xax = document.getElementById('chart-x-axis');
@@ -1073,15 +1101,33 @@ function renderChart() {
     }
     yax.innerHTML = yhtml;
   }
+  // Sort partners by total descending so the biggest sits at the bottom of
+  // the stack (visually anchored, smaller partners read at top).
+  const partnerOrder = partners.slice().sort((a, b) =>
+    (DAILY.partner_totals?.[b] || 0) - (DAILY.partner_totals?.[a] || 0));
+  // Per-day partner value selector: cumulative or daily inflation.
+  const partnerVal = (d, p) => {
+    if (!d.by_partner || !d.by_partner[p]) return 0;
+    return CHART_MODE === 'cumulative' ? d.by_partner[p].cumulative : d.by_partner[p].inflation;
+  };
   chart.innerHTML = days.map((d, i) => {
     const v = values[i];
-    const h = Math.max(1, Math.round(v / max * 240));
     const fmtV = fmtAxis(v);
-    const tooltip = `${d.date}: ${v.toLocaleString(undefined,{maximumFractionDigits:0})} flares`;
-    const bg = 'linear-gradient(180deg, var(--accent-300), var(--accent-500))';
-    return `<div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; min-width:0; gap:3px;" title="${tooltip}">
+    let segs = '';
+    let partsTooltip = [];
+    for (const p of partnerOrder) {
+      const flv = partnerVal(d, p);
+      if (flv <= 0) continue;
+      const segH = Math.max(0.5, Math.round(flv / max * 240));
+      segs += `<div style="height:${segH}px; background:${PARTNER_COLORS[p] || '#888'};"></div>`;
+      partsTooltip.push(`${PARTNER_LABELS[p] || p}: ${fmtAxis(flv)}`);
+    }
+    const inner = `<div style="width:100%; max-width:18px; display:flex; flex-direction:column-reverse; border-radius:2px 2px 0 0; overflow:hidden;">${segs}</div>`;
+    const modeLabel = CHART_MODE === 'cumulative' ? 'Cumulative' : 'Daily';
+    const tip = `${d.date}\n${modeLabel}: ${fmtAxis(v)}\n${partsTooltip.join('\n')}`;
+    return `<div class="has-hover-tip" data-tip="${tip.replace(/"/g,'&quot;')}" style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; min-width:0; gap:3px;">
       <div style="font-size:9px; color:var(--ink-300); font-variant-numeric:tabular-nums; line-height:1; white-space:nowrap;">${fmtV}</div>
-      <div style="width:100%; max-width:18px; height:${h}px; background:${bg}; border-radius:2px 2px 0 0; transition:height .2s;"></div>
+      ${inner}
     </div>`;
   }).join('');
   // X-axis: show every 3rd day's date for readability
@@ -1090,6 +1136,18 @@ function renderChart() {
     const lbl = show ? d.date.slice(5) : '';
     return `<div style="flex:1; text-align:center; min-width:0; overflow:hidden;">${lbl}</div>`;
   }).join('');
+  // Per-partner legend below the chart (always shown — chart is always stacked).
+  let legendEl = document.getElementById('chart-partner-legend');
+  if (!legendEl) {
+    legendEl = document.createElement('div');
+    legendEl.id = 'chart-partner-legend';
+    legendEl.style.cssText = 'display:flex; flex-wrap:wrap; gap:12px; margin-top:12px; padding-left:54px; font-size:10px; color:var(--ink-400);';
+    xax.parentElement.appendChild(legendEl);
+  }
+  legendEl.innerHTML = partnerOrder
+    .filter(p => (DAILY.partner_totals?.[p] || 0) > 0)
+    .map(p => `<span style="display:inline-flex; align-items:center; gap:6px;"><span style="width:8px; height:8px; border-radius:2px; background:${PARTNER_COLORS[p] || '#888'};"></span>${PARTNER_LABELS[p] || p}</span>`)
+    .join('');
 }
 
 function togglePDAs() {
@@ -1129,7 +1187,114 @@ function renderStats() {
       <div class="sub">${all.length ? (newS2/all.length*100).toFixed(1) : '0'}% of earners</div>
     </div>
   `;
+  renderPartnerStats();
 }
+
+const PARTNER_LABELS = {
+  solstice: 'Solstice (USX hold)',
+  yield_vault: 'Yield Vault (eUSX hold)',
+  exponent: 'Exponent',
+  kamino: 'Kamino',
+  whirlpool: 'Orca',
+  raydium: 'Raydium',
+  loopscale: 'Loopscale',
+};
+
+// One color per partner — kept consistent between the donut and stacked chart.
+const PARTNER_COLORS = {
+  exponent:    '#7c5cff',  // purple
+  whirlpool:   '#22d3ee',  // cyan
+  kamino:      '#f59e0b',  // amber
+  solstice:    '#fb7185',  // pink/coral
+  raydium:     '#3b82f6',  // blue (distinct from exponent's purple)
+  loopscale:   '#34d399',  // emerald
+  yield_vault: '#fbbf24',  // yellow
+};
+
+function _partnerRows(allRecords) {
+  const partners = RAW.partners || ['solstice','yield_vault','exponent','kamino','whirlpool','raydium','loopscale'];
+  const totals = Object.fromEntries(partners.map(p => [p, 0]));
+  let grand = 0;
+  for (const r of allRecords) for (const p of partners) { const v = r[p] || 0; totals[p] += v; grand += v; }
+  let lastDayByPartner = {};
+  if (DAILY && DAILY.days && DAILY.days.length) {
+    const last = DAILY.days[DAILY.days.length - 1];
+    for (const p of partners) lastDayByPartner[p] = (last.by_partner && last.by_partner[p] && last.by_partner[p].inflation) || 0;
+  }
+  const rows = partners.map(p => ({p, tot: totals[p], rate: lastDayByPartner[p] || 0}))
+                      .filter(r => r.tot > 0)
+                      .sort((a, b) => b.tot - a.tot);
+  return {rows, grand};
+}
+
+function renderPartnerStats() {
+  const all = HIDE_PDAS ? RAW.records.filter(r => !r.is_protocol_pda) : RAW.records;
+  const {rows, grand} = _partnerRows(all);
+  if (!rows.length) {
+    document.getElementById('partner-stats').innerHTML = ''; return;
+  }
+  const size = 200, stroke = 28, radius = (size - stroke) / 2, circ = 2 * Math.PI * radius;
+  let offset = 0;
+  const arcs = rows.map(r => {
+    const frac = r.tot / grand;
+    const dash = circ * frac;
+    const tip = `${PARTNER_LABELS[r.p] || r.p}\n${fmt(r.tot)} flares\n${(frac*100).toFixed(1)}% · +${fmt(r.rate)}/day`;
+    const seg = `<circle r="${radius}" cx="${size/2}" cy="${size/2}"
+                         fill="none" stroke="${PARTNER_COLORS[r.p] || '#888'}" stroke-width="${stroke}"
+                         stroke-dasharray="${dash} ${circ - dash}" stroke-dashoffset="${-offset}"
+                         transform="rotate(-90 ${size/2} ${size/2})"
+                         class="has-hover-tip"
+                         data-tip="${tip.replace(/"/g,'&quot;')}"></circle>`;
+    offset += dash;
+    return seg;
+  }).join('');
+  // Compact legend — color chip + name only, no numbers (tooltip on donut handles those).
+  const legend = rows.map(r => `
+      <span style="display:inline-flex; align-items:center; gap:6px; font-size:11px; color:var(--ink-300);">
+        <span style="width:10px; height:10px; border-radius:2px; background:${PARTNER_COLORS[r.p] || '#888'}; display:inline-block;"></span>${PARTNER_LABELS[r.p] || r.p}
+      </span>`).join('');
+  document.getElementById('partner-stats').innerHTML = `
+    <div style="display:flex; flex-direction:column; align-items:center; gap:14px;">
+      <div style="position:relative; width:${size}px; height:${size}px;">
+        <svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}">${arcs}</svg>
+        <div style="position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; pointer-events:none;">
+          <div style="font-size:10px; color:var(--ink-500); text-transform:uppercase; letter-spacing:0.14em;">By partner</div>
+          <div class="tabular accent" style="font-size:18px; font-weight:600; margin-top:4px;">${fmt(grand)}</div>
+        </div>
+      </div>
+      <div style="display:flex; flex-wrap:wrap; gap:8px 14px; justify-content:center;">${legend}</div>
+    </div>
+  `;
+}
+
+// === Custom fast tooltip ===
+// `title=""` attribute has a ~700ms delay before the browser shows it. We
+// roll our own that appears within ~80ms, follows the cursor, and supports
+// multi-line content via `data-tip` (newline-separated).
+(function initHoverTip(){
+  const tip = document.getElementById('hover-tooltip');
+  if (!tip) return;
+  document.addEventListener('mousemove', (e) => {
+    const t = e.target.closest('.has-hover-tip');
+    if (!t) {
+      tip.classList.remove('visible');
+      return;
+    }
+    const text = t.getAttribute('data-tip');
+    if (!text) return;
+    tip.textContent = text;
+    // Position above-right of cursor; nudge if overflowing right edge.
+    const x = e.clientX + 14, y = e.clientY + 14;
+    tip.style.left = x + 'px';
+    tip.style.top  = y + 'px';
+    tip.classList.add('visible');
+    // After placement, check overflow and flip to left side if needed.
+    const r = tip.getBoundingClientRect();
+    if (r.right > window.innerWidth - 8) tip.style.left = (e.clientX - r.width - 14) + 'px';
+    if (r.bottom > window.innerHeight - 8) tip.style.top = (e.clientY - r.height - 14) + 'px';
+  });
+  document.addEventListener('mouseleave', () => tip.classList.remove('visible'));
+})();
 
 function applyFilters() {
   const q = document.getElementById("search").value.trim().toLowerCase();

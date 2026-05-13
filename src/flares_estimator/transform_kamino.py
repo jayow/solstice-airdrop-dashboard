@@ -28,6 +28,7 @@ from collections import defaultdict
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import db as fdb
 from quests.eusx_peg import peg_at as eusx_peg_at
+from snapshot_ts import last_snapshot_ts
 
 S2_START_TS = 1776038400
 S2_END_TS   = 1785024000
@@ -164,7 +165,7 @@ def run_all():
     rows = con.execute(
         "SELECT wallet, raw_json FROM quest_cache WHERE quest_key='S2_KAMINO'"
     ).fetchall()
-    now_ts = int(time.time())
+    now_ts = last_snapshot_ts()
     all_quests = ['S2_KAMINO_LEND_USX', 'S2_KAMINO_LEND_EUSX', 'S2_KAMINO_LEND_USDG',
                   'S2_KAMINO_BORROW_USX', 'S2_KAMINO_BORROW_USDG']
     n_updated = 0
