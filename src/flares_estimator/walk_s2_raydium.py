@@ -99,12 +99,18 @@ def main():
         'collectfees','collectfeesv2','collectreward','collectrewardv2',
         'swap','swapv2','swapbaseinput','swapbaseoutput',
     }
-    RELEVANT_MINTS = {
-        '6FrrzDk5mQARGc1TDYoyVnSyRdds1t4PbtohCD6p3tgG',  # USX
-        '3ThdFZQKM6kRyVGLG48kaPg5TRMhYMKY1iCRa9xop1WC',  # eUSX
-        '2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH',  # USDG
-        'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',  # USDC
+    INCREASE_IXS = {'increaseliquidity','increaseliquidityv2',
+                    'openposition','openpositionv2',
+                    'openpositionwithtokenextensions','openpositionwithtoken22nft'}
+    DECREASE_IXS = {'decreaseliquidity','decreaseliquidityv2',
+                    'closeposition','closepositionwithtokenextensions','closepositionwithtoken22nft'}
+    MINT_USD = {
+        '6FrrzDk5mQARGc1TDYoyVnSyRdds1t4PbtohCD6p3tgG': 1.0,   # USX
+        '3ThdFZQKM6kRyVGLG48kaPg5TRMhYMKY1iCRa9xop1WC': 1.156, # eUSX
+        '2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH': 1.0,   # USDG
+        'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v': 1.0,   # USDC
     }
+    RELEVANT_MINTS = set(MINT_USD.keys())
 
     for quest, cfg in POOLS.items():
         pool_addr = cfg['addr']; mult = cfg['mult']
@@ -178,6 +184,49 @@ def main():
                 if d > 0: deltas[b['mint']] = deltas.get(b['mint'], 0) + d
             return {'ix': ix_name, 'deltas': [{'mint': m, 'amt': a} for m, a in deltas.items()]}
 
+        def _event_usd_change(ev):
+            ix = (ev.get('ix') or '').lower()
+            if ix in INCREASE_IXS: sign = +1
+            elif ix in DECREASE_IXS: sign = -1
+            else: return 0.0
+            s = 0.0
+            for d in (ev.get('deltas') or []):
+                amt = float(d.get('amt') or 0)
+                s += MINT_USD.get(d.get('mint'), 0.0) * amt
+            return sign * s
+
+        def _integrate_position(events, current_usd):
+            evs = sorted([e for e in events if e.get('ts')], key=lambda e: e['ts'])
+            if not evs:
+                days = (now_ts - S2_START_TS) / 86400
+                return current_usd * days if days >= MIN_HOLD_DAYS else 0.0
+            usd_running = 0.0
+            timeline = []
+            for e in evs:
+                usd_running = max(0.0, usd_running + _event_usd_change(e))
+                timeline.append((e['ts'], usd_running))
+            last_usd = timeline[-1][1] if timeline else 0.0
+            scale = (current_usd / last_usd) if (last_usd > 0 and current_usd > 0) else 1.0
+            carry_in = 0.0
+            for t, u in timeline:
+                if t < S2_START_TS: carry_in = u
+                else: break
+            usd_days = 0.0
+            prev_t = S2_START_TS
+            prev_u = carry_in * scale
+            for t, u in timeline:
+                if t < S2_START_TS: continue
+                dt = (t - prev_t) / 86400
+                if dt > 0 and prev_u > 0:
+                    usd_days += prev_u * dt
+                prev_t = t
+                prev_u = u * scale
+            if prev_u > 0 and prev_t < now_ts:
+                dt = (now_ts - prev_t) / 86400
+                if dt > 0:
+                    usd_days += prev_u * dt
+            return usd_days
+
         def walk(args):
             owner, pos_pubkey, mint, usd = args
             existing = existing_by_owner_pos.get((owner, pos_pubkey), [])
@@ -186,14 +235,9 @@ def main():
             position_events_by_owner[owner].extend(existing)
             position_events_by_owner[owner].extend(new_evs)
             all_evs = existing + new_evs
-            if not all_evs:
-                days = (now_ts - S2_START_TS) / 86400
-            else:
-                first_ts = min((e.get('ts') for e in all_evs if e.get('ts')), default=S2_START_TS)
-                first_ts = max(first_ts, S2_START_TS)
-                days = (now_ts - first_ts) / 86400
-            if days < MIN_HOLD_DAYS: return None
-            return owner, usd * days * mult
+            usd_days = _integrate_position(all_evs, usd)
+            if usd_days <= 0: return None
+            return owner, usd_days * mult
 
         with ThreadPoolExecutor(max_workers=12) as ex:
             futs = [ex.submit(walk, po) for po in position_owners]

@@ -28,7 +28,7 @@ contribution is over-estimated. A future per-segment decay model would correct i
 import os, sys, time, base64, base58, struct
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from rpc_helper import rpc
-from .base import QuestExtractor, S2_START_TS, S2_END_TS
+from .base import QuestExtractor, S2_START_TS, S2_END_TS, load_quest_cache
 
 EXPONENT_CORE = "ExponentnaRg3CQbW6dqQNZKXp7gtZ9DGMp1cwC4HAS7"
 
@@ -36,9 +36,11 @@ EXPONENT_CORE = "ExponentnaRg3CQbW6dqQNZKXp7gtZ9DGMp1cwC4HAS7"
 #   daily_flares = yt_amount × multiplier × 1.0
 # Exact match: 85,951.41 × 30 = 2,578,542.3 (dashboard: 2,578,542)
 #
-# Only v2/e35c92 positions (created via WrapperBuyYt — the intentional YT bet)
-# emit flares. v1 size-168 PDAs that exist from LP cycles carry stale "yt residue"
-# that doesn't earn flares despite having non-zero yt_amount + offset_112.
+# Inclusion rule (per indexing-exponent-yt memory, empirically validated):
+# a position counts only if its newest pre-S2 sig was NOT a closing
+# instruction. Both V1 and V2 struct shapes can be valid; the discriminator
+# is sig-walk, not struct disc. On-chain `yt_amount` is stale on V1 after
+# withdraws so reading it alone over-counts.
 BASE_RATE_PER_YT_PER_DAY_PER_MULT = 1.0
 
 MARKETS = {
@@ -127,29 +129,24 @@ def _get_yieldpositions(wallet: str) -> list:
         off40 = base58.b58encode(d[40:72]).decode()
 
         if disc == V1_DISC and size == 168:
-            # v1 YieldPosition — typically from LP / addLiq cycles. These can
-            # have residual yt_amount + non-zero offset_112 accumulator, but
-            # Solstice does NOT pay flares for them (they're not active YT bets).
-            # We record them but force is_emitting=False so they don't double-count.
+            # V1 YieldPosition — market PDA stored DIRECTLY at offset 40.
             market = off40
             yt_amount = struct.unpack("<Q", d[128:136])[0] / 1e6
-            is_emitting = False
-            kind = "v1_lp_residue"
+            kind = "V1"
         elif disc == V2_DISC and size in (124, 164, 204):
-            # v2/alt position — created via WrapperBuyYt, this IS the active YT bet.
-            # off40 is the yield_pool alias; resolve to its parent market.
+            # V2 position — offset 40 is an alias to the yield_pool; resolve
+            # via the market xref (which includes self-mappings, offset-40
+            # aliases, and offset-104 aliases).
             market = xref.get(off40)
-            if market is None: continue  # unknown market; not Solstice-incentivized
+            if market is None: continue
             yt_amount = struct.unpack("<Q", d[72:80])[0] / 1e6
-            is_emitting = yt_amount > 0
-            kind = "v2_active"
+            kind = "V2"
         else:
-            continue  # other account types — not YT positions
+            continue
 
         out.append({
             "pubkey": a["pubkey"], "market": market,
-            "yt_amount_now": yt_amount, "is_emitting": is_emitting,
-            "kind": kind,
+            "yt_amount_now": yt_amount, "kind": kind,
         })
     return out
 
@@ -301,36 +298,210 @@ def _integrate_yt(timeline: list, rate_per_yt_per_day: float, end_ts: int) -> fl
     return flares
 
 
+# Wrapper-level instructions that express the user's intent on a YieldPosition.
+# A "closing" intent burns/removes YT; an "opening" one adds it. The on-chain
+# yt_amount field on V1 LP-residue positions does NOT zero on close, so we
+# must classify by intent, not by the field value.
+_CLOSING_IXS = {
+    "WrapperSellYt", "WrapperRedeemYt",
+    "WrapperWithdrawLiquidity", "WrapperWithdrawLiquidityBase",
+    "WrapperRemoveLiquidity", "WrapperRemoveLiquidityBase",
+}
+_OPENING_IXS = {
+    "WrapperBuyYt", "WrapperMintYt",
+    "WrapperProvideLiquidity", "WrapperProvideLiquidityBase",
+    "WrapperAddLiquidity", "WrapperAddLiquidityBase",
+}
+
+
+def _has_wrapper_buy_yt(sig_info: dict) -> bool:
+    """True if the tx invoked WrapperBuyYt or WrapperMintYt at the wrapper
+    level. Used to distinguish active V1 YT bets from V1 LP-residue (which
+    only see WrapperProvideLiquidity / direct MarketDepositLp)."""
+    try:
+        r = rpc("getTransaction", [sig_info["signature"],
+                {"encoding": "jsonParsed", "maxSupportedTransactionVersion": 0}])
+        tx = r.get("result")
+        if not tx: return False
+        for ln in (tx.get("meta", {}).get("logMessages") or []):
+            if "Program log: Instruction:" not in ln: continue
+            nm = ln.split("Instruction:", 1)[1].strip().split()[0]
+            if nm in ("WrapperBuyYt", "WrapperMintYt"):
+                return True
+    except Exception: pass
+    return False
+
+
+def _classify_position_at_s2(sigs: list) -> str:
+    """Walk all pre-S2 sigs of the position. Return:
+      'closed' — newest opening/closing intent is a closing one (user exited).
+      'open'   — newest opening/closing intent is an opening one OR no intents
+                 are visible (default trust the on-chain yt_amount).
+
+    Scans every tx's logs for a wrapper-level instruction name; classifies by
+    intent. The newest-timestamp intent wins. (Sub-instructions like
+    MarketDepositLp / MarketWithdrawLp aren't user intents — they're inner
+    invocations and are ignored.)"""
+    pre_s2 = [s for s in sigs if (s.get("blockTime") or 0) < S2_START_TS]
+    if not pre_s2: return "open"
+
+    latest_intent_ts = -1
+    latest_intent_kind = None
+    for s in pre_s2:
+        ts = s.get("blockTime") or 0
+        try:
+            r = rpc("getTransaction", [s["signature"],
+                    {"encoding": "jsonParsed", "maxSupportedTransactionVersion": 0}])
+            tx = r.get("result")
+            if not tx: continue
+            for ln in (tx.get("meta", {}).get("logMessages") or []):
+                if "Program log: Instruction:" not in ln: continue
+                nm = ln.split("Instruction:", 1)[1].strip().split()[0]
+                kind = None
+                if nm in _CLOSING_IXS: kind = "closed"
+                elif nm in _OPENING_IXS: kind = "open"
+                if kind and ts >= latest_intent_ts:
+                    latest_intent_ts = ts
+                    latest_intent_kind = kind
+        except Exception:
+            continue
+    return latest_intent_kind or "open"
+
+
+def _build_yt_positions_with_carry(wallet: str) -> dict:
+    """Enumerate the wallet's YT position PDAs and decide each one's S2 carry-in.
+
+    Per the empirical rule (verified for wallet 5V9V against Solstice's own
+    numbers): the on-chain `yt_amount` field on a position PDA can be STALE.
+    V1 LP-residue positions do not zero `yt_amount` when the user withdraws,
+    so reading it alone over-counts. The actual discriminator is whether the
+    NEWEST PRE-S2 SIG on the position is a closing instruction
+    (WrapperWithdrawLiquidity / WrapperSellYt / WrapperRedeemYt / etc.) — if
+    so, the user exited pre-S2 and the position carries 0 YT into S2.
+
+    Returns:
+      {
+        "positions_by_market": {
+          market_pk: [
+            {"pubkey": ..., "kind": "V1"|"V2", "yt_amount_now": float,
+             "carry_in_yt": float, "newest_pre_s2_closing": bool,
+             "timeline": [[ts, yt], ...]}
+          ]
+        },
+        "_watermark": {...}
+      }
+    """
+    positions = _get_yieldpositions(wallet)
+    by_market = {}
+    last_slot = 0
+    end_ts = min(int(time.time()), S2_END_TS)
+
+    for pos in positions:
+        market = pos["market"]
+        if market not in MARKETS: continue
+        sigs = _walk_pda_sigs(pos["pubkey"])
+        if sigs:
+            last_slot = max(last_slot, max((s.get("slot") or 0) for s in sigs))
+        state_at_s2 = _classify_position_at_s2(sigs)
+        in_s2_sigs = [s for s in sigs if (s.get("blockTime") or 0) >= S2_START_TS]
+
+        # V1 positions: distinguish active V1 YT from LP-residue. The V1
+        # YieldPosition has yt_amount at offset 128 that gets WRITTEN when LP is
+        # provided (residue from PT/SY strip) but does NOT get reset on LP-burn
+        # at the market level — so it's structurally stale after any LP exit.
+        # The only way V1 yt_amount represents a real YT bet is if the user
+        # ever called WrapperBuyYt against this position. Otherwise it's pure
+        # LP-residue and the YT exposure is already captured by the LP quests.
+        if pos["kind"] == "V1":
+            has_active_yt = any(
+                _has_wrapper_buy_yt(s) for s in sigs
+            ) if sigs else False
+            if not has_active_yt:
+                carry_in = 0.0
+                timeline = [[S2_START_TS, 0.0], [end_ts, 0.0]]
+                state_at_s2 = "v1_lp_residue"
+            elif state_at_s2 == "closed":
+                carry_in = 0.0
+                timeline = [[S2_START_TS, 0.0], [end_ts, 0.0]]
+            else:
+                cur_yt = float(pos["yt_amount_now"])
+                carry_in = cur_yt  # V2-style: take current and walk events
+                timeline = [[S2_START_TS, carry_in], [end_ts, carry_in]]
+        elif state_at_s2 == "closed":
+            # User exited pre-S2; on-chain yt_amount is stale. Zero credit.
+            carry_in = 0.0
+            timeline = [[S2_START_TS, 0.0], [end_ts, 0.0]]
+        else:
+            # Position carried into S2. Derive carry-in by walking S2 sigs to
+            # collect token deltas, then subtracting their net from the current
+            # on-chain yt_amount. The on-chain field is what the wallet has NOW
+            # (post all events), so:
+            #   carry_in = current_yt - sum(s2_deltas)
+            # Walking forward from carry_in then naturally arrives back at
+            # current_yt as the last point. This is the same carry-in pattern
+            # used by transform_kamino.transform_wallet.
+            cur_yt = float(pos["yt_amount_now"])
+            yt_mint = _get_yt_mint(market)
+            s2_deltas = []  # list of (ts, delta)
+            for s in in_s2_sigs:
+                ts = s.get("blockTime") or 0
+                try:
+                    r = rpc("getTransaction", [s["signature"],
+                            {"encoding": "jsonParsed", "maxSupportedTransactionVersion": 0}])
+                    tx = r.get("result")
+                    if not tx: continue
+                    delta = _yt_delta_for_signer(tx, wallet, yt_mint) if yt_mint else None
+                    if delta is None: continue
+                    s2_deltas.append((ts, delta))
+                except Exception:
+                    continue
+            s2_deltas.sort(key=lambda x: x[0])
+            net_s2 = sum(d for _, d in s2_deltas)
+            carry_in = max(0.0, cur_yt - net_s2)
+            timeline = [[S2_START_TS, carry_in]]
+            running = carry_in
+            for ts, d in s2_deltas:
+                running = max(0.0, running + d)
+                timeline.append([ts, running])
+            timeline.append([end_ts, running])
+
+        by_market.setdefault(market, []).append({
+            "pubkey": pos["pubkey"], "kind": pos["kind"],
+            "yt_amount_now": pos["yt_amount_now"],
+            "carry_in_yt": carry_in,
+            "state_at_s2": state_at_s2,
+            "timeline": timeline,
+        })
+
+    return {"positions_by_market": by_market,
+            "_watermark": {"slot": last_slot, "ts": int(time.time())},
+            "schema": "yt_position_v2"}
+
+
 class ExponentYTExtractor(QuestExtractor):
     QUEST_CODE = ("S2_EXPONENT_YIELD_USX_JUN26", "S2_EXPONENT_YIELD_EUSX_JUN26")
     SHARED_CACHE_KEY = "S2_EXPONENT_YT"
 
     def extract(self, wallet: str) -> dict:
-        return _build_yt_timeline(wallet)
+        return _build_yt_positions_with_carry(wallet)
 
     def looks_empty(self, raw: dict) -> bool:
-        # Empty = no positions found in any market.
         return not (raw.get("positions_by_market") or {})
 
     def quick_validate(self, wallet: str) -> bool:
-        # Source B: does the wallet currently hold any of the YT mints
-        # corresponding to our tracked markets? Uses getTokenAccountsByOwner,
-        # a different code path than the walker's getProgramAccounts.
-        for market_pk in MARKETS.keys():
-            try:
-                yt_mint = _get_yt_mint(market_pk)
-                if not yt_mint: continue
-                r = rpc("getTokenAccountsByOwner",
-                        [wallet, {"mint": yt_mint}, {"encoding": "jsonParsed"}],
-                        timeout=15, force_refresh=True)
-                for acc in (r.get("result", {}).get("value", []) or []):
-                    info = acc.get("account", {}).get("data", {})
-                    if not isinstance(info, dict): continue
-                    info = info.get("parsed", {}).get("info", {})
-                    amt = float((info.get("tokenAmount") or {}).get("uiAmount") or 0)
-                    if amt > 0: return True
-            except Exception: continue
-        return False
+        # Source B: does the wallet have ANY Exponent program account at
+        # owner@offset=8? If yes, it has at least one YieldPosition PDA. This
+        # uses getProgramAccounts on the Exponent program, a different code
+        # path than the extractor's per-position sig walk.
+        try:
+            r = rpc("getProgramAccounts", [EXPONENT_CORE, {
+                "encoding": "base64",
+                "filters": [{"memcmp": {"offset": 8, "bytes": wallet}}],
+                "dataSlice": {"offset": 0, "length": 8},
+            }], timeout=30, force_refresh=True)
+            return bool(r.get("result"))
+        except Exception:
+            return False
 
     def transform(self, raw: dict, now_ts: int) -> dict:
         out = {q: 0.0 for q in self.QUEST_CODE}
@@ -340,12 +511,10 @@ class ExponentYTExtractor(QuestExtractor):
             if not cfg: continue
             rate = BASE_RATE_PER_YT_PER_DAY_PER_MULT * cfg["mult"]
             for p in positions:
-                # On-chain rule: any YT held during S2 earns flares. We used to
-                # filter V1 "LP residue" positions out via an is_emitting flag,
-                # but Solstice's actual reward logic credits whatever YT the
-                # wallet holds, so we trust the on-chain timeline as-is.
-                # _integrate_yt is naturally zero when the timeline is all zeros,
-                # so this only adds credit where there's a real non-zero balance.
-                f = _integrate_yt(p["timeline"], rate, end_ts)
+                # Trust the timeline. _build_yt_positions_with_carry already
+                # zeroed it out for positions the user exited pre-S2.
+                tl = p.get("timeline") or []
+                if not tl: continue
+                f = _integrate_yt(tl, rate, end_ts)
                 out[cfg["quest"]] += f
         return out

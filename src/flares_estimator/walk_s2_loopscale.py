@@ -107,8 +107,19 @@ def walk_borrow(now_ts: int):
 
 
 def walk_supply(now_ts: int, share_value: float):
-    """For each USX ONE LP holder, walk their ATA sig history."""
-    # Find all USX ONE LP token accounts across BOTH SPL Token and Token-2022 programs
+    """For each USX ONE LP holder, walk their ATA sig history.
+
+    Loopscale users don't hold LP-USX-ONE in their wallet ATAs directly; the
+    LP is custodied by a Loopscale VaultStake PDA owned by the Loopscale
+    program. Each VaultStake stores the REAL user pubkey at offset 73 of its
+    account data (disc e1228035a7efb66b). We need to re-key every PDA-owned
+    holder back to the real user — otherwise flares get attributed to the
+    Loopscale vault PDAs, which the dashboard filters out as PDAs, leaving
+    real users with $0.
+    """
+    LOOPSCALE_PROGRAM = '1oopBoJG58DgkUVKkEzKgyG9dvRmpgeEm1AVjoHkF78'
+    VAULT_STAKE_DISC = 'e1228035a7efb66b'
+
     holders = []
     for prog in ['TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
                  'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb']:
@@ -124,12 +135,32 @@ def walk_supply(now_ts: int, share_value: float):
             owner = info.get('owner')
             bal = float(info['tokenAmount']['uiAmount'] or 0)
             holders.append({'ata': a['pubkey'], 'owner': owner, 'current_bal': bal})
+
+    # Re-key any owner that's a Loopscale VaultStake PDA → real user @ offset 73.
+    import base64 as _b64, base58 as _b58
+    n_rekeyed = 0
+    for h in holders:
+        try:
+            r = rpc('getAccountInfo', [h['owner'], {'encoding': 'base64'}])
+            v = r.get('result', {}).get('value') or {}
+            if v.get('owner') != LOOPSCALE_PROGRAM: continue
+            d = _b64.b64decode(v.get('data', ['', ''])[0])
+            if len(d) < 105 or d[:8].hex() != VAULT_STAKE_DISC: continue
+            real_user = _b58.b58encode(d[73:105]).decode()
+            h['owner'] = real_user
+            n_rekeyed += 1
+        except Exception: continue
+
     nonzero = sum(1 for h in holders if h['current_bal'] > 0)
-    print(f'  USX ONE LP-mint accounts: {len(holders)}  non-zero now: {nonzero}', flush=True)
+    print(f'  USX ONE LP-mint accounts: {len(holders)}  non-zero now: {nonzero}  re-keyed via VaultStake: {n_rekeyed}', flush=True)
 
     def process_ata(h):
         ata = h['ata']; owner = h['owner']; current_bal = h['current_bal']
-        # Walk sigs during S2
+        # Walk the FULL sig history (no S2 cutoff). Pre-S2 sigs are needed to
+        # determine the balance at S2 start — otherwise wallets that deposited
+        # pre-S2 and held through aren't anchored correctly. Without carry-in,
+        # the first integration segment (S2_START → first S2 event) is dropped
+        # and the wallet gets credit only after their first S2 sig.
         sigs = []
         before = None
         while True:
@@ -138,17 +169,11 @@ def walk_supply(now_ts: int, share_value: float):
             r = rpc('getSignaturesForAddress', params)
             batch = r.get('result', []) or []
             if not batch: break
-            keep = [s for s in batch if (s.get('blockTime') or 0) >= S2_START_TS]
-            sigs.extend(keep)
-            if len(keep) < len(batch): break
+            sigs.extend(batch)
             if len(batch) < 1000: break
             before = batch[-1]['signature']
         if not sigs and current_bal == 0: return owner, 0.0
-        if not sigs:
-            # Position predates S2 → full window
-            days = (now_ts - S2_START_TS) / 86400
-            return owner, current_bal * share_value * days * 5
-        # Fetch events to get balance timeline
+        # Fetch all txs in parallel, recording post-balance per sig.
         def fetch(s):
             try:
                 r = rpc('getTransaction', [s['signature'], {'encoding':'jsonParsed','maxSupportedTransactionVersion':0}])
@@ -173,17 +198,32 @@ def walk_supply(now_ts: int, share_value: float):
                 if bal_after is not None:
                     events.append((s['blockTime'], float(bal_after)))
         events.sort(key=lambda x: x[0])
+        # Derive carry-in: balance at S2_START. Last observed balance from any
+        # pre-S2 event; if no pre-S2 events but the position predates S2 (no
+        # events at all yet current_bal > 0), use current_bal as carry-in.
+        pre_evs = [e for e in events if e[0] < S2_START_TS]
+        s2_evs  = [e for e in events if e[0] >= S2_START_TS]
+        if pre_evs:
+            carry_in = pre_evs[-1][1]
+        elif current_bal > 0 and not s2_evs:
+            carry_in = current_bal   # held through S2 with no observed sigs
+        else:
+            carry_in = 0.0
+        # Piecewise integrate: [S2_START, first_s2_event, ..., last_s2_event, now]
         usd_days = 0.0
-        for i in range(len(events)):
-            bal = events[i][1]
-            next_t = events[i+1][0] if i+1 < len(events) else now_ts
-            dt = (next_t - events[i][0]) / 86400
+        bal = carry_in
+        prev_t = S2_START_TS
+        for t, post_bal in s2_evs:
+            dt = (t - prev_t) / 86400
             if dt > 0 and bal > 0:
                 usd_days += bal * share_value * dt
-        if usd_days == 0 and current_bal > 0:
-            first_ts = min(s['blockTime'] for s in sigs if s.get('blockTime'))
-            days = (now_ts - first_ts) / 86400
-            usd_days = current_bal * share_value * days
+            bal = post_bal
+            prev_t = t
+        # Tail from last event (or S2_START if none) to now
+        if bal > 0 and prev_t < now_ts:
+            dt = (now_ts - prev_t) / 86400
+            if dt > 0:
+                usd_days += bal * share_value * dt
         return owner, usd_days * 5   # mult 5×
 
     results = defaultdict(float)

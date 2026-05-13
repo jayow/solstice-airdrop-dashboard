@@ -171,6 +171,38 @@ def main():
     walker_db.sync_to_wallet_quests('walk_s2_kamino_strategy', WALKER_QUESTS_DB)
     print(f'DB: walker_outputs={len(rows_db)} rows; synced to wallet_quests')
 
+    # Backfill kamino_kvault_usx_usdg into the S2_KAMINO cache so the drawer's
+    # Kamino position panel includes the strategy USD alongside lend/borrow.
+    # Without this the cache's kvault field stays at the placeholder 0.0 written
+    # by walk_s2_kamino.py and the dashboard under-reports strategy holders.
+    import db as _db2
+    _db2.init()
+    con = _db2.conn()
+    backfilled = 0
+    # Reconstruct per-owner current strategy USD from the holders dict.
+    owner_strategy_usd = defaultdict(float)
+    for ata, info in holders.items():
+        if info['current_bal'] > 0:
+            owner_strategy_usd[info['owner']] += info['current_bal'] * share_price
+    for owner, usd in owner_strategy_usd.items():
+        row = con.execute(
+            "SELECT raw_json FROM quest_cache WHERE wallet=? AND quest_key='S2_KAMINO'",
+            (owner,)
+        ).fetchone()
+        if row:
+            try: raw = json.loads(row['raw_json'])
+            except Exception: raw = {'positions': {}, 'events': [], '_watermark': {'slot': 0, 'ts': now_ts}}
+        else:
+            raw = {'positions': {
+                'kamino_supply_usx': 0.0, 'kamino_supply_eusx': 0.0, 'kamino_supply_usdg': 0.0,
+                'kamino_borrow_usx': 0.0, 'kamino_borrow_usdg': 0.0, 'kamino_kvault_usx_usdg': 0.0,
+            }, 'events': [], '_watermark': {'slot': 0, 'ts': now_ts}}
+        positions = raw.setdefault('positions', {})
+        positions['kamino_kvault_usx_usdg'] = round(usd, 2)
+        _db2.put_cache(owner, 'S2_KAMINO', raw, watermark_ts=now_ts)
+        backfilled += 1
+    print(f'Backfilled kvault USD into S2_KAMINO cache for {backfilled} wallets')
+
     # Top 5
     top = sorted(results.items(), key=lambda x: -x[1])[:5]
     print('\\nTop 5 wallets:')

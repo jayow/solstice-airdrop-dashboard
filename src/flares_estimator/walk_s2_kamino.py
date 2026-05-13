@@ -25,6 +25,7 @@ from rpc_helper import rpc
 import walker_db
 import db as _db
 from incremental_events import extract_events_incremental
+from transform_kamino import transform_wallet as _transform_wallet_flares
 
 S2_START_TS = 1776038400
 MIN_HOLD_DAYS = 1.0
@@ -103,16 +104,30 @@ def main():
                 if pp: existing_by_user_pos[(r['wallet'], pp)].append(e)
         except Exception: pass
     print(f'Preloaded existing events for {len(existing_by_user_pos)} (wallet, obligation) pairs', flush=True)
+    # Kamino's program emits V2-suffixed variants for newer instructions; we
+    # match both V1 and V2 forms. The classifier also scans ALL log lines
+    # rather than picking the first ix — refresh* / init* / set* ixs come
+    # before the actual deposit/withdraw in the log, so first-match misses the
+    # real intent.
     KAMINO_IXS = {
         'depositreserveliquidityandobligationcollateral': 'DEPOSIT',
+        'depositreserveliquidityandobligationcollateralv2': 'DEPOSIT',
         'depositreserveliquidity': 'DEPOSIT',
+        'depositreserveliquidityv2': 'DEPOSIT',
         'depositobligationcollateral': 'DEPOSIT COLLATERAL',
+        'depositobligationcollateralv2': 'DEPOSIT COLLATERAL',
         'withdrawreserveliquidity': 'WITHDRAW',
+        'withdrawreserveliquidityv2': 'WITHDRAW',
         'withdrawobligationcollateralandredeemreservecollateral': 'WITHDRAW',
+        'withdrawobligationcollateralandredeemreservecollateralv2': 'WITHDRAW',
         'withdrawobligationcollateral': 'WITHDRAW COLLATERAL',
+        'withdrawobligationcollateralv2': 'WITHDRAW COLLATERAL',
         'borrowobligationliquidity': 'BORROW',
+        'borrowobligationliquidityv2': 'BORROW',
         'repayobligationliquidity': 'REPAY',
+        'repayobligationliquidityv2': 'REPAY',
         'liquidateobligationandredeemreservecollateral': 'LIQUIDATED',
+        'liquidateobligationandredeemreservecollateralv2': 'LIQUIDATED',
     }
     SIDE_MINT_TO_POSKEY = {
         ('lend', USX_MINT):  'kamino_supply_usx',
@@ -155,12 +170,16 @@ def main():
             existing = existing_by_user_pos.get((wallet, obl_addr), [])
 
             def _classify(tx, s):
+                # Scan ALL ix log lines and keep the first one that's in our
+                # set. Kamino txs lead with Refresh*/Init*/Set* before the
+                # actual Deposit/Withdraw, so first-match-any breaks. We need
+                # first-match-IN-SET.
                 ix_name = None
                 for ln in (tx['meta'].get('logMessages') or []):
-                    if 'Program log: Instruction:' in ln:
-                        nm = ln.split('Instruction:',1)[1].strip().split()[0].lower()
-                        if nm in KAMINO_IXS:
-                            ix_name = nm; break
+                    if 'Program log: Instruction:' not in ln: continue
+                    nm = ln.split('Instruction:',1)[1].strip().split()[0].lower()
+                    if nm in KAMINO_IXS:
+                        ix_name = nm; break
                 if not ix_name: return None
                 pre = tx['meta'].get('preTokenBalances') or []
                 post = tx['meta'].get('postTokenBalances') or []
@@ -179,23 +198,15 @@ def main():
             wallet_events.extend(existing)
             wallet_events.extend(new_evs)
 
-            # Flare math: time-weight from earliest event ts (incl existing)
-            all_event_ts = [e.get('ts') for e in (existing + new_evs) if e.get('ts')]
-            in_s2 = [t for t in all_event_ts if t >= S2_START_TS]
-            if not in_s2:
-                days = (now_ts - S2_START_TS) / 86400
-            else:
-                first_ts = max(min(in_s2), S2_START_TS)
-                days = (now_ts - first_ts) / 86400
-            if days < MIN_HOLD_DAYS:
-                continue
-            for (side, mint), usd in deps.items():
-                if side == 'lend' and mint in LEND_QUESTS:
-                    q, mult = LEND_QUESTS[mint]
-                    per_quest[q] += usd * mult * days
-                elif side == 'borrow' and mint in BORROW_QUESTS:
-                    q, mult = BORROW_QUESTS[mint]
-                    per_quest[q] += usd * mult * days
+        # Flare math: delegate to transform_kamino.transform_wallet() so the
+        # walker's per-wallet output uses the same piecewise integral as the
+        # offline transform. This replaces the previous `usd × mult × days`
+        # approximation (which ignored carry-in and treated current position
+        # as constant over the held window — systematically wrong for wallets
+        # that scaled up/down or withdrew pre-S2 leaving a stale API balance).
+        integrated = _transform_wallet_flares(dict(wallet_snap), wallet_events, now_ts)
+        for q, v in integrated.items():
+            if v > 0: per_quest[q] = v
         return wallet, dict(per_quest), dict(wallet_snap), wallet_events, 'ok'
 
     print('Walking obligations…', flush=True)

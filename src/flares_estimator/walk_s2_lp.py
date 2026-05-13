@@ -12,7 +12,7 @@ Formula (verified at 100-101% on user's S1 data):
 
 Output: data/s2_lp_flares.json  {wallet: {USX: flares, eUSX: flares}}
 """
-import os, sys, json, time, base64, base58
+import os, sys, json, time, base64, base58, struct
 from datetime import datetime, UTC
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import defaultdict
@@ -21,9 +21,72 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from rpc_helper import rpc
 import walker_db
 
-# Per-day eUSX peg lookup. USX market uses constant peg=1.0; eUSX market uses
-# peg_at(ts) so we integrate against the historical peg at each segment.
-from quests.eusx_peg import peg_at as eusx_peg_at
+# Exponent program ID — emits the Wrapper events via emit_cpi
+EXPONENT_PROG = 'ExponentnaRg3CQbW6dqQNZKXp7gtZ9DGMp1cwC4HAS7'
+
+# Anchor event discriminators for each Wrapper LP event. Computed as
+# sha256("event:<EventName>")[:8]; verified against exponent-core source.
+# Each event's emit_cpi inner-ix data layout is:
+#   bytes[0:8]   anchor IX disc (CPI sentinel, ignored)
+#   bytes[8:16]  event disc (matches one of the values below)
+#   bytes[16:48] user pubkey
+#   bytes[48:80] market pubkey
+#   ... event-specific u64 fields ...
+#   bytes[-8:]   lp_price (f64) — canonical lp_price_in_asset() at tx time
+# Each entry: (lp_amount_offset_from_pubkeys, sign_for_lp_delta).
+# lp_amount_offset is the 0-indexed position of the lp_in/lp_out u64 among the
+# trailing u64 fields (after the two pubkeys, before the f64 lp_price).
+_LP_EVENT_TYPES = {
+    bytes.fromhex('d12ae34dbbd811b1'): ('provide',         1, +1),  # WrapperProvideLiquidity: base_in, lp_out, yt_out, lp_price
+    bytes.fromhex('3c79a45ddc0d8ec5'): ('provide_base',    3, +1),  # WrapperProvideLiquidityBase: base_in, pt_out, sy_in, lp_out, lp_price
+    bytes.fromhex('57a396a2ba93eac8'): ('provide_classic', 2, +1),  # WrapperProvideLiquidityClassic: base_in, pt_in, lp_out, lp_price
+    bytes.fromhex('3420b4f124dd48a7'): ('withdraw',         1, -1), # WrapperWithdrawLiquidity: base_out, lp_in, lp_price
+    bytes.fromhex('129ad42724179e7c'): ('withdraw_classic', 1, -1), # WrapperWithdrawLiquidityClassic: base_out, lp_in, pt_out, lp_price
+}
+
+
+def _decode_lp_event(data: bytes):
+    """Decode an Exponent Wrapper LP event from emit_cpi inner-ix data.
+    Returns (event_type, user_pk, market_pk, lp_amount, lp_price) or None.
+
+    Uses the canonical lp_price_in_asset() value emitted by the program, which
+    is what Exponent's dashboard displays. This bypasses token-delta heuristics
+    entirely and matches the protocol's authoritative LP valuation."""
+    if len(data) < 16 + 32 + 32 + 8 + 8: return None
+    disc = data[8:16]
+    if disc not in _LP_EVENT_TYPES: return None
+    event_type, lp_field_idx, sign = _LP_EVENT_TYPES[disc]
+    user = base58.b58encode(data[16:48]).decode()
+    market = base58.b58encode(data[48:80]).decode()
+    # u64 fields between pubkeys (offset 80) and lp_price (last 8 bytes)
+    body = data[80:-8]
+    n_u64 = len(body) // 8
+    if lp_field_idx >= n_u64: return None
+    p = lp_field_idx * 8
+    lp_raw = int.from_bytes(body[p:p+8], 'little')
+    lp_price = struct.unpack('<d', data[-8:])[0]
+    return event_type, user, market, lp_raw, lp_price, sign
+
+
+def _extract_inner_ix_data(tx: dict) -> list:
+    """Return [(programId, data_bytes), ...] for every inner instruction in the tx.
+    Handles both jsonParsed (base58 data) and base64 encoding formats."""
+    out = []
+    meta = tx.get('meta') or {}
+    inner = meta.get('innerInstructions') or []
+    for group in inner:
+        for ix in (group.get('instructions') or []):
+            pid = ix.get('programId') or ix.get('program')
+            d = ix.get('data')
+            if not pid or not d: continue
+            try:
+                # jsonParsed default encoding is base58 for unknown programs
+                raw = base58.b58decode(d)
+            except Exception:
+                try: raw = base64.b64decode(d)
+                except Exception: continue
+            out.append((pid, raw))
+    return out
 
 S2_START_TS = 1776038400
 S2_END_TS   = 1785024000   # only used to cap if walking beyond now
@@ -58,8 +121,9 @@ MARKETS = {
 }
 
 
-def fetch_all_sigs(addr: str, until_ts: int) -> list:
-    """Pull sigs newest→oldest until reaching until_ts."""
+def fetch_all_sigs(addr: str, until_ts: int = 0) -> list:
+    """Pull sigs newest→oldest. If until_ts > 0, stop once a sig is older than it;
+    if until_ts == 0, walk the full history (needed for pre-S2 carry-in)."""
     sigs = []
     before = None
     while True:
@@ -68,57 +132,145 @@ def fetch_all_sigs(addr: str, until_ts: int) -> list:
         r = rpc('getSignaturesForAddress', params)
         batch = r.get('result', []) or []
         if not batch: break
-        # Stop early if we pass the cutoff
-        keep = [s for s in batch if (s.get('blockTime') or 0) >= until_ts]
-        sigs.extend(keep)
-        if len(keep) < len(batch): break
+        if until_ts > 0:
+            keep = [s for s in batch if (s.get('blockTime') or 0) >= until_ts]
+            sigs.extend(keep)
+            if len(keep) < len(batch): break
+        else:
+            sigs.extend(batch)
         if len(batch) < 1000: break
         before = batch[-1]['signature']
     return sigs
 
 
+def _tx_signer(tx: dict) -> str:
+    """Return the fee-payer / primary signer of the tx. For every Exponent
+    Wrapper* instruction this is the end user — Exponent doesn't have a relayer
+    or meta-tx flow. Authoritative attribution; no heuristics needed."""
+    msg = (tx.get('transaction') or {}).get('message') or {}
+    keys = msg.get('accountKeys') or []
+    # jsonParsed format: list of {pubkey, signer, writable, source}
+    for k in keys:
+        if isinstance(k, dict) and k.get('signer'):
+            return k.get('pubkey')
+        if isinstance(k, str):
+            # Older raw format: signers are the first N entries per
+            # header.numRequiredSignatures. Fee payer is index 0.
+            return k
+    return None
+
+
 def parse_tx_lp_event(tx: dict, cfg: dict) -> dict:
-    """From a tx, extract user_wallet, lp_delta (user's claim change), underlying_delta (user-side eUSX/USX)."""
-    meta = tx['meta']
+    """Parse an Exponent LP tx using the program's emitted Wrapper event.
+
+    Returns the canonical (user, lp_delta, lp_price, underlying_delta) where
+    lp_price is the exact value Exponent's dashboard displays — computed by
+    `market.financials.lp_price_in_asset()` and emitted via emit_cpi! at the
+    moment of the tx. This bypasses heuristics entirely:
+
+      * No <1M USD balance filter (worked but skipped whales)
+      * No PT/underlying delta accounting (works but loses to slippage)
+      * No eUSX peg multiplication (mismatched Exponent's accounting)
+
+    The dashboard shows `amount_lp × lp_price` (in market asset units). For
+    flare math, integrate `lp_balance × lp_price(t) × mult × dt` — no peg.
+    """
+    meta = tx.get('meta') or {}
     if meta.get('err'): return None
-    pre = {(t['accountIndex'], t['mint']): t for t in meta.get('preTokenBalances', [])}
-    post = {(t['accountIndex'], t['mint']): t for t in meta.get('postTokenBalances', [])}
-    lp_delta = 0.0
-    user_underlying_delta = 0.0
-    user_wallet = None
-    for k in set(pre)|set(post):
-        idx, mint = k
-        pb = pre.get(k); pob = post.get(k)
-        owner = (pob or pb).get('owner')
-        pre_ui = (pb or {}).get('uiTokenAmount',{}).get('uiAmount') or 0
-        post_ui = (pob or {}).get('uiTokenAmount',{}).get('uiAmount') or 0
-        d = (post_ui or 0) - (pre_ui or 0)
-        if d == 0: continue
-        if mint == cfg['lp_mint'] and owner == cfg['market']:
-            lp_delta = d
-        if mint == cfg['underlying']:
-            # User's ATA — owner is a real wallet, not the SY-auth
-            # SY-auth owns underlying vault (Δ +X when user deposits)
-            # User's ATA has Δ -X (eUSX leaves user)
-            # We want the user's wallet.
-            # Heuristic: the wallet whose underlying balance MIRRORS the LP delta direction
-            # (deposit: user_underlying_Δ < 0 AND lp_delta > 0)
-            if owner and owner != cfg['market']:
-                # Check if this owner looks like a user (not protocol address)
-                # Skip the SY-auth (which owns the pool vault)
-                # We'll detect SY-auth by it having a HUGE balance
-                if abs(post_ui) < 1_000_000:   # ordinary user ATA
-                    if user_underlying_delta == 0 or abs(d) > abs(user_underlying_delta):
-                        user_underlying_delta = d
-                        user_wallet = owner
-    if lp_delta == 0 or user_wallet is None:
-        return None
-    return {
-        'user': user_wallet,
-        'lp_delta': lp_delta,
-        'underlying_delta': user_underlying_delta,   # negative on deposit, positive on withdraw
-        'per_lp_underlying': abs(user_underlying_delta) / abs(lp_delta) if lp_delta else None,
-    }
+
+    market_pk = cfg['market']
+
+    # Outer signers of the tx — used to detect CPI-routed LP activity. When
+    # another protocol (e.g. Loopscale) deposits into Exponent on a user's
+    # behalf, the event's `user_address` is the protocol's PDA (PDA-style
+    # signed via Anchor seeds), but the outer tx is signed by the actual
+    # user. The real user gets rewarded via THEIR primary quest
+    # (S2_LOOPSCALE_SUPPLY etc.) — crediting them here with S2_EXPONENT_LP
+    # would double-count. The PDA itself should be excluded from leaderboards
+    # since it doesn't represent a real participant.
+    msg = (tx.get('transaction') or {}).get('message') or {}
+    keys = msg.get('accountKeys') or []
+    outer_signers = {k.get('pubkey') for k in keys if isinstance(k, dict) and k.get('signer')}
+
+    # Scan inner instructions for an Exponent Wrapper LP event matching this market.
+    for prog, data in _extract_inner_ix_data(tx):
+        if prog != EXPONENT_PROG: continue
+        decoded = _decode_lp_event(data)
+        if not decoded: continue
+        event_type, user, evt_market, lp_raw, lp_price, sign = decoded
+        if evt_market != market_pk: continue
+        # CPI-routed depositor → skip. event's user_address must be in the
+        # outer tx's signers list for a direct, user-initiated LP action.
+        if user not in outer_signers:
+            return None
+        # Convert lp_raw to UI amount.
+        lp_decimals = _get_lp_decimals(cfg['lp_mint'])
+        lp_amount_ui = lp_raw / (10 ** lp_decimals)
+        lp_delta = sign * lp_amount_ui  # + on supply, - on withdraw
+
+        # Also extract signer-side underlying/PT deltas for snapshot/UI context.
+        signer = user  # event user_address == outer signer (verified above)
+        pre = {(t['accountIndex'], t['mint']): t for t in (meta.get('preTokenBalances') or [])}
+        post = {(t['accountIndex'], t['mint']): t for t in (meta.get('postTokenBalances') or [])}
+        pt_mint = _get_pt_mint(market_pk)
+        underlying_delta = 0.0
+        pt_delta = 0.0
+        for k in set(pre) | set(post):
+            _, mint = k
+            pb = pre.get(k); pob = post.get(k)
+            owner = (pob or pb).get('owner')
+            if owner != signer: continue
+            pre_ui = float((pb or {}).get('uiTokenAmount', {}).get('uiAmount') or 0)
+            post_ui = float((pob or {}).get('uiTokenAmount', {}).get('uiAmount') or 0)
+            d = post_ui - pre_ui
+            if abs(d) < 1e-12: continue
+            if mint == cfg['underlying']: underlying_delta += d
+            elif pt_mint and mint == pt_mint: pt_delta += d
+
+        return {
+            'user': user,
+            'event_type': event_type,
+            'lp_delta': lp_delta,
+            'lp_price': lp_price,           # canonical — what Exponent dashboard shows
+            'underlying_delta': underlying_delta,  # informational only
+            'pt_delta': pt_delta,                  # informational only
+            'per_lp_underlying': lp_price,         # kept for back-compat with integration loop
+        }
+    return None
+
+
+# Cache of LP mint → decimals. LP mints are usually 6-decimal but we read it
+# once per mint to be safe; market_two.rs doesn't hardcode this.
+_lp_decimals_cache: dict = {}
+
+def _get_lp_decimals(lp_mint: str) -> int:
+    if lp_mint in _lp_decimals_cache: return _lp_decimals_cache[lp_mint]
+    r = rpc('getAccountInfo', [lp_mint, {'encoding': 'jsonParsed'}])
+    v = r.get('result', {}).get('value')
+    decs = 6
+    if v:
+        info = (v.get('data', {}) or {}).get('parsed', {}).get('info', {}) or {}
+        decs = int(info.get('decimals') or 6)
+    _lp_decimals_cache[lp_mint] = decs
+    return decs
+
+
+# Cache of market PDA → its offset-40 mint (PT). Avoids re-fetching the market
+# account per tx (it's static for the lifetime of the market).
+_pt_mint_cache: dict = {}
+
+def _get_pt_mint(market_pk: str):
+    if market_pk in _pt_mint_cache: return _pt_mint_cache[market_pk]
+    r = rpc('getAccountInfo', [market_pk, {'encoding': 'base64'}])
+    v = r.get('result', {}).get('value')
+    if not v:
+        _pt_mint_cache[market_pk] = None; return None
+    d = base64.b64decode(v['data'][0])
+    if len(d) < 72:
+        _pt_mint_cache[market_pk] = None; return None
+    mint = base58.b58encode(d[40:72]).decode()
+    _pt_mint_cache[market_pk] = mint
+    return mint
 
 
 def main():
@@ -135,8 +287,13 @@ def main():
 
     for mname, cfg in MARKETS.items():
         print(f'=== {mname} (mult {cfg["mult"]}, peg ${cfg["peg"]:.4f}) ===', flush=True)
-        sigs = fetch_all_sigs(cfg['lp_vault'], S2_START_TS)
-        print(f'  {len(sigs):,} LP-vault sigs in S2 window', flush=True)
+        # Walk the FULL LP-vault history (since vault inception). Pre-S2 events
+        # are needed to establish each wallet's carry-in balance at S2 start —
+        # without it, wallets that minted LP pre-S2 and burned during S2 get
+        # negative balance and are silently skipped, under-crediting them.
+        sigs = fetch_all_sigs(cfg['lp_vault'], 0)
+        in_s2 = sum(1 for s in sigs if (s.get('blockTime') or 0) >= S2_START_TS)
+        print(f'  {len(sigs):,} LP-vault sigs total ({in_s2:,} in S2 window)', flush=True)
 
         # Fetch txs in parallel
         def fetch(s):
@@ -145,7 +302,7 @@ def main():
                 return s, r.get('result')
             except: return s, None
 
-        # per-wallet event timeline
+        # per-wallet event timeline (all events, both pre-S2 and S2)
         events_by_wallet = defaultdict(list)
         with ThreadPoolExecutor(max_workers=16) as ex:
             futs = [ex.submit(fetch, s) for s in sigs]
@@ -156,7 +313,6 @@ def main():
                 if done % 200 == 0: print(f'    {done}/{len(sigs)}', flush=True)
                 if not tx: continue
                 t = tx.get('blockTime') or 0
-                if t < S2_START_TS: continue
                 parsed = parse_tx_lp_event(tx, cfg)
                 if not parsed: continue
                 events_by_wallet[parsed['user']].append({
@@ -168,46 +324,55 @@ def main():
                     'market_label': mname,
                     'underlying_mint': cfg['underlying'],
                 })
-        print(f'  unique LP-active wallets in S2: {len(events_by_wallet):,}', flush=True)
+        print(f'  unique LP-active wallets (all-time): {len(events_by_wallet):,}', flush=True)
 
-        # For each wallet, integrate LP × per_LP_USD × peg(t) × mult.
-        # For USX market peg is a constant 1.0. For eUSX market we evaluate
-        # peg_at(midpoint) per segment so the historical appreciation curve is
-        # respected (this lifts LP eUSX from Tier 2 to Tier 1).
-        is_eusx_market = (mname == 'eUSX-Jun26')
-        def _peg(t0, t1):
-            if not is_eusx_market: return 1.0
-            try: return eusx_peg_at((t0 + t1) // 2)
-            except Exception: return cfg['peg'] or 1.0
-        for wallet, evs in events_by_wallet.items():
-            evs.sort(key=lambda x: x['t'])
-            # TODO: subtract pre-S2 LP balance if any.
-            lp_balance = 0.0
+        # Integrate LP × lp_price(t) × mult — no peg multiplication. Exponent's
+        # lp_price_in_asset() is already denominated in the market's asset units
+        # which Exponent treats 1:1 with USX (i.e. USD-equivalent). Applying the
+        # eUSX peg here over-counts eUSX LP by ~14%; the user gets the eUSX
+        # yield via the SY exchange rate which is baked into lp_price already.
+        for wallet, all_evs in events_by_wallet.items():
+            all_evs.sort(key=lambda x: x['t'])
+            # Pre-S2 carry-in: net LP delta + lp_price snapshot at the boundary.
+            pre_evs = [e for e in all_evs if e['t'] < S2_START_TS]
+            evs = [e for e in all_evs if e['t'] >= S2_START_TS]
+            carry_in = sum(e['lp_delta'] for e in pre_evs)
+            if carry_in < 0: carry_in = 0.0  # data gap; clamp non-negative
+            carry_price = None
+            for e in reversed(pre_evs):
+                if e.get('rate'):
+                    carry_price = e['rate']; break
+
+            lp_balance = carry_in
+            last_lp_price = carry_price
             usd_days = 0.0
-            last_rate = None
+            prev_t = S2_START_TS
             for i in range(len(evs)):
                 e = evs[i]
+                t1 = e['t']
+                dt = (t1 - prev_t) / 86400
+                if dt > 0 and lp_balance > 0 and last_lp_price:
+                    usd_days += lp_balance * last_lp_price * dt
                 lp_balance += e['lp_delta']
-                if e['rate']: last_rate = e['rate']
-                if i + 1 < len(evs):
-                    t0, t1 = e['t'], evs[i+1]['t']
-                    dt = (t1 - t0) / 86400
-                    if dt > 0 and lp_balance > 0 and last_rate:
-                        usd_days += lp_balance * last_rate * _peg(t0, t1) * dt
-            # Tail: from last event to now
-            if lp_balance > 0 and last_rate:
-                t0 = evs[-1]['t']
-                dt = (now_ts - t0) / 86400
+                if e.get('rate'): last_lp_price = e['rate']
+                prev_t = t1
+            # Tail: last event (or S2_START) to now
+            if lp_balance > 0 and last_lp_price and prev_t < now_ts:
+                dt = (now_ts - prev_t) / 86400
                 if dt > 0:
-                    usd_days += lp_balance * last_rate * _peg(t0, now_ts) * dt
+                    usd_days += lp_balance * last_lp_price * dt
             flares = usd_days * cfg['mult']
             if flares > 0:
                 all_results[wallet][cfg['quest']] = flares
-            # Aggregate per-wallet events + final LP value across both markets
-            all_events_by_wallet[wallet].extend(evs)
-            if lp_balance > 0 and last_rate:
-                # Snapshot uses live peg (current value) for the "value now" display.
-                all_snapshots[wallet][cfg['quest']] = lp_balance * last_rate * (cfg['peg'] or 1.0)
+            # Store ALL events (pre-S2 + S2) in cache so build_daily_totals.py
+            # can reconstruct the correct lp_balance(t) carry-in at S2_START.
+            # The chart code clips pre-S2 segments via S2_START_TS in
+            # integrate_balance_segments — but it needs the events to know the
+            # pre-S2 balance. Without these, wallets holding LP from before S2
+            # contribute 0 to the chart.
+            all_events_by_wallet[wallet].extend(all_evs)
+            if lp_balance > 0 and last_lp_price:
+                all_snapshots[wallet][cfg['quest']] = lp_balance * last_lp_price
 
         # Quick stats for this market
         market_total = sum(r.get(cfg['quest'], 0) for r in all_results.values())

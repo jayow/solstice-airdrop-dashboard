@@ -55,17 +55,27 @@ SIDE_MINT_TO_POSKEY = {
     ('borrow', USDG_MINT): 'kamino_borrow_usdg',
 }
 
-# Map ix name → (side, signed_direction)
+# Map ix name → (side, signed_direction). Includes V2 variants since Kamino
+# emits V2-suffixed instruction names for newer flows.
 IX_MAP = {
-    'depositreserveliquidityandobligationcollateral':       ('lend',   +1),
-    'depositreserveliquidity':                              ('lend',   +1),
-    'depositobligationcollateral':                          ('lend',   +1),
-    'withdrawreserveliquidity':                             ('lend',   -1),
-    'withdrawobligationcollateral':                         ('lend',   -1),
-    'withdrawobligationcollateralandredeemreservecollateral': ('lend', -1),
-    'borrowobligationliquidity':                            ('borrow', +1),
-    'repayobligationliquidity':                             ('borrow', -1),
-    'liquidateobligationandredeemreservecollateral':        ('lend',   -1),  # treat as lend withdraw
+    'depositreserveliquidityandobligationcollateral':         ('lend',   +1),
+    'depositreserveliquidityandobligationcollateralv2':       ('lend',   +1),
+    'depositreserveliquidity':                                ('lend',   +1),
+    'depositreserveliquidityv2':                              ('lend',   +1),
+    'depositobligationcollateral':                            ('lend',   +1),
+    'depositobligationcollateralv2':                          ('lend',   +1),
+    'withdrawreserveliquidity':                               ('lend',   -1),
+    'withdrawreserveliquidityv2':                             ('lend',   -1),
+    'withdrawobligationcollateral':                           ('lend',   -1),
+    'withdrawobligationcollateralv2':                         ('lend',   -1),
+    'withdrawobligationcollateralandredeemreservecollateral': ('lend',   -1),
+    'withdrawobligationcollateralandredeemreservecollateralv2':('lend',  -1),
+    'borrowobligationliquidity':                              ('borrow', +1),
+    'borrowobligationliquidityv2':                            ('borrow', +1),
+    'repayobligationliquidity':                               ('borrow', -1),
+    'repayobligationliquidityv2':                             ('borrow', -1),
+    'liquidateobligationandredeemreservecollateral':          ('lend',   -1),
+    'liquidateobligationandredeemreservecollateralv2':        ('lend',   -1),
 }
 
 # Map a quest-cache mint to a (current) USD-per-token value. Only used to
