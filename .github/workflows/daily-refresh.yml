@@ -46,20 +46,35 @@ jobs:
             solstice-db-v1-
 
       - name: Bootstrap DB if missing
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p data
-          if [ ! -f data/solstice.db ]; then
-            echo "No DB cache hit — creating empty DB. First run will rebuild everything from chain."
-            python3 -c "
+          if [ -f data/solstice.db ]; then
+            echo "DB cache restored ($(du -h data/solstice.db | cut -f1))"
+            exit 0
+          fi
+          # Try downloading the seed DB from the `db-cache` release. This is
+          # uploaded by `tools/upload_db_to_release.sh` locally so the first
+          # CI run doesn't have to rebuild everything from chain (~25 min vs
+          # 10 min steady-state).
+          if gh release view db-cache --json tagName 2>/dev/null >/dev/null; then
+            echo "Pulling DB seed from release 'db-cache'..."
+            gh release download db-cache --pattern 'solstice.db.gz' --dir data
+            if [ -f data/solstice.db.gz ]; then
+              gunzip data/solstice.db.gz
+              echo "Seed DB unpacked ($(du -h data/solstice.db | cut -f1))"
+              exit 0
+            fi
+          fi
+          # No seed and no cache — start from scratch.
+          echo "No DB cache or release seed — first run will rebuild everything from chain (slow)."
+          python3 -c "
           import sqlite3
           con = sqlite3.connect('data/solstice.db')
-          # Minimal schema; walker_db.init() and db.init() will fill in the rest
           con.execute('CREATE TABLE IF NOT EXISTS wallets (wallet TEXT PRIMARY KEY, first_seen_ts INTEGER, last_active_ts INTEGER, classification TEXT, cohort TEXT, is_s1 INTEGER DEFAULT 0, in_partner_footprint INTEGER DEFAULT 0, in_exponent INTEGER DEFAULT 0, n_protocols INTEGER DEFAULT 0, notes TEXT)')
           con.commit()
           "
-          else
-            echo "DB cache restored ($(du -h data/solstice.db | cut -f1))"
-          fi
 
       - name: Write .env for RPC
         env:
