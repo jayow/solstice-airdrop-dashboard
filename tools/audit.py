@@ -66,8 +66,10 @@ def _load_json(path):
 
 
 def _flares_filter_clause(table_alias='wq'):
-    # match build_data.py — exclude both pda_protocol and pda_or_uninit
-    return f"COALESCE(w.classification,'') NOT IN ('pda_protocol', 'pda_or_uninit')"
+    # Match build_data.py:71 — three PDA classifications excluded from
+    # real-users headline: 'pda', 'pda_or_uninit', plus 'pda_protocol' for
+    # the manual override list used to flag known protocol PDAs.
+    return f"COALESCE(w.classification,'') NOT IN ('pda_protocol', 'pda_or_uninit', 'pda')"
 
 
 # ────────────────────── TIER 1 — structural ──────────────────────
@@ -94,7 +96,7 @@ def tier1_structural(con, data, max_detail=10):
     sql_per_wallet = dict(con.execute("""
         SELECT wq.wallet, SUM(wq.flares)
         FROM wallet_quests wq LEFT JOIN wallets w USING (wallet)
-        WHERE COALESCE(w.classification,'') NOT IN ('pda_protocol','pda_or_uninit')
+        WHERE COALESCE(w.classification,'') NOT IN ('pda_protocol','pda_or_uninit','pda')
           AND wq.quest LIKE 'S2_%'
         GROUP BY wq.wallet
     """))

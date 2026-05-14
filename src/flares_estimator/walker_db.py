@@ -65,11 +65,15 @@ def sync_to_wallet_quests(walker_name: str, quests: list):
                     SELECT wallet FROM walker_outputs WHERE walker = ? AND quest = ?
                 )
             """, (q, walker_name, q))
-            # Upsert fresh values
+            # Upsert fresh values. Also INSERT OR IGNORE into wallets metadata
+            # so downstream build_data.py's INNER JOIN doesn't drop wallets
+            # whose only on-chain footprint is via a walker (ghost wallets).
             for r in c.execute(
                 'SELECT wallet, flares FROM walker_outputs WHERE walker=? AND quest=?',
                 (walker_name, q)
             ).fetchall():
+                c.execute("INSERT OR IGNORE INTO wallets(wallet, classification) VALUES (?, 'unclassified')",
+                          (r['wallet'],))
                 c.execute(
                     'INSERT OR REPLACE INTO wallet_quests(wallet, quest, flares, source, updated_at) '
                     'VALUES (?, ?, ?, ?, strftime("%s","now"))',
