@@ -106,7 +106,7 @@ jobs:
           REFRESH_MODE: ci   # sequential walkers — see server/refresh.sh
         run: bash server/refresh.sh
 
-      - name: Sanity gate (abort commit if total dropped >40%)
+      - name: Sanity gate (abort commit if total looks broken)
         run: |
           NEW=$(python3 -c "
           import json
@@ -115,7 +115,19 @@ jobs:
           PRIOR="${{ steps.prior.outputs.prior_total }}"
           echo "Prior: $PRIOR"
           echo "New:   $NEW"
-          if [ "$PRIOR" = "0" ]; then echo "First run — gate passes."; exit 0; fi
+          # Absolute floor: a healthy real-users total is ~$24B. Anything under
+          # $15B is almost certainly walker RPC failures, not legit. Refuse.
+          # This catches the "first run = prior is 0" loophole that lets bad
+          # data through the drop-percentage check.
+          python3 -c "
+          import sys
+          n = $NEW
+          if n < 15_000_000_000:
+              print(f'::error::Real-users total \${n:,.0f} is below absolute floor (\$15B). Walkers likely had silent RPC failures. Refusing to commit.', flush=True)
+              sys.exit(1)
+          " || exit 1
+          # Drop-percentage check (only if prior is meaningful)
+          if [ "$PRIOR" = "0" ]; then echo "No prior baseline — only absolute floor applied. Gate passes."; exit 0; fi
           python3 -c "
           p, n = $PRIOR, $NEW
           drop = (p - n) / p * 100 if p else 0
