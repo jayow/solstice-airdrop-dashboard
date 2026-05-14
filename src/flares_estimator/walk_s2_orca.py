@@ -107,13 +107,17 @@ def main():
     # cached one for each position).
     _db.init()
     existing_by_owner_pos = defaultdict(list)
+    cached_owner_by_pos = {}  # pos_pubkey -> wallet; fallback when find_nft_owner flakes
     for r in _db.conn().execute("SELECT wallet, raw_json FROM quest_cache WHERE quest_key='S2_ORCA'"):
         try:
             for e in (json.loads(r['raw_json']).get('events') or []):
                 pp = e.get('pos_pubkey')
-                if pp: existing_by_owner_pos[(r['wallet'], pp)].append(e)
+                if pp:
+                    existing_by_owner_pos[(r['wallet'], pp)].append(e)
+                    cached_owner_by_pos[pp] = r['wallet']
         except Exception: pass
     print(f'Preloaded existing events for {len(existing_by_owner_pos)} (wallet, position) pairs', flush=True)
+    print(f'Cached owner→position map: {len(cached_owner_by_pos)} positions (fallback for find_nft_owner flake)', flush=True)
 
     QUEST_TO_POSKEY = {
         'S2_ORCA_USX_USDC': 'orca_usx_usdc',
@@ -174,15 +178,24 @@ def main():
             positions.append({'pubkey': a['pubkey'], 'mint': mint, 'L': L,
                               'tick_lower': tick_lower, 'tick_upper': tick_upper})
 
-        # For each position, find NFT owner and compute USD value
+        # For each position, find NFT owner and compute USD value. If
+        # find_nft_owner returns None (RPC flake — getTokenLargestAccounts can
+        # silently fail under load), fall back to the cached owner from
+        # quest_cache. Position-NFT ownership is invariant once opened, so
+        # the cached owner is authoritative for any position we've seen before.
         def process(p):
             owner = find_nft_owner(p['mint'])
+            fallback = False
+            if not owner:
+                owner = cached_owner_by_pos.get(p['pubkey'])
+                fallback = bool(owner)
             if not owner: return None
             usd = liquidity_to_usd(p['L'], p['tick_lower'], p['tick_upper'],
                                     current_tick, price_a, price_b, dec_a, dec_b)
-            return (owner, p['pubkey'], p['mint'], usd)
+            return (owner, p['pubkey'], p['mint'], usd, fallback)
 
         n_processed = 0
+        n_fallback = 0
         position_owners = []
         with ThreadPoolExecutor(max_workers=12) as ex:
             futs = [ex.submit(process, p) for p in positions]
@@ -190,12 +203,13 @@ def main():
                 n_processed += 1
                 res = fut.result()
                 if res:
-                    owner, pos_pubkey, mint, usd = res
+                    owner, pos_pubkey, mint, usd, fallback = res
+                    if fallback: n_fallback += 1
                     if usd > 0:
                         position_owners.append((owner, pos_pubkey, mint, usd))
                         all_positions[owner][QUEST_TO_POSKEY[quest]] += usd
                 if n_processed % 50 == 0: print(f'    {n_processed}/{len(positions)} owners found', flush=True)
-        print(f'  {len(position_owners)} positions with active USD value', flush=True)
+        print(f'  {len(position_owners)} positions with active USD value (fallback used: {n_fallback})', flush=True)
 
         ORCA_IXS = {
             'increaseliquidity','increaseliquidityv2',

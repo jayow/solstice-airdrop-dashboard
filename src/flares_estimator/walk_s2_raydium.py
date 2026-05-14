@@ -80,13 +80,17 @@ def main():
     # Preload cached per-(owner, position) events for incremental walking.
     _db.init()
     existing_by_owner_pos = defaultdict(list)
+    cached_owner_by_pos = {}  # pos_pubkey -> wallet; fallback when find_nft_owner flakes
     for r in _db.conn().execute("SELECT wallet, raw_json FROM quest_cache WHERE quest_key='S2_RAYDIUM'"):
         try:
             for e in (json.loads(r['raw_json']).get('events') or []):
                 pp = e.get('pos_pubkey')
-                if pp: existing_by_owner_pos[(r['wallet'], pp)].append(e)
+                if pp:
+                    existing_by_owner_pos[(r['wallet'], pp)].append(e)
+                    cached_owner_by_pos[pp] = r['wallet']
         except Exception: pass
     print(f'Preloaded existing events for {len(existing_by_owner_pos)} (wallet, position) pairs', flush=True)
+    print(f'Cached owner→position map: {len(cached_owner_by_pos)} positions (fallback for find_nft_owner flake)', flush=True)
     QUEST_TO_POSKEY = {
         'S2_RAYDIUM_USX_USDC': 'raydium_usx_usdc',
         'S2_RAYDIUM_EUSX_USX': 'raydium_eusx_usx',
@@ -155,14 +159,23 @@ def main():
             if L == 0: continue
             positions.append({'pubkey': a['pubkey'], 'mint': mint, 'L': L, 'tl': tick_lower, 'tu': tick_upper})
 
+        # find_nft_owner cache fallback: if getTokenLargestAccounts flakes
+        # (silent RPC failure under load), fall back to the cached owner from
+        # quest_cache. NFT-position ownership is invariant once opened.
         def process(p):
             owner = find_nft_owner(p['mint'])
+            fallback = False
+            if not owner:
+                owner = cached_owner_by_pos.get(p['pubkey'])
+                fallback = bool(owner)
             if not owner: return None
             usd = liquidity_to_usd(p['L'], p['tl'], p['tu'], current_tick,
                                     cfg['price_a'], cfg['price_b'], cfg['dec_a'], cfg['dec_b'])
-            return (owner, p['pubkey'], p['mint'], usd) if usd > 0 else None
+            if usd <= 0: return None
+            return (owner, p['pubkey'], p['mint'], usd, fallback)
 
         position_owners = []
+        n_fallback = 0
         with ThreadPoolExecutor(max_workers=12) as ex:
             futs = [ex.submit(process, p) for p in positions]
             done = 0
@@ -171,10 +184,11 @@ def main():
                 if done % 50 == 0: print(f'    {done}/{len(positions)} owners', flush=True)
                 res = fut.result()
                 if res:
-                    position_owners.append(res)
-                    owner, pos_pubkey, mint, usd = res
+                    owner, pos_pubkey, mint, usd, fallback = res
+                    if fallback: n_fallback += 1
+                    position_owners.append((owner, pos_pubkey, mint, usd))
                     all_positions[owner][QUEST_TO_POSKEY[quest]] += usd
-        print(f'  {len(position_owners)} positions with USD value', flush=True)
+        print(f'  {len(position_owners)} positions with USD value (fallback used: {n_fallback})', flush=True)
 
         def _classify(tx, s):
             ix_name = None

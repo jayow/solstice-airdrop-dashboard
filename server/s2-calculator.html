@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>S2 SLX Calculator · Hanyon Analytics</title>
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png" />
+<link rel="icon" type="image/png" sizes="192x192" href="favicon-192.png" />
+<link rel="apple-touch-icon" href="apple-touch-icon.png" />
+<style>
+:root {
+  --ink-50: rgb(232, 232, 237);
+  --ink-100: rgb(232, 232, 237);
+  --ink-200: rgb(201, 201, 208);
+  --ink-300: rgb(155, 155, 163);
+  --ink-400: rgb(122, 122, 131);
+  --ink-500: rgb(84, 84, 92);
+  --ink-700: rgb(40, 40, 46);
+  --ink-900: rgb(17, 17, 20);
+  --ink-950: rgb(10, 10, 12);
+  --accent-200: rgb(253, 230, 138);
+  --accent-300: rgb(252, 211, 77);
+  --accent-400: rgb(251, 191, 36);
+  --accent-500: rgb(245, 158, 11);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--ink-950); color: var(--ink-100);
+             font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+             font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+.tabular { font-variant-numeric: tabular-nums; }
+.display { font-family: "Inter", ui-sans-serif, system-ui; font-weight: 600; letter-spacing: -0.02em; }
+.label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.14em; color: var(--ink-400); }
+
+main { max-width: 960px; margin: 0 auto; padding: 64px 24px; }
+header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 40px; }
+.brand { display: flex; align-items: center; gap: 16px; color: var(--ink-300); }
+.brand a { color: inherit; text-decoration: none; transition: color .15s; display: inline-flex; align-items: center; gap: 8px; font-size: 13px; }
+.brand a:hover { color: var(--ink-50); }
+.brand .sep { color: var(--ink-500); }
+.right-links { display: flex; align-items: center; gap: 16px; font-size: 11px; }
+.right-links a { color: var(--ink-500); text-decoration: none; text-transform: uppercase; letter-spacing: 0.14em; transition: color .15s; }
+.right-links a.featured { color: var(--accent-300); }
+.right-links a:hover { color: var(--ink-200); }
+.right-links a.featured:hover { color: var(--accent-200); }
+.right-links .sep { color: var(--ink-500); }
+
+.surface { background: rgba(255,255,255,.015); border: 1px solid rgba(255,255,255,.06); border-radius: 16px; padding: 28px; }
+section { margin-bottom: 32px; }
+section h1 { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 6px; }
+.section-sub { font-size: 12px; color: var(--ink-500); }
+
+input[type=text], input[type=date] {
+  background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.1); color: var(--ink-100);
+  padding: 10px 12px; border-radius: 8px; font: inherit; font-size: 14px; width: 100%;
+}
+input[type=text]:focus, input[type=date]:focus { outline: 1px solid var(--accent-400); border-color: var(--accent-400); }
+.field-label { font-size: 10px; color: var(--ink-500); text-transform: uppercase; letter-spacing: 0.14em; margin-bottom: 6px; display: block; }
+
+.btn-primary { background: rgba(124,92,255,.18); border: 1px solid rgba(124,92,255,.4); color: var(--ink-100);
+               padding: 10px 18px; border-radius: 8px; cursor: pointer; font: inherit; font-size: 12px; font-weight: 600; }
+.btn-primary:hover { background: rgba(124,92,255,.28); }
+
+.result-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px;
+               padding: 18px 20px; background: rgba(124,92,255,.04); border: 1px solid rgba(124,92,255,.18);
+               border-radius: 12px; margin-bottom: 20px; }
+.result-grid .lbl { font-size: 10px; color: var(--ink-500); text-transform: uppercase; letter-spacing: 0.14em; }
+.result-grid .v { font-size: 17px; font-weight: 600; color: var(--ink-100); margin-top: 4px; font-variant-numeric: tabular-nums; }
+.result-grid .v.accent { color: var(--accent-300); }
+
+.fdv-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.fdv-table th { font-size: 10px; color: var(--ink-500); text-transform: uppercase; letter-spacing: 0.1em;
+                font-weight: 500; padding: 8px 14px; text-align: right; }
+.fdv-table th.left { text-align: left; }
+.fdv-table tbody tr { border-top: 1px dashed rgba(255,255,255,.06); }
+.fdv-table td { padding: 10px 14px; text-align: right; font-variant-numeric: tabular-nums; }
+.fdv-table td.fdv-label { text-align: left; color: var(--ink-300); font-weight: 600; }
+.fdv-table td.fdv-price { color: var(--ink-500); }
+.fdv-table td.fdv-usd { color: var(--accent-300); font-weight: 600; }
+
+.note { font-size: 11px; color: var(--ink-500); margin-top: 16px; line-height: 1.6; }
+.error { color: #fda4af; font-size: 12px; margin-top: 10px; }
+.source { font-size: 11px; color: var(--ink-500); margin-top: 8px; }
+
+footer { text-align: center; color: var(--ink-500); font-size: 11px; margin-top: 40px; }
+
+@media (max-width: 720px) {
+  .result-grid { grid-template-columns: repeat(2, 1fr); }
+  .input-row { grid-template-columns: 1fr !important; }
+}
+</style>
+</head>
+<body>
+
+<main>
+  <header>
+    <div class="brand">
+      <a href="index.html" style="display:inline-flex; align-items:center;">
+        <img src="logos/solstice-text.svg" alt="Solstice" style="height: 28px; display:block; filter: invert(1);" />
+      </a>
+      <span class="sep">·</span>
+      <span class="display" style="font-size: 12px; color: var(--ink-400);">
+        S2 Calculator by
+        <a href="https://hanyon.app" target="_blank" rel="noopener noreferrer" style="color: var(--ink-200); text-decoration: underline dotted; text-underline-offset: 3px;">Hanyon Analytics</a>
+      </span>
+    </div>
+    <div class="right-links">
+      <a href="index.html">← Dashboard</a>
+      <span class="sep">·</span>
+      <a href="https://app.solstice.finance/?ref=z763qy4JcE" class="featured" target="_blank" rel="noopener noreferrer">Join Solstice ↗</a>
+    </div>
+  </header>
+
+  <section>
+    <h1 class="display">SLX projection calculator</h1>
+    <div class="section-sub">Estimate your SLX allocation. Paste a wallet to autofill, or enter your own projected flares at end date.</div>
+  </section>
+
+  <section>
+    <div class="surface">
+      <div style="display:grid; grid-template-columns: 1fr auto; gap: 10px; margin-bottom: 22px;">
+        <input id="calc-wallet" type="text" placeholder="Wallet address — paste to autofill"
+               autocomplete="off" onkeydown="if(event.key==='Enter') calcLoadWallet()"
+               style="font-family:ui-monospace,monospace; font-size:13px;" />
+        <button class="btn-primary" onclick="calcLoadWallet()">Load wallet</button>
+      </div>
+      <div id="calc-error" class="error" style="display:none;"></div>
+      <div id="calc-source" class="source"></div>
+
+      <div class="input-row" style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-top: 20px;">
+        <div>
+          <label class="field-label" for="calc-total">Your total flares at end date</label>
+          <input id="calc-total" type="text" value="0" inputmode="decimal"
+                 placeholder="e.g. 5,000,000 or 5M"
+                 oninput="onAmountInput(this)" onblur="onAmountBlur(this)" onfocus="onAmountFocus(this)" />
+          <div class="source" id="calc-prefill-hint" style="margin-top:6px;"></div>
+        </div>
+        <div>
+          <label class="field-label" for="calc-sys-total">System total at end date</label>
+          <input id="calc-sys-total" type="text" value="0" inputmode="decimal"
+                 placeholder="e.g. 60,000,000,000 or 60B"
+                 oninput="onSysTotalInput(this)" onblur="onAmountBlur(this)" onfocus="onAmountFocus(this)" />
+          <div class="source" id="calc-sys-hint" style="margin-top:6px;"></div>
+        </div>
+        <div>
+          <label class="field-label" for="calc-end">End date</label>
+          <input id="calc-end" type="date" value="2026-08-01" min="2026-04-13" max="2026-12-31"
+                 onchange="onEndDateChange()" />
+        </div>
+      </div>
+
+      <div class="result-grid" style="margin-top: 24px; grid-template-columns: repeat(4, 1fr);">
+        <div><div class="lbl">Days ahead</div><div class="v tabular" id="calc-days">—</div></div>
+        <div><div class="lbl">You at end</div><div class="v tabular" id="calc-you">—</div></div>
+        <div><div class="lbl">Your share</div><div class="v tabular accent" id="calc-share">—</div></div>
+        <div><div class="lbl">SLX allocation</div><div class="v tabular" id="calc-slx">—</div></div>
+      </div>
+
+      <div class="label" style="margin-bottom: 8px;">USD value by FDV</div>
+      <table class="fdv-table">
+        <thead>
+          <tr><th class="left">FDV</th><th>SLX price</th><th>Your USD value</th></tr>
+        </thead>
+        <tbody id="calc-fdv-rows"></tbody>
+      </table>
+
+      <div class="note">
+        System total at end date is pre-projected from current chain state + the last 3 days' average daily emission, but you can override it to model your own scenario (e.g. more wallets joining → higher dilution).
+        Changing the end date refreshes the projection.
+        3% of 1B SLX (30M) is allocated to S2 flares.
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    Data refreshed daily at 00:00 UTC · <a href="index.html" style="color:inherit; text-decoration:underline dotted;">← back to dashboard</a>
+  </footer>
+</main>
+
+<script>
+const SLX_TOTAL_SUPPLY = 1_000_000_000;
+const S2_AIRDROP_PCT   = 0.03;
+const FDV_SCENARIOS_M  = [30, 50, 100, 150, 200, 300, 400, 500];
+
+let DAILY = null, DATA = null;
+
+// ── KMB-aware number parser/formatter (geo-universal: always en-US commas) ──
+function parseAmount(s) {
+  if (s == null) return NaN;
+  // Strip commas, spaces, narrow no-break spaces (some locales), and underscores.
+  const cleaned = String(s).replace(/[,\s_  ]/g, '').toLowerCase().trim();
+  if (cleaned === '' || cleaned === '-') return NaN;
+  const m = cleaned.match(/^([+-]?\d*\.?\d+)\s*([kmbt])?$/);
+  if (!m) return NaN;
+  const n = parseFloat(m[1]);
+  if (!isFinite(n)) return NaN;
+  const mult = { k: 1e3, m: 1e6, b: 1e9, t: 1e12 }[m[2] || ''] || 1;
+  return n * mult;
+}
+function formatAmount(n) {
+  if (!isFinite(n) || n == null) return '';
+  return Math.round(n).toLocaleString('en-US');
+}
+
+let SYS_TOTAL_USER_EDITED = false;   // sticky once the user types into the system field
+
+function onAmountInput(el) {
+  // Recompute on every keystroke (don't reformat while typing — fights cursor).
+  onAnyInput();
+}
+function onAmountBlur(el) {
+  const n = parseAmount(el.value);
+  el.value = isFinite(n) ? formatAmount(n) : '';
+  onAnyInput();
+}
+function onAmountFocus(el) {
+  // Show raw number while editing — strip commas. KMB suffix is preserved if present.
+  const n = parseAmount(el.value);
+  if (isFinite(n)) el.value = String(Math.round(n));
+}
+
+function onSysTotalInput(el) {
+  SYS_TOTAL_USER_EDITED = true;
+  document.getElementById('calc-sys-hint').textContent = 'Manual override · clear & blur to reset to projection';
+  // If user clears it, restore auto-projection on the next render.
+  if (el.value.trim() === '') {
+    SYS_TOTAL_USER_EDITED = false;
+    refreshSysProjection();
+  }
+  onAnyInput();
+}
+
+function onEndDateChange() {
+  // End date drives the projection — always refresh sys total unless user has explicitly edited it.
+  if (!SYS_TOTAL_USER_EDITED) refreshSysProjection();
+  onAnyInput();
+}
+
+function onAnyInput() { renderResults(); }
+
+function computeSystemTotalAtEnd(daysAhead) {
+  // System current = last cumulative point in daily_totals (real users only)
+  let sysNow = 0;
+  if (DAILY && DAILY.days && DAILY.days.length) {
+    sysNow = DAILY.days[DAILY.days.length - 1].cumulative || 0;
+  } else if (DATA && DATA.records) {
+    sysNow = DATA.records.reduce((a, r) => a + (r.is_protocol_pda ? 0 : (r.total || 0)), 0);
+  }
+  // System daily emission = avg of last 3 days' inflation
+  let sysDaily = 1e9;
+  if (DAILY && DAILY.days && DAILY.days.length >= 3) {
+    const recent = DAILY.days.slice(-3);
+    sysDaily = recent.reduce((a, d) => a + (d.inflation || 0), 0) / recent.length;
+  }
+  return sysNow + daysAhead * sysDaily;
+}
+
+function refreshSysProjection() {
+  const endIso = document.getElementById('calc-end').value || '2026-08-01';
+  const today = new Date(); today.setUTCHours(0, 0, 0, 0);
+  const end = new Date(endIso + 'T00:00:00Z');
+  const days = Math.max(0, Math.round((end - today) / 86400000));
+  const projected = computeSystemTotalAtEnd(days);
+  document.getElementById('calc-sys-total').value = formatAmount(projected);
+  document.getElementById('calc-sys-hint').textContent =
+    'Auto-projected from current chain state + 3-day avg daily emission';
+}
+
+function renderResults() {
+  const userTotal = parseAmount(document.getElementById('calc-total').value) || 0;
+  const sysTotal  = parseAmount(document.getElementById('calc-sys-total').value) || 0;
+  const endIso = document.getElementById('calc-end').value || '2026-08-01';
+  const today = new Date(); today.setUTCHours(0, 0, 0, 0);
+  const end = new Date(endIso + 'T00:00:00Z');
+  const days = Math.max(0, Math.round((end - today) / 86400000));
+  const share = sysTotal > 0 ? userTotal / sysTotal : 0;
+  const slx = share * SLX_TOTAL_SUPPLY * S2_AIRDROP_PCT;
+
+  document.getElementById('calc-days').textContent = days.toLocaleString('en-US');
+  document.getElementById('calc-you').textContent = formatAmount(userTotal) + ' flares';
+  document.getElementById('calc-share').textContent = (share * 100).toFixed(4) + '%';
+  document.getElementById('calc-slx').textContent = formatAmount(slx) + ' SLX';
+
+  document.getElementById('calc-fdv-rows').innerHTML = FDV_SCENARIOS_M.map(fdvM => {
+    const price = (fdvM * 1e6) / SLX_TOTAL_SUPPLY;
+    const usd = slx * price;
+    return `<tr>
+      <td class="fdv-label">$${fdvM}M</td>
+      <td class="fdv-price">$${price.toFixed(3)}/SLX</td>
+      <td class="fdv-usd">$${formatAmount(usd)}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function calcLoadWallet() {
+  const addr = (document.getElementById('calc-wallet').value || '').trim();
+  const err = document.getElementById('calc-error');
+  const src = document.getElementById('calc-source');
+  const hint = document.getElementById('calc-prefill-hint');
+  err.style.display = 'none';
+  if (!addr) {
+    err.textContent = 'Paste a wallet address first.';
+    err.style.display = 'block';
+    return;
+  }
+  src.textContent = 'loading…';
+  try {
+    const r = await fetch('wallets/' + addr + '.json');
+    if (!r.ok) throw new Error('not found');
+    const p = await r.json();
+    const current = p.total_flares || 0;
+    const dailyByQuest = p.daily_emission_by_quest || {};
+    const dailyTotal = Object.values(dailyByQuest).reduce((a, b) => a + (b || 0), 0);
+    // Pre-populate end-date total = current + days_ahead * daily_emission
+    const endIso = document.getElementById('calc-end').value || '2026-08-01';
+    const today = new Date(); today.setUTCHours(0, 0, 0, 0);
+    const end = new Date(endIso + 'T00:00:00Z');
+    const days = Math.max(0, Math.round((end - today) / 86400000));
+    const projected = current + days * dailyTotal;
+    document.getElementById('calc-total').value = formatAmount(projected);
+    hint.textContent = 'Pre-filled: ' + formatAmount(current) + ' today + '
+      + formatAmount(dailyTotal) + '/day × ' + days + ' days. Edit to use your own estimate.';
+    src.textContent = 'Loaded ' + addr.slice(0, 6) + '…' + addr.slice(-6);
+    renderResults();
+  } catch (e) {
+    err.textContent = 'No data found for ' + addr + '. Check the address — it must be a wallet that appears in our dashboard.';
+    err.style.display = 'block';
+    src.textContent = '';
+  }
+}
+
+async function init() {
+  try {
+    const [dr, mr] = await Promise.all([
+      fetch('daily_totals.json').then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch('data.json').then(r => r.ok ? r.json() : null).catch(() => null),
+    ]);
+    DAILY = dr;
+    DATA = mr;
+  } catch (e) {}
+  // Seed the system-total input with the auto-projection. User can override after.
+  refreshSysProjection();
+  // Read ?w=<addr> from URL to auto-load (deep-linkable).
+  const params = new URLSearchParams(location.search);
+  const w = params.get('w');
+  if (w) {
+    document.getElementById('calc-wallet').value = w;
+    await calcLoadWallet();
+  } else {
+    renderResults();
+  }
+}
+
+init();
+</script>
+
+</body>
+</html>
