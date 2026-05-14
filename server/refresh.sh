@@ -17,30 +17,44 @@ mkdir -p /tmp/walker_logs
 START=$(date +%s)
 echo "[$(date '+%H:%M:%S')] === Solstice S2 refresh start ==="
 
-# ── Phase 1: parallel walkers ────────────────────────────────
-echo "[$(date '+%H:%M:%S')] Phase 1: launching 6 walkers in parallel"
-python3 src/flares_estimator/walk_s2_lp.py        > /tmp/walker_logs/refresh_lp.log 2>&1 &
-PID_LP=$!
-python3 src/flares_estimator/walk_s2_yt.py        > /tmp/walker_logs/refresh_yt.log 2>&1 &
-PID_YT=$!
-python3 src/flares_estimator/walk_s2_kamino.py    > /tmp/walker_logs/refresh_kamino.log 2>&1 &
-PID_KAM=$!
-python3 src/flares_estimator/walk_s2_loopscale.py > /tmp/walker_logs/refresh_loop.log 2>&1 &
-PID_LOOP=$!
-python3 src/flares_estimator/walk_s2_orca.py      > /tmp/walker_logs/refresh_orca.log 2>&1 &
-PID_ORCA=$!
-python3 src/flares_estimator/walk_s2_raydium.py   > /tmp/walker_logs/refresh_ray.log 2>&1 &
-PID_RAY=$!
-
-# Wait per-walker so we can report status as each completes
-for name_pid in "LP:$PID_LP" "YT:$PID_YT" "Loopscale:$PID_LOOP" "Orca:$PID_ORCA" "Raydium:$PID_RAY" "Kamino:$PID_KAM"; do
-  name="${name_pid%:*}"; pid="${name_pid#*:}"
-  if wait $pid; then
-    echo "[$(date '+%H:%M:%S')]   ✓ $name done"
-  else
-    echo "[$(date '+%H:%M:%S')]   ✗ $name FAILED — see /tmp/walker_logs/refresh_*.log"
-  fi
-done
+# ── Phase 1: walkers ────────────────────────────────────────
+# REFRESH_MODE=ci → run sequentially. GitHub Actions runner can't sustain the
+# parallel burst (100+ concurrent Helius connections) — silent RPC failures
+# wipe most data. Local manual runs default to parallel (~4× faster).
+REFRESH_MODE="${REFRESH_MODE:-parallel}"
+if [ "$REFRESH_MODE" = "ci" ]; then
+  echo "[$(date '+%H:%M:%S')] Phase 1: walkers SEQUENTIAL (REFRESH_MODE=ci)"
+  for w in lp yt kamino loopscale orca raydium; do
+    echo "[$(date '+%H:%M:%S')]   running walk_s2_$w.py"
+    if python3 src/flares_estimator/walk_s2_$w.py > /tmp/walker_logs/refresh_$w.log 2>&1; then
+      echo "[$(date '+%H:%M:%S')]     ✓ done"
+    else
+      echo "[$(date '+%H:%M:%S')]     ✗ FAILED"
+    fi
+  done
+else
+  echo "[$(date '+%H:%M:%S')] Phase 1: launching 6 walkers in PARALLEL"
+  python3 src/flares_estimator/walk_s2_lp.py        > /tmp/walker_logs/refresh_lp.log 2>&1 &
+  PID_LP=$!
+  python3 src/flares_estimator/walk_s2_yt.py        > /tmp/walker_logs/refresh_yt.log 2>&1 &
+  PID_YT=$!
+  python3 src/flares_estimator/walk_s2_kamino.py    > /tmp/walker_logs/refresh_kamino.log 2>&1 &
+  PID_KAM=$!
+  python3 src/flares_estimator/walk_s2_loopscale.py > /tmp/walker_logs/refresh_loop.log 2>&1 &
+  PID_LOOP=$!
+  python3 src/flares_estimator/walk_s2_orca.py      > /tmp/walker_logs/refresh_orca.log 2>&1 &
+  PID_ORCA=$!
+  python3 src/flares_estimator/walk_s2_raydium.py   > /tmp/walker_logs/refresh_ray.log 2>&1 &
+  PID_RAY=$!
+  for name_pid in "LP:$PID_LP" "YT:$PID_YT" "Loopscale:$PID_LOOP" "Orca:$PID_ORCA" "Raydium:$PID_RAY" "Kamino:$PID_KAM"; do
+    name="${name_pid%:*}"; pid="${name_pid#*:}"
+    if wait $pid; then
+      echo "[$(date '+%H:%M:%S')]   ✓ $name done"
+    else
+      echo "[$(date '+%H:%M:%S')]   ✗ $name FAILED — see /tmp/walker_logs/refresh_*.log"
+    fi
+  done
+fi
 
 # ── Phase 2: Kamino strategy (depends on Kamino cache) ───────
 echo "[$(date '+%H:%M:%S')] Phase 2: Kamino strategy backfill"

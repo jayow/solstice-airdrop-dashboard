@@ -86,16 +86,50 @@ jobs:
           fi
           echo "helius_url=$HELIUS_URL" > .env
 
+      - name: Capture prior total (sanity gate baseline)
+        id: prior
+        run: |
+          if [ -f server/data.json ]; then
+            PRIOR=$(python3 -c "
+          import json
+          d=json.load(open('server/data.json')); r=d['records']
+          print(sum((x.get('total') or 0) for x in r if not x.get('is_protocol_pda')))")
+            echo "Prior real-users total: $PRIOR"
+            echo "prior_total=$PRIOR" >> $GITHUB_OUTPUT
+          else
+            echo "No prior data.json — first run."
+            echo "prior_total=0" >> $GITHUB_OUTPUT
+          fi
+
       - name: Run refresh
+        env:
+          REFRESH_MODE: ci   # sequential walkers — see server/refresh.sh
         run: bash server/refresh.sh
+
+      - name: Sanity gate (abort commit if total dropped >40%)
+        run: |
+          NEW=$(python3 -c "
+          import json
+          d=json.load(open('server/data.json')); r=d['records']
+          print(sum((x.get('total') or 0) for x in r if not x.get('is_protocol_pda')))")
+          PRIOR="${{ steps.prior.outputs.prior_total }}"
+          echo "Prior: $PRIOR"
+          echo "New:   $NEW"
+          if [ "$PRIOR" = "0" ]; then echo "First run — gate passes."; exit 0; fi
+          python3 -c "
+          p, n = $PRIOR, $NEW
+          drop = (p - n) / p * 100 if p else 0
+          print(f'Drop: {drop:.1f}%')
+          if drop > 40:
+              import sys
+              print(f'::error::Real-users total dropped {drop:.1f}% (p \$PRIOR → n \$NEW). Refusing to commit.', flush=True)
+              sys.exit(1)
+          print('Gate passed.')"
 
       - name: Commit + push updated dashboard data
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          # Force-add: these paths are .gitignored locally (they're generated)
-          # but the deployed site needs them — CI is the only place they get
-          # committed. Same for server/wallets/ (per-wallet drawer JSONs).
           git add -f server/data.json server/daily_totals.json server/wallets/
           if git diff --cached --quiet; then
             echo "No changes to commit (dashboard data is already current)."
