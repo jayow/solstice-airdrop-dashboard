@@ -505,7 +505,8 @@ async function calcLoadWallet() {
     hint.textContent = 'Pre-filled: ' + formatAmount(current) + ' today + projected '
       + formatAmount(projected - current) + ' across ' + days + ' days.' + ytNote
       + ' Edit to override.';
-    src.textContent = 'Loaded ' + addr.slice(0, 6) + '…' + addr.slice(-6);
+    src.innerHTML = 'Loaded <span style="font-family:ui-monospace,monospace;">' + addr.slice(0, 6) + '…' + addr.slice(-6) + '</span>'
+      + ' · <a href="index.html#w/' + encodeURIComponent(addr) + '" style="color:var(--accent-300); text-decoration:underline dotted;">View on dashboard ↗</a>';
 
     // Show cost basis chip
     if (cbInfo) {

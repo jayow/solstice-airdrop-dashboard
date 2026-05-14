@@ -67,11 +67,23 @@ CACHEABLE_METHODS = {
     "getTokenLargestAccounts",
     "getTokenSupply",
     "getInflationReward",
+    "getBlockTime",
 }
 
-# Default cache freshness: 24h. Old enough that you'd want a refresh after a
-# day, fresh enough that re-running transform within a session is free.
+# Methods whose responses are IMMUTABLE for finalized data — once fetched,
+# they will never change. Cache forever. Avoids re-burning credits on identical
+# queries day after day (62k+ getTransaction entries × no-op refreshes).
+IMMUTABLE_METHODS = {
+    "getTransaction",  # finalized tx body never changes
+    "getBlockTime",    # finalized slot's timestamp never changes
+}
+
+# Default cache freshness for MUTABLE methods: 24h. Long enough that re-running
+# transforms in a session is free, short enough that day-to-day balance/sig
+# data stays fresh.
 DEFAULT_CACHE_MAX_AGE_HOURS = 24
+# Effectively infinite (~11.4 years) — used for IMMUTABLE_METHODS.
+INFINITE_CACHE_MAX_AGE_HOURS = 100_000
 
 
 def _first_live_idx() -> int:
@@ -98,9 +110,14 @@ def rpc(method: str, params: list, timeout: int = 30, max_retries: int = 8,
     See rpc_cache.py for storage format.
     """
     if method in CACHEABLE_METHODS and not force_refresh:
+        # Immutable methods (getTransaction of finalized sigs, getBlockTime)
+        # never need refresh — use infinite age regardless of caller's setting.
+        effective_max_age = (INFINITE_CACHE_MAX_AGE_HOURS
+                             if method in IMMUTABLE_METHODS
+                             else cache_max_age_hours)
         try:
             from rpc_cache import get as _cache_get
-            entry = _cache_get(method, params, max_age_hours=cache_max_age_hours)
+            entry = _cache_get(method, params, max_age_hours=effective_max_age)
             if entry and entry.get("status") == "ok":
                 return {"jsonrpc": "2.0", "id": 1, "result": entry["result"]}
         except Exception:

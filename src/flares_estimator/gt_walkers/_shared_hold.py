@@ -44,6 +44,28 @@ def _post_balance(sig: str, ata: str):
     return float(post.get('uiTokenAmount', {}).get('uiAmount') or 0)
 
 
+def is_hold_cache_stale(cached: dict | None, wallet: str, daily_quest: str) -> bool:
+    """Return True if the cached HOLD entry is contradicted by wallet_quests
+    (i.e. we previously credited the wallet for HOLD flares, but the cache
+    now claims no ATAs were ever found). This catches the RPC-flake failure
+    mode where one bad getTokenAccountsByOwner call poisons the 24h cache.
+    """
+    if not cached: return False
+    raw = cached.get('raw') or {}
+    if (raw.get('atas') or []) != []: return False
+    # Cache claims no ATAs. Cross-check wallet_quests: if we have historical
+    # flares for the matching DAILY quest, the cache is contradicting itself.
+    try:
+        import sqlite3 as _sq, os as _os
+        _ROOT = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))))
+        _con = _sq.connect(_os.path.join(_ROOT, 'data', 'solstice.db'))
+        row = _con.execute('SELECT flares FROM wallet_quests WHERE wallet=? AND quest=?', (wallet, daily_quest)).fetchone()
+        _con.close()
+        return bool(row and (row[0] or 0) > 0)
+    except Exception:
+        return False
+
+
 def build_twab_timeline(wallet: str, mint: str) -> dict:
     """Walk every ATA owned by `wallet` for `mint` and produce a unified balance timeline.
 

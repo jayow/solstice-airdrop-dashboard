@@ -11,7 +11,7 @@ if os.path.dirname(THIS) not in sys.path: sys.path.insert(0, os.path.dirname(THI
 from gt_walkers._base import (S2_START_TS, S2_END_TS, USX_MINT,
     write_walker_outputs, sync_to_wallet_quests, report, live_eusx_peg)
 from gt_walkers._shared_hold import (build_twab_timeline, integrate_qualified_bonus,
-    discover_universe_for_mint)
+    discover_universe_for_mint, is_hold_cache_stale)
 import db
 
 WALKER_NAME = 'gt_hold_usx_3mo'
@@ -33,7 +33,8 @@ def run(workers: int = 16, force_refresh: bool = False) -> dict:
         def process(w):
             if not force_refresh:
                 cached = db.get_cache(w, 'S2_HOLD_USX')
-                if cached and (now_ts - (cached.get('extracted_at') or 0)) < 24*3600:
+                if cached and (now_ts - (cached.get('extracted_at') or 0)) < 24*3600 \
+                   and not is_hold_cache_stale(cached, w, 'S2_HOLD_USX_DAILY'):
                     return w, integrate_qualified_bonus(cached['raw'].get('timeline') or [], MIN_BAL, QUALIFY_DAYS, MULT, usd_per, end_ts)
             raw = build_twab_timeline(w, USX_MINT)
             db.put_cache(w, 'S2_HOLD_USX', raw, watermark_ts=raw.get('last_event_ts', 0))
