@@ -177,7 +177,7 @@ footer { text-align: center; color: var(--ink-500); font-size: 11px; margin-top:
       <div class="label" style="margin-bottom: 8px;">USD value by FDV</div>
       <table class="fdv-table">
         <thead>
-          <tr><th class="left">FDV</th><th>SLX price</th><th>Your USD value</th><th id="calc-fdv-roi-head">vs basis</th></tr>
+          <tr><th class="left">FDV</th><th>SLX price</th><th>Your USD value</th><th id="calc-fdv-roi-head">vs YT cost</th></tr>
         </thead>
         <tbody id="calc-fdv-rows"></tbody>
       </table>
@@ -387,7 +387,7 @@ function renderResults() {
   }).join('');
   // Update the column header to reflect basis state.
   const head = document.getElementById('calc-fdv-roi-head');
-  if (head) head.textContent = basis > 0 ? 'vs cost basis' : '—';
+  if (head) head.textContent = basis > 0 ? 'vs YT cost' : '—';
 }
 
 // Global hover-tooltip handler — mirrors the dashboard's pattern.
@@ -412,40 +412,25 @@ function renderResults() {
 })();
 
 function extractCostBasis(evidence) {
-  // Returns { total: $, breakdown: [{label, usd}, …] } summing LEND/SUPPLY-type
-  // cost basis across all partners. BORROW positions are debt (not investment)
-  // and are excluded. YT positions use their decay-adjusted basis at S2 start.
+  // Returns { total: $, breakdown: [{label, usd}, …] } of USD AT RISK.
+  //
+  // Only YT positions are included — they decay linearly to $0 at maturity
+  // (2026-06-01), so the "cost basis" is real money that goes to zero unless
+  // you sell. Every other partner (LP, Kamino, Loopscale, CLMM, kVault) is
+  // capital-preserved: stablecoin positions you can withdraw at any time.
+  // Including those in a "cost basis" line would misrepresent risk.
+  //
+  // Per-position cost-basis chips in the wallet drawer still show "USD net
+  // deposited" for those partners (useful as a yield-extracted signal), they
+  // just don't aggregate into the calculator's ROI math.
   const breakdown = [];
   const ev = evidence || {};
-
-  // YT — sum across markets
   const yt = ev.S2_EXPONENT_YT || {};
   for (const mb of (yt.by_market || [])) {
     const cb = mb.cost_basis;
     if (!cb || cb.usd_basis === undefined) continue;
     const isUsx = mb.market && mb.market.startsWith('Bxbi');
     breakdown.push({ label: 'YT ' + (isUsx ? 'USX-Jun26' : 'eUSX-Jun26'), usd: cb.usd_basis || 0 });
-  }
-  // LP, Kamino, Loopscale, Orca, Raydium — single cost_basis_by_quest map per partner
-  const KEY_PARTNERS = [
-    ['S2_EXPONENT_LP', { S2_EXPONENT_LP_USX_JUN26: 'LP USX-Jun26', S2_EXPONENT_LP_EUSX_JUN26: 'LP eUSX-Jun26' }],
-    ['S2_KAMINO', {
-      S2_KAMINO_LEND_USX: 'Kamino lend USX', S2_KAMINO_LEND_EUSX: 'Kamino lend eUSX', S2_KAMINO_LEND_USDG: 'Kamino lend USDG',
-      S2_KAMINO_KVAULT_USDG_USX: 'Kamino kVault USDG/USX',
-    }],
-    ['S2_LOOPSCALE', { S2_LOOPSCALE_SUPPLY_USX_ONE: 'Loopscale supply USX ONE' }],
-    ['S2_ORCA', {
-      S2_ORCA_USX_USDC: 'Orca USX/USDC', S2_ORCA_EUSX_USX: 'Orca eUSX/USX', S2_ORCA_USX_USDG: 'Orca USX/USDG',
-    }],
-    ['S2_RAYDIUM', { S2_RAYDIUM_USX_USDC: 'Raydium USX/USDC', S2_RAYDIUM_EUSX_USX: 'Raydium eUSX/USX' }],
-  ];
-  for (const [evKey, questMap] of KEY_PARTNERS) {
-    const cbq = (ev[evKey] || {}).cost_basis_by_quest || {};
-    for (const [q, label] of Object.entries(questMap)) {
-      const cb = cbq[q];
-      if (!cb || cb.kind === 'borrow' || cb.usd_basis === undefined || cb.usd_basis <= 0) continue;
-      breakdown.push({ label, usd: cb.usd_basis });
-    }
   }
   const total = breakdown.reduce((s, b) => s + b.usd, 0);
   return { total, breakdown };
@@ -508,17 +493,20 @@ async function calcLoadWallet() {
     src.innerHTML = 'Loaded <span style="font-family:ui-monospace,monospace;">' + addr.slice(0, 6) + '…' + addr.slice(-6) + '</span>'
       + ' · <a href="index.html#w/' + encodeURIComponent(addr) + '" style="color:var(--accent-300); text-decoration:underline dotted;">View on dashboard ↗</a>';
 
-    // Show cost basis chip
+    // Show cost basis chip — YT only (other partners are capital-preserved
+    // and their USD-deposited isn't "at risk").
     if (cbInfo) {
       if (costBasis.total > 0) {
-        const tip = costBasis.breakdown
+        const tip = (costBasis.breakdown
           .sort((a,b) => b.usd - a.usd)
           .map(b => `${b.label}: ${'$' + Math.round(b.usd).toLocaleString('en-US')}`)
-          .join('\n').replace(/"/g, '&quot;');
+          .join('\n')
+          + '\n\nOnly YT positions count toward cost basis — YT decays to $0 at maturity. LP/Kamino/Loopscale/CLMM positions are capital-preserved (stablecoins withdrawable any time).'
+        ).replace(/"/g, '&quot;');
         cbInfo.innerHTML = `<span class="has-hover-tip" data-tip="${tip}">
-          <span style="color:var(--ink-500);">USD cost basis:</span>
+          <span style="color:var(--ink-500);">YT cost basis (USD at risk):</span>
           <strong style="color:var(--accent-300); font-variant-numeric:tabular-nums;">$${formatAmount(costBasis.total)}</strong>
-          <span style="color:var(--ink-500); font-size:10px; margin-left:4px;">ⓘ ${costBasis.breakdown.length} position${costBasis.breakdown.length===1?'':'s'}</span>
+          <span style="color:var(--ink-500); font-size:10px; margin-left:4px;">ⓘ ${costBasis.breakdown.length} YT market${costBasis.breakdown.length===1?'':'s'}</span>
         </span>`;
         cbInfo.style.display = 'block';
       } else {
