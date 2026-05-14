@@ -209,6 +209,8 @@ def main():
     print(f'\nWriting per-wallet JSON to {OUT_DIR}/...')
     t0 = time.time()
     written = 0
+    system_daily_by_quest = {}   # aggregated from real-user wallets only
+    SERVER = os.path.dirname(os.path.abspath(__file__))
     for w in all_wallets:
         meta = meta_by_w.get(w, {})
         # Quest breakdown — fill in zero for quests not present
@@ -272,6 +274,23 @@ def main():
             json.dump(payload, f, separators=(',', ':'))
         written += 1
         if written % 2000 == 0: print(f'  {written:,}/{len(all_wallets):,}  ({time.time()-t0:.1f}s)')
+        # Aggregate system-wide daily emission per quest (used by the SLX
+        # calculator to project the system total at end-date with YT-cap math).
+        if not is_pda:
+            for q, v in payload['daily_emission_by_quest'].items():
+                system_daily_by_quest[q] = system_daily_by_quest.get(q, 0) + (v or 0)
+
+    # Inject system_daily_emission_by_quest into data.json so the calculator
+    # can compute YT-decay-aware system projections without scanning 28k files.
+    data_json_path = os.path.join(SERVER, 'data.json')
+    try:
+        with open(data_json_path) as f: data = json.load(f)
+        data['system_daily_emission_by_quest'] = {q: round(v, 4) for q, v in system_daily_by_quest.items() if v > 0}
+        with open(data_json_path, 'w') as f: json.dump(data, f, separators=(',', ':'))
+        total_daily = sum(system_daily_by_quest.values())
+        print(f'\nInjected system_daily_emission_by_quest into data.json: {total_daily:,.0f} flares/day across {sum(1 for v in system_daily_by_quest.values() if v > 0)} quests')
+    except Exception as e:
+        print(f'WARN: failed to inject system daily into data.json: {e}')
 
     print(f'\nDone. {written:,} files in {time.time()-t0:.1f}s')
 

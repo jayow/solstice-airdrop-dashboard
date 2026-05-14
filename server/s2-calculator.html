@@ -287,6 +287,38 @@ function refreshUserProjection() {
 
 function onAnyInput() { renderResults(); }
 
+function computeSystemDailyRates() {
+  // Sum per-quest daily emission across all non-PDA wallets, then split into
+  // YT (caps at maturity) vs everything else (runs full window). Falls back to
+  // the blended daily inflation from daily_totals.json if data.json is missing
+  // per-quest detail.
+  let sysYtDaily = 0, sysNonytDaily = 0, hasPerQuest = false;
+  if (DATA && DATA.records) {
+    for (const r of DATA.records) {
+      if (r.is_protocol_pda) continue;
+      const byQuest = r.daily_emission_by_quest;
+      if (!byQuest) continue;
+      hasPerQuest = true;
+      for (const [q, v] of Object.entries(byQuest)) {
+        if (!v) continue;
+        if (YT_QUESTS.has(q)) sysYtDaily += v;
+        else sysNonytDaily += v;
+      }
+    }
+  }
+  if (!hasPerQuest) {
+    // Fallback: 3-day avg inflation, treated as if all-non-YT (conservative —
+    // means system won't visibly drop at maturity in the projection)
+    if (DAILY && DAILY.days && DAILY.days.length >= 3) {
+      const recent = DAILY.days.slice(-3);
+      sysNonytDaily = recent.reduce((a, d) => a + (d.inflation || 0), 0) / recent.length;
+    } else {
+      sysNonytDaily = 1e9;
+    }
+  }
+  return { sysYtDaily, sysNonytDaily };
+}
+
 function computeSystemTotalAtEnd(daysAhead) {
   // System current = last cumulative point in daily_totals (real users only)
   let sysNow = 0;
@@ -295,13 +327,12 @@ function computeSystemTotalAtEnd(daysAhead) {
   } else if (DATA && DATA.records) {
     sysNow = DATA.records.reduce((a, r) => a + (r.is_protocol_pda ? 0 : (r.total || 0)), 0);
   }
-  // System daily emission = avg of last 3 days' inflation
-  let sysDaily = 1e9;
-  if (DAILY && DAILY.days && DAILY.days.length >= 3) {
-    const recent = DAILY.days.slice(-3);
-    sysDaily = recent.reduce((a, d) => a + (d.inflation || 0), 0) / recent.length;
-  }
-  return sysNow + daysAhead * sysDaily;
+  const { sysYtDaily, sysNonytDaily } = computeSystemDailyRates();
+  const today = new Date(); today.setUTCHours(0, 0, 0, 0);
+  const todayTs = Math.floor(today.getTime() / 1000);
+  const daysToMaturity = Math.max(0, (YT_MATURITY_TS - todayTs) / 86400);
+  const ytDays = Math.min(daysAhead, daysToMaturity);
+  return sysNow + sysYtDaily * ytDays + sysNonytDaily * daysAhead;
 }
 
 function refreshSysProjection() {
@@ -311,8 +342,13 @@ function refreshSysProjection() {
   const days = Math.max(0, Math.round((end - today) / 86400000));
   const projected = computeSystemTotalAtEnd(days);
   document.getElementById('calc-sys-total').value = formatAmount(projected);
-  document.getElementById('calc-sys-hint').textContent =
-    'Auto-projected from current chain state + 3-day avg daily emission';
+  const { sysYtDaily, sysNonytDaily } = computeSystemDailyRates();
+  const todayTs = Math.floor(today.getTime() / 1000);
+  const daysToMaturity = Math.max(0, (YT_MATURITY_TS - todayTs) / 86400);
+  const note = sysYtDaily > 0
+    ? `Auto-projected: ${formatAmount(sysYtDaily)} YT/d (cap ${daysToMaturity.toFixed(1)}d) + ${formatAmount(sysNonytDaily)} non-YT/d × ${days}d`
+    : 'Auto-projected from current state + last-3d avg inflation';
+  document.getElementById('calc-sys-hint').textContent = note;
 }
 
 function renderResults() {
