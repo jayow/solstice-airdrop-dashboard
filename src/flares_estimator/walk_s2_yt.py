@@ -31,6 +31,9 @@ import walker_db
 S2_START_TS = 1776038400
 S2_END_TS   = 1785024000   # cap if walking beyond now
 
+# Jun26 markets mature at 2026-06-01 12:58 UTC (per api.exponent.finance)
+MATURITY_TS = 1780664280
+
 EXPONENT_PROG = 'ExponentnaRg3CQbW6dqQNZKXp7gtZ9DGMp1cwC4HAS7'
 
 # Anchor event discriminators = sha256("event:<EventName>")[:8]
@@ -42,11 +45,13 @@ MARKETS = {
         'market': 'BxbiZpzj32nrVGecFy8VQ1HohaW7ryhas1k9aiETDWdm',
         'mult':   30,
         'quest':  'S2_EXPONENT_YIELD_USX_JUN26',
+        'base_usd': 1.0,   # USX = $1
     },
     'eUSX-Jun26': {
         'market': 'rBbzpGk3PTX8mvQg95VWJ24EDgvxyDJYrEo9jtauvjP',
         'mult':   15,
         'quest':  'S2_EXPONENT_YIELD_EUSX_JUN26',
+        'base_usd': 1.156, # eUSX current peg (current snapshot — improve to time-varying later)
     },
 }
 
@@ -75,7 +80,13 @@ def fetch_all_sigs(addr: str) -> list:
 
 
 def extract_yt_events_from_tx(tx: dict, market_pk: str) -> list:
-    """Return list of (ts, user, delta_yt) for BuyYt/SellYt events on this market.
+    """Return list of (ts, user, delta_yt, base_amount) for BuyYt/SellYt events.
+
+    base_amount is the underlying-asset (USX/eUSX) amount, in token units (not USD).
+    Caller converts to USD using the market's base_usd peg. Sign:
+      BUY  → user paid base, treat as negative USD-flow (cost paid)
+      SELL → user received base, treat as positive USD-flow (cost recovered)
+
     Event payload layout (post-16-byte prefix):
       WrapperBuyYtEvent:   market(32) | buyer(32)  | yt_out(8) | base_in(8) | ts(8)
       WrapperSellYtEvent:  seller(32) | market(32) | yt_in(8)  | base_out(8)| ts(8)
@@ -97,17 +108,19 @@ def extract_yt_events_from_tx(tx: dict, market_pk: str) -> list:
             if disc == _BUY_YT_DISC:
                 evt_market = base58.b58encode(data[16:48]).decode()
                 buyer = base58.b58encode(data[48:80]).decode()
-                yt_amount = struct.unpack('<Q', data[80:88])[0] / 1e6
+                yt_amount   = struct.unpack('<Q', data[80:88])[0] / 1e6
+                base_amount = struct.unpack('<Q', data[88:96])[0] / 1e6
                 ts = struct.unpack('<q', data[96:104])[0]
                 if evt_market == market_pk and yt_amount > 0:
-                    out.append((ts, buyer, +yt_amount))
+                    out.append((ts, buyer, +yt_amount, base_amount))
             elif disc == _SELL_YT_DISC:
                 seller = base58.b58encode(data[16:48]).decode()
                 evt_market = base58.b58encode(data[48:80]).decode()
-                yt_amount = struct.unpack('<Q', data[80:88])[0] / 1e6
+                yt_amount   = struct.unpack('<Q', data[80:88])[0] / 1e6
+                base_amount = struct.unpack('<Q', data[88:96])[0] / 1e6
                 ts = struct.unpack('<q', data[96:104])[0]
                 if evt_market == market_pk and yt_amount > 0:
-                    out.append((ts, seller, -yt_amount))
+                    out.append((ts, seller, -yt_amount, base_amount))
     return out
 
 
@@ -127,24 +140,23 @@ def main():
         sigs = fetch_all_sigs(market_pk)
         print(f'  {len(sigs):,} market sigs', flush=True)
 
-        # Fetch all txs in parallel; extract per-wallet (ts, delta) events
-        events_by_wallet = defaultdict(list)  # wallet -> [(ts, delta_yt), ...]
+        # Fetch all txs in parallel; extract per-wallet event tuples including base.
+        events_by_wallet = defaultdict(list)  # wallet -> [(ts, delta_yt, base_amt, sig), ...]
         def fetch(s):
             try:
                 tx = rpc('getTransaction', [s['signature'],
                         {'encoding': 'jsonParsed', 'maxSupportedTransactionVersion': 0}]).get('result')
                 if not tx: return []
                 evs = extract_yt_events_from_tx(tx, market_pk)
-                # Add signature info for cache
-                return [(ts, user, delta, s['signature']) for ts, user, delta in evs]
+                return [(ts, user, delta, base, s['signature']) for ts, user, delta, base in evs]
             except Exception: return []
 
         n_done = 0
         with ThreadPoolExecutor(max_workers=24) as ex:
             futs = [ex.submit(fetch, s) for s in sigs]
             for fut in as_completed(futs):
-                for ts, user, delta, sig in fut.result():
-                    events_by_wallet[user].append((ts, delta, sig))
+                for ts, user, delta, base, sig in fut.result():
+                    events_by_wallet[user].append((ts, delta, base, sig))
                 n_done += 1
                 if n_done % 1000 == 0: print(f'    {n_done}/{len(sigs)}', flush=True)
 
@@ -152,25 +164,42 @@ def main():
         n_events = sum(len(v) for v in events_by_wallet.values())
         print(f'  {n_users} unique users, {n_events} buy/sell events', flush=True)
 
-        # Integrate per wallet
+        # Cost-basis math: how much USD a wallet has effectively invested in YT.
+        # Pre-S2 buys time-decay linearly toward $0 at maturity (YT is a decaying
+        # claim on remaining yield). So at S2 start, only the residual portion is
+        # "still invested." Post-S2 buys count at full USD paid. Sells subtract
+        # full USD recovered (1:1, no decay adjustment — they got that real cash).
+        BASE_USD = cfg['base_usd']
+        def decay_factor(buy_ts: int) -> float:
+            if buy_ts >= S2_START_TS: return 1.0
+            if MATURITY_TS <= buy_ts: return 0.0
+            return max(0.0, (MATURITY_TS - S2_START_TS) / (MATURITY_TS - buy_ts))
+
+        # Integrate flares per wallet + accumulate cost basis
+        cost_basis_by_wallet = defaultdict(float)
         for wallet, evs in events_by_wallet.items():
             evs.sort(key=lambda e: e[0])
-            # Build cumulative balance timeline
-            balance = 0.0
-            timeline = [(S2_START_TS, 0.0)]  # placeholder; we'll set the carry-in
-            for ts, delta, sig in evs:
-                balance = max(0.0, balance + delta)
-                timeline.append((ts, balance))
+
+            # Cost basis: walk events in time order, applying decay only to pre-S2 buys.
+            cb = 0.0
+            for ts, delta, base, sig in evs:
+                usd = base * BASE_USD
+                if delta > 0:   # BUY: cost paid (decay-adjusted for pre-S2)
+                    cb += usd * decay_factor(ts)
+                else:           # SELL: cost recovered (1:1)
+                    cb -= usd
+            cost_basis_by_wallet[wallet] = max(0.0, cb)
+
             # Initialize carry-in at S2_START_TS from pre-S2 events
             pre_s2_balance = 0.0
-            for ts, delta, sig in evs:
+            for ts, delta, base, sig in evs:
                 if ts < S2_START_TS:
                     pre_s2_balance = max(0.0, pre_s2_balance + delta)
                 else: break
             # Rebuild timeline with carry-in at S2_START
             timeline = [(S2_START_TS, pre_s2_balance)]
             balance = pre_s2_balance
-            for ts, delta, sig in evs:
+            for ts, delta, base, sig in evs:
                 if ts < S2_START_TS: continue
                 balance = max(0.0, balance + delta)
                 timeline.append((ts, balance))
@@ -187,13 +216,17 @@ def main():
 
             if flares > 0:
                 all_results[wallet][cfg['quest']] = flares
+            # Track cost basis per quest (so we can attribute per-market in UI).
+            if cost_basis_by_wallet[wallet] > 0:
+                all_results[wallet][cfg['quest'] + '__cost_usd'] = cost_basis_by_wallet[wallet]
 
             # Save ALL events for cache (incl. pre-S2 so chart can show the
             # correct carry-in at S2_START rather than starting from zero).
-            for ts, delta, sig in evs:
+            for ts, delta, base, sig in evs:
                 all_events_by_wallet[wallet].append({
                     'ts': ts, 'sig': sig, 'market': market_pk, 'market_label': mname,
-                    'yt_delta': delta, 'ix': 'BuyYt' if delta > 0 else 'SellYt',
+                    'yt_delta': delta, 'base_amount': base, 'usd_value': base * BASE_USD,
+                    'ix': 'BuyYt' if delta > 0 else 'SellYt',
                 })
 
         q_total = sum(r.get(cfg['quest'], 0) for r in all_results.values())
@@ -211,12 +244,13 @@ def main():
     with open(out_path, 'w') as f: json.dump(out, f, indent=2)
     print(f'Saved {len(out)} wallets to {out_path}')
 
-    # DB
+    # DB — only real quest rows go into walker_outputs (skip the __cost_usd sidecars).
     WALKER_QUESTS = ['S2_EXPONENT_YIELD_USX_JUN26', 'S2_EXPONENT_YIELD_EUSX_JUN26']
     walker_db.prune('walk_s2_yt')
     rows = []
     for w, pq in out.items():
         for q, v in pq.items():
+            if q.endswith('__cost_usd'): continue
             if v > 0: rows.append((w, q, v))
     walker_db.upsert_many('walk_s2_yt', rows)
     walker_db.sync_to_wallet_quests('walk_s2_yt', WALKER_QUESTS)
@@ -242,6 +276,7 @@ def main():
     # enough for the chart.
     for wallet in set(list(all_results.keys()) + list(per_wallet_per_market.keys())):
         positions_by_market = {}
+        cost_basis_by_market = {}   # market_pk → {usd_paid, usd_recovered, usd_basis, n_buys, n_sells}
         for market_pk, cfg in MARKETS.items():
             mp = cfg['market']
             evs = per_wallet_per_market.get(wallet, {}).get(mp, [])
@@ -259,6 +294,32 @@ def main():
             if timeline and timeline[-1][0] < end_ts:
                 timeline.append([end_ts, balance])
             if not timeline: continue
+
+            # Cost basis: per-market decay-adjusted USD invested (see decay_factor above)
+            usd_paid_decayed = 0.0   # decay-adjusted USD paid (pre-S2 buys time-decayed; post-S2 buys full)
+            usd_paid_nominal = 0.0   # raw USD paid (no decay) — useful for display
+            usd_recovered = 0.0
+            n_buys = n_sells = 0
+            for e in evs:
+                usd = e['usd_value']
+                if e['yt_delta'] > 0:
+                    # decay factor for pre-S2 buys, identity for post-S2
+                    df = 1.0 if e['ts'] >= S2_START_TS else max(0.0, (MATURITY_TS - S2_START_TS) / (MATURITY_TS - e['ts']))
+                    usd_paid_decayed += usd * df
+                    usd_paid_nominal += usd
+                    n_buys += 1
+                else:
+                    usd_recovered += usd
+                    n_sells += 1
+            cost_basis_by_market[mp] = {
+                'usd_basis':     max(0.0, usd_paid_decayed - usd_recovered),
+                'usd_paid':      usd_paid_nominal,
+                'usd_paid_decayed_at_s2': usd_paid_decayed,
+                'usd_recovered': usd_recovered,
+                'n_buys':        n_buys,
+                'n_sells':       n_sells,
+            }
+
             positions_by_market[mp] = [{
                 'pubkey': f'{mp[:12]}_yt_synthetic',
                 'timeline': timeline,
@@ -269,8 +330,9 @@ def main():
         if not positions_by_market: continue
         cache_payload = {
             'positions_by_market': positions_by_market,
+            'cost_basis_by_market': cost_basis_by_market,
             '_watermark': {'slot': 0, 'ts': now_ts},
-            'schema': 'yt_event_walked_v1',
+            'schema': 'yt_event_walked_v2',
         }
         _db.put_cache(wallet, 'S2_EXPONENT_YT', cache_payload, watermark_ts=now_ts)
         snap_count += 1

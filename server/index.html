@@ -922,7 +922,10 @@ function renderExponentPositions(p, txs) {
       const flares = totalQuestFlares * share;
       const cur = m.pos.yt || 0;
       const earning = m.pos.emit && cur > 0 ? 'EARNING' : (m.pos.method === 'current_state_fallback' ? 'LP residue (0 flares)' : 'closed');
-      rows.push({ market: info.label, mult: info.mult, pos: m.pos, flares, days_held: m.days_held, trades: m.trades, earning });
+      // Cost basis lives per-market in the cache. Show it on the event-walked
+      // synthetic position (V1 LP-residue positions don't have a real buy cost).
+      const cost_basis = (m.pos.method === 'event_walked') ? (mb.cost_basis || null) : null;
+      rows.push({ market: info.label, mult: info.mult, pos: m.pos, flares, days_held: m.days_held, trades: m.trades, earning, cost_basis });
     }
   }
   if (!rows.length) return '';
@@ -939,6 +942,33 @@ function renderExponentPositions(p, txs) {
       </div>`;
     }).join('') + '</div>';
   };
+  const fmtUsd = v => '$' + Math.round(v).toLocaleString('en-US');
+  const costRow = (cb, flares) => {
+    if (!cb || cb.usd_basis === undefined) return '';
+    const basis = cb.usd_basis || 0;
+    const paid_decayed = cb.usd_paid_decayed_at_s2 || 0;
+    const paid_nominal = cb.usd_paid || 0;
+    const recovered = cb.usd_recovered || 0;
+    const nBuys = cb.n_buys || 0;
+    const nSells = cb.n_sells || 0;
+    // Multi-line tooltip — \n in data-tip renders as line breaks via the global tooltip's white-space:pre-line
+    const tipLines = [];
+    if (Math.abs(paid_decayed - paid_nominal) > 1) {
+      tipLines.push(`Paid: ${fmtUsd(paid_nominal)} (${nBuys} ${nBuys === 1 ? 'buy' : 'buys'})`);
+      tipLines.push(`At S2 start (decayed): ${fmtUsd(paid_decayed)}`);
+    } else {
+      tipLines.push(`Paid: ${fmtUsd(paid_nominal)} (${nBuys} ${nBuys === 1 ? 'buy' : 'buys'})`);
+    }
+    tipLines.push(`Recovered: ${fmtUsd(recovered)} (${nSells} ${nSells === 1 ? 'sell' : 'sells'})`);
+    if (basis > 0 && flares > 0) {
+      tipLines.push(`Flares per $: ${(flares/basis).toLocaleString(undefined, {maximumFractionDigits: 1})}`);
+    }
+    const tip = tipLines.join('\n').replace(/"/g, '&quot;');
+    return `<div class="pos-meta-line has-hover-tip" data-tip="${tip}" style="border-top:1px dashed rgba(255,255,255,.08); margin-top:8px; padding-top:8px;">
+      <span style="color:var(--ink-400);">USD cost basis <span style="color:var(--ink-500); font-size:10px; margin-left:4px;">ⓘ</span></span>
+      <span style="color:var(--accent-300); font-weight:600;">${fmtUsd(basis)}</span>
+    </div>`;
+  };
   const tbody = rows.map(r => `<div class="pos-card">
       <div class="pos-head">
         <div class="pos-name"><span class="market-chip">${r.market}</span><a href="https://solscan.io/account/${r.pos.pubkey}" target="_blank" style="color:inherit;text-decoration:underline dotted;">${r.pos.pubkey.slice(0,10)}…</a></div>
@@ -950,6 +980,7 @@ function renderExponentPositions(p, txs) {
         <span>${r.days_held.toFixed(2)} days in S2</span>
         ${r.trades.length ? `<span>${r.trades.length} trade${r.trades.length===1?'':'s'}</span>` : ''}
       </div>
+      ${costRow(r.cost_basis, r.flares)}
       ${tradesHtml(r.trades)}
     </div>`).join('');
   // Add Exponent LP cards (one per market with events)

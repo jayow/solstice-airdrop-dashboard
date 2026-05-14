@@ -40,6 +40,7 @@ def decode_evidence(qk: str, raw: dict) -> dict:
         }
     if qk == 'S2_EXPONENT_YT':
         out = {'type': 'yt', 'by_market': []}
+        cost_basis = raw.get('cost_basis_by_market') or {}
         for mkt, positions in (raw.get('positions_by_market') or {}).items():
             poss = []
             for p in (positions if isinstance(positions, list) else positions.get('positions', [])):
@@ -50,7 +51,10 @@ def decode_evidence(qk: str, raw: dict) -> dict:
                     'emit': bool(p.get('is_emitting')),
                     'timeline': p.get('timeline') or [],
                 })
-            out['by_market'].append({'market': mkt, 'positions': poss})
+            entry = {'market': mkt, 'positions': poss}
+            cb = cost_basis.get(mkt)
+            if cb: entry['cost_basis'] = cb   # {usd_basis, usd_paid, usd_paid_decayed_at_s2, usd_recovered, n_buys, n_sells}
+            out['by_market'].append(entry)
         return out
     if qk == 'S2_EXPONENT_LP':
         out = {'type': 'lp', 'positions': raw.get('positions', [])}
