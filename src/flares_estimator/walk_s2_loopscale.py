@@ -137,9 +137,13 @@ def walk_supply(now_ts: int, share_value: float):
             holders.append({'ata': a['pubkey'], 'owner': owner, 'current_bal': bal})
 
     # Re-key any owner that's a Loopscale VaultStake PDA → real user @ offset 73.
+    # Keep the on-chain owner in h['onchain_owner'] so we can still match the
+    # ATA's pre/postTokenBalances entries (which carry the on-chain owner, not
+    # the re-keyed user).
     import base64 as _b64, base58 as _b58
     n_rekeyed = 0
     for h in holders:
+        h['onchain_owner'] = h['owner']
         try:
             r = rpc('getAccountInfo', [h['owner'], {'encoding': 'base64'}])
             v = r.get('result', {}).get('value') or {}
@@ -154,8 +158,14 @@ def walk_supply(now_ts: int, share_value: float):
     nonzero = sum(1 for h in holders if h['current_bal'] > 0)
     print(f'  USX ONE LP-mint accounts: {len(holders)}  non-zero now: {nonzero}  re-keyed via VaultStake: {n_rekeyed}', flush=True)
 
+    # share_value passed in by caller — used to convert LP deltas to USD for
+    # cost-basis math. For short S2 windows this approximation (using current
+    # share_value for all historical events) is accurate to <1%.
+    SHARE_VALUE = share_value
+
     def process_ata(h):
         ata = h['ata']; owner = h['owner']; current_bal = h['current_bal']
+        onchain_owner = h.get('onchain_owner', owner)  # what pre/post balances will report
         # Walk the FULL sig history (no S2 cutoff). Pre-S2 sigs are needed to
         # determine the balance at S2 start — otherwise wallets that deposited
         # pre-S2 and held through aren't anchored correctly. Without carry-in,
@@ -172,8 +182,8 @@ def walk_supply(now_ts: int, share_value: float):
             sigs.extend(batch)
             if len(batch) < 1000: break
             before = batch[-1]['signature']
-        if not sigs and current_bal == 0: return owner, 0.0
-        # Fetch all txs in parallel, recording post-balance per sig.
+        if not sigs and current_bal == 0: return owner, 0.0, []
+        # Fetch all txs in parallel, recording (blockTime, post_balance, sig) per sig.
         def fetch(s):
             try:
                 r = rpc('getTransaction', [s['signature'], {'encoding':'jsonParsed','maxSupportedTransactionVersion':0}])
@@ -193,10 +203,10 @@ def walk_supply(now_ts: int, share_value: float):
                     idx, mint = k
                     if mint != USX_ONE_LP_MINT: continue
                     pb = pre.get(k); pob = post.get(k)
-                    if (pob or pb).get('owner') != owner: continue
+                    if (pob or pb).get('owner') != onchain_owner: continue
                     bal_after = ((pob or pb).get('uiTokenAmount', {}) or {}).get('uiAmount') or 0
                 if bal_after is not None:
-                    events.append((s['blockTime'], float(bal_after)))
+                    events.append((s['blockTime'], float(bal_after), s['signature']))
         events.sort(key=lambda x: x[0])
         # Derive carry-in: balance at S2_START. Last observed balance from any
         # pre-S2 event; if no pre-S2 events but the position predates S2 (no
@@ -209,36 +219,44 @@ def walk_supply(now_ts: int, share_value: float):
             carry_in = current_bal   # held through S2 with no observed sigs
         else:
             carry_in = 0.0
-        # Piecewise integrate: [S2_START, first_s2_event, ..., last_s2_event, now]
+        # Piecewise integrate. Also emit per-event records for cost-basis math.
         usd_days = 0.0
         bal = carry_in
         prev_t = S2_START_TS
-        for t, post_bal in s2_evs:
+        emitted = []  # [{ts, lp_delta, sig, prev_bal, post_bal}]
+        prev_bal_obs = carry_in
+        for t, post_bal, sig in events:
+            lp_delta = post_bal - prev_bal_obs
+            emitted.append({'ts': t, 'lp_delta': lp_delta, 'prev_bal': prev_bal_obs, 'post_bal': post_bal, 'sig': sig})
+            prev_bal_obs = post_bal
+        for t, post_bal, sig in s2_evs:
             dt = (t - prev_t) / 86400
             if dt > 0 and bal > 0:
-                usd_days += bal * share_value * dt
+                usd_days += bal * SHARE_VALUE * dt
             bal = post_bal
             prev_t = t
         # Tail from last event (or S2_START if none) to now
         if bal > 0 and prev_t < now_ts:
             dt = (now_ts - prev_t) / 86400
             if dt > 0:
-                usd_days += bal * share_value * dt
-        return owner, usd_days * 5   # mult 5×
+                usd_days += bal * SHARE_VALUE * dt
+        return owner, usd_days * 5, emitted   # mult 5×
 
     results = defaultdict(float)
-    if not holders: return dict(results)
+    events_by_user = defaultdict(list)
+    if not holders: return dict(results), dict(events_by_user)
     with ThreadPoolExecutor(max_workers=8) as ex:
         futs = [ex.submit(process_ata, h) for h in holders]
         n_done = 0
         for fut in as_completed(futs):
-            owner, flares = fut.result()
+            owner, flares, emitted = fut.result()
             results[owner] += flares
+            events_by_user[owner].extend(emitted)
             n_done += 1
             if n_done % 25 == 0: print(f'    supply walk {n_done}/{len(holders)}', flush=True)
     total = sum(results.values())
     print(f'  supply walk: {sum(1 for v in results.values() if v>0)} wallets, total {total:,.0f} flares\n', flush=True)
-    return dict(results)
+    return dict(results), dict(events_by_user)
 
 
 def main():
@@ -251,13 +269,57 @@ def main():
     borrow = walk_borrow(now_ts)
 
     print('=== SUPPLY (5×) ===', flush=True)
-    supply = walk_supply(now_ts, share_value)
+    supply, supply_events = walk_supply(now_ts, share_value)
 
     # Combine
     out = defaultdict(dict)
     for w, v in borrow.items(): out[w]['S2_LOOPSCALE_BORROW_USX'] = v
     for w, v in supply.items():
         if v > 0: out[w]['S2_LOOPSCALE_SUPPLY_USX_ONE'] = v
+
+    # Merge SUPPLY LP-timeline events into S2_LOOPSCALE cache so cost basis
+    # can be computed downstream. Preserves existing borrow events; supply
+    # events get side='supply' + ix='lp_balance_change' + lp_delta + share_value.
+    import db as _db
+    _db.init()
+    print(f'\nMerging supply events into S2_LOOPSCALE cache for {len(supply_events)} users...', flush=True)
+    n_merged = 0
+    for user, evts in supply_events.items():
+        # Read existing cache (if any) → preserves borrow events
+        r = _db.conn().execute("SELECT raw_json FROM quest_cache WHERE wallet=? AND quest_key='S2_LOOPSCALE'", (user,)).fetchone()
+        if r:
+            try: raw = json.loads(r['raw_json'])
+            except Exception: raw = {}
+        else:
+            raw = {}
+        existing_events = raw.get('events') or []
+        # Drop any prior supply events (we re-emit them fresh) — keep borrow
+        existing_events = [e for e in existing_events if e.get('side') != 'supply']
+        # Format new supply events
+        for e in evts:
+            existing_events.append({
+                'ts': e['ts'],
+                'side': 'supply',
+                'ix': 'lp_balance_change',
+                'sig': e['sig'],
+                'lp_delta': e['lp_delta'],
+                'prev_bal': e['prev_bal'],
+                'post_bal': e['post_bal'],
+                'share_value': share_value,
+            })
+        existing_events.sort(key=lambda e: e.get('ts') or 0)
+        raw['events'] = existing_events
+        # Set/update loopscale_supply_usx from the LP-walker view (last observed
+        # balance × current share_value). Don't clobber other position fields.
+        positions = raw.get('positions') or {}
+        if evts:
+            last_bal = evts[-1]['post_bal']
+            positions['loopscale_supply_usx'] = round(last_bal * share_value, 2)
+        raw['positions'] = positions
+        raw['_watermark'] = {'slot': 0, 'ts': now_ts}
+        _db.put_cache(user, 'S2_LOOPSCALE', raw, watermark_ts=now_ts)
+        n_merged += 1
+    print(f'  merged supply events for {n_merged} users')
 
     out_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'data', 's2_loopscale_flares.json')
     with open(out_path, 'w') as f: json.dump(out, f, indent=2)

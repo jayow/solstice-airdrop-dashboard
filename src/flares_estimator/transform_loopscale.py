@@ -71,9 +71,9 @@ def compute_cost_basis(events: list) -> dict:
         else:
             repaid += usx_delta
             n_r += 1
-    if n_b + n_r == 0: return {}
-    return {
-        'S2_LOOPSCALE_BORROW_USX': {
+    out = {}
+    if n_b + n_r > 0:
+        out['S2_LOOPSCALE_BORROW_USX'] = {
             'kind': 'borrow',
             'net_outstanding': borrowed - repaid,
             'usd_borrowed':    borrowed,
@@ -81,7 +81,31 @@ def compute_cost_basis(events: list) -> dict:
             'n_borrows':       n_b,
             'n_repays':        n_r,
         }
-    }
+    # SUPPLY side: lp_balance_change events with signed lp_delta and per-event share_value
+    supplied = withdrawn = 0.0
+    n_s = n_w = 0
+    for e in events or []:
+        if e.get('side') != 'supply': continue
+        lp_delta = float(e.get('lp_delta') or 0)
+        sv = float(e.get('share_value') or 0)
+        if sv <= 0: continue
+        usd = lp_delta * sv
+        if lp_delta > 0:
+            supplied += usd
+            n_s += 1
+        elif lp_delta < 0:
+            withdrawn += -usd
+            n_w += 1
+    if n_s + n_w > 0:
+        out['S2_LOOPSCALE_SUPPLY_USX_ONE'] = {
+            'kind':          'lend',
+            'usd_basis':     max(0.0, supplied - withdrawn),
+            'usd_paid':      supplied,
+            'usd_recovered': withdrawn,
+            'n_supplies':    n_s,
+            'n_withdraws':   n_w,
+        }
+    return out
 
 
 def transform_wallet(positions: dict, events: list, now_ts: int) -> float:

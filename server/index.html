@@ -747,7 +747,20 @@ function renderLoopscaleBlock(p, txs) {
   const cbq = ev.cost_basis_by_quest || {};
   const fmtUsd = v => '$' + Math.round(v).toLocaleString('en-US');
   const lines = [];
-  if ((pos.loopscale_supply_usx||0) > 0) lines.push(`<div class="pos-meta-line"><span>Supplying USX to USX-ONE vault</span><span class="pos-meta-v">$${pos.loopscale_supply_usx.toLocaleString(undefined,{maximumFractionDigits:2})}</span></div>`);
+  if ((pos.loopscale_supply_usx||0) > 0) {
+    const cb = cbq['S2_LOOPSCALE_SUPPLY_USX_ONE'];
+    let cbChip = '';
+    if (cb && cb.kind === 'lend' && cb.usd_basis !== undefined) {
+      const flares = flaresMap['S2_LOOPSCALE_SUPPLY_USX_ONE'] || 0;
+      const tip = [
+        `Supplied: ${fmtUsd(cb.usd_paid)} (${cb.n_supplies} ${cb.n_supplies===1?'event':'events'})`,
+        `Withdrew: ${fmtUsd(cb.usd_recovered)} (${cb.n_withdraws} ${cb.n_withdraws===1?'event':'events'})`,
+        (cb.usd_basis > 0 && flares > 0) ? `Flares per $: ${(flares/cb.usd_basis).toLocaleString(undefined,{maximumFractionDigits:1})}` : '',
+      ].filter(Boolean).join('\n').replace(/"/g, '&quot;');
+      cbChip = `<span class="has-hover-tip" data-tip="${tip}" style="margin-left:10px; font-size:11px; color:var(--ink-500);">cost basis <span style="color:var(--accent-300); font-weight:600;">${fmtUsd(cb.usd_basis)}</span> <span style="color:var(--ink-500);">ⓘ</span></span>`;
+    }
+    lines.push(`<div class="pos-meta-line"><span>Supplying USX to USX-ONE vault${cbChip}</span><span class="pos-meta-v">$${pos.loopscale_supply_usx.toLocaleString(undefined,{maximumFractionDigits:2})}</span></div>`);
+  }
   if ((pos.loopscale_borrow_usx||0) > 0) {
     const cb = cbq['S2_LOOPSCALE_BORROW_USX'];
     let cbChip = '';
