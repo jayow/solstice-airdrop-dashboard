@@ -45,16 +45,27 @@ def _post_balance(sig: str, ata: str):
 
 
 def is_hold_cache_stale(cached: dict | None, wallet: str, daily_quest: str) -> bool:
-    """Return True if the cached HOLD entry is contradicted by wallet_quests
-    (i.e. we previously credited the wallet for HOLD flares, but the cache
-    now claims no ATAs were ever found). This catches the RPC-flake failure
-    mode where one bad getTokenAccountsByOwner call poisons the 24h cache.
+    """Return True if the cached HOLD entry is contradicted by wallet_quests.
+
+    Two failure modes covered:
+      A) atas:[] — RPC for getTokenAccountsByOwner returned empty during walk
+      B) atas non-empty but timeline has max-balance == 0 — RPC for individual
+         getTransaction calls all failed, leaving an all-zero balance trace
+         even though the wallet earned flares.
+
+    Both poison the 24h cache. We detect them by cross-checking against
+    wallet_quests: if the wallet has positive flares for the DAILY quest,
+    the cached timeline showing zero everywhere is structurally wrong.
     """
     if not cached: return False
     raw = cached.get('raw') or {}
-    if (raw.get('atas') or []) != []: return False
-    # Cache claims no ATAs. Cross-check wallet_quests: if we have historical
-    # flares for the matching DAILY quest, the cache is contradicting itself.
+    atas = raw.get('atas') or []
+    timeline = raw.get('timeline') or []
+    max_bal = max((float(b) for _, b in timeline), default=0.0) if timeline else 0.0
+    # Cache is suspicious if: no ATAs found, OR timeline never showed any balance
+    structurally_empty = (atas == []) or (max_bal == 0.0)
+    if not structurally_empty: return False
+    # Cross-check wallet_quests: do we have credit for this wallet?
     try:
         import sqlite3 as _sq, os as _os
         _ROOT = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))))
