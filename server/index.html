@@ -928,7 +928,8 @@ function renderExponentPositions(p, txs) {
       rows.push({ market: info.label, mult: info.mult, pos: m.pos, flares, days_held: m.days_held, trades: m.trades, earning, cost_basis });
     }
   }
-  if (!rows.length) return '';
+  // Don't bail when YT rows is empty — the wallet might have LP-only activity.
+  // The combined YT+LP empty check happens at the bottom (returns '' if both empty).
   const tradesHtml = (trades) => {
     if (!trades.length) return '<div class="trades"><div class="trades-empty">No buys or sells during S2 — held the same balance throughout</div></div>';
     return '<div class="trades">' + trades.map(t => {
@@ -1041,6 +1042,8 @@ function renderExponentPositions(p, txs) {
     </div>`;
   }).join('');
 
+  // Bail only when BOTH YT and LP have no cards.
+  if (!rows.length && !lpCards) return '';
   const ytFlares = (p.by_quest||[]).reduce((s,q) => s + (q.quest.startsWith('S2_EXPONENT_YIELD_') ? (q.flares||0) : 0), 0);
   const lpFlares = lpFlaresByQuest['S2_EXPONENT_LP_USX_JUN26'] + lpFlaresByQuest['S2_EXPONENT_LP_EUSX_JUN26'];
   const totalFlares = ytFlares + lpFlares;
