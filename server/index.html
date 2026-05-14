@@ -943,6 +943,28 @@ function renderExponentPositions(p, txs) {
     }).join('') + '</div>';
   };
   const fmtUsd = v => '$' + Math.round(v).toLocaleString('en-US');
+  // Shared helper — also used by the LP cards below for the same cost-basis
+  // row shape. Defined on window so the LP rendering can reuse it.
+  window._lpCostBasisRow = (cb, flares) => {
+    if (!cb || cb.usd_basis === undefined) return '';
+    const basis = cb.usd_basis || 0;
+    const paid = cb.usd_paid || 0;
+    const recovered = cb.usd_recovered || 0;
+    const nSup = cb.n_supplies || 0;
+    const nWd = cb.n_withdraws || 0;
+    const tipLines = [
+      `Supplied: ${fmtUsd(paid)} (${nSup} ${nSup === 1 ? 'event' : 'events'})`,
+      `Withdrew: ${fmtUsd(recovered)} (${nWd} ${nWd === 1 ? 'event' : 'events'})`,
+    ];
+    if (basis > 0 && flares > 0) {
+      tipLines.push(`Flares per $: ${(flares/basis).toLocaleString(undefined, {maximumFractionDigits: 1})}`);
+    }
+    const tip = tipLines.join('\n').replace(/"/g, '&quot;');
+    return `<div class="pos-meta-line has-hover-tip" data-tip="${tip}" style="border-top:1px dashed rgba(255,255,255,.08); margin-top:8px; padding-top:8px;">
+      <span style="color:var(--ink-400);">USD cost basis <span style="color:var(--ink-500); font-size:10px; margin-left:4px;">ⓘ</span></span>
+      <span style="color:var(--accent-300); font-weight:600;">${fmtUsd(basis)}</span>
+    </div>`;
+  };
   const costRow = (cb, flares) => {
     if (!cb || cb.usd_basis === undefined) return '';
     const basis = cb.usd_basis || 0;
@@ -995,6 +1017,7 @@ function renderExponentPositions(p, txs) {
     const k = e.pos_pubkey;
     (lpByMarket[k] = lpByMarket[k] || []).push(e);
   }
+  const lpCostBasisByQuest = (lpEv.cost_basis_by_quest) || {};
   const lpCards = Object.entries(lpByMarket).map(([market, list]) => {
     const isUsx = market === USX_MARKET;
     const quest = isUsx ? 'S2_EXPONENT_LP_USX_JUN26' : 'S2_EXPONENT_LP_EUSX_JUN26';
@@ -1002,6 +1025,7 @@ function renderExponentPositions(p, txs) {
     const label = isUsx ? 'USX-Jun26 LP' : 'eUSX-Jun26 LP';
     const currentUsd = (lpEv.positions || {})[isUsx ? 'usx_jun26_lp_usd' : 'eusx_jun26_lp_usd'] || 0;
     const flares = lpFlaresByQuest[quest];
+    const cb = lpCostBasisByQuest[quest];
     return `<div class="pos-card">
       <div class="pos-head">
         <div class="pos-name"><span class="market-chip">${label}</span><a href="https://solscan.io/account/${market}" target="_blank" style="color:inherit;text-decoration:underline dotted;">${market.slice(0,10)}…</a></div>
@@ -1012,6 +1036,7 @@ function renderExponentPositions(p, txs) {
         <span>${mult}× multiplier</span>
         <span>${list.length} event${list.length===1?'':'s'}</span>
       </div>
+      ${_lpCostBasisRow(cb, flares)}
       ${_renderPositionEvents(list)}
     </div>`;
   }).join('');

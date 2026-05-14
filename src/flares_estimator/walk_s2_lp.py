@@ -294,6 +294,7 @@ def main():
     all_results = defaultdict(lambda: defaultdict(float))   # wallet → {quest: flares}
     all_events_by_wallet = defaultdict(list)                  # wallet → all events (both markets)
     all_snapshots = defaultdict(lambda: defaultdict(float))   # wallet → quest → final LP balance × rate
+    all_cost_basis = defaultdict(dict)                        # wallet → quest → {usd_paid, usd_recovered, usd_basis, n_supplies, n_withdraws}
     skipped_quests = set()  # quests whose vault returned 0 sigs (RPC flake) — don't sync (would zero existing data)
 
     for mname, cfg in MARKETS.items():
@@ -348,8 +349,37 @@ def main():
         # which Exponent treats 1:1 with USX (i.e. USD-equivalent). Applying the
         # eUSX peg here over-counts eUSX LP by ~14%; the user gets the eUSX
         # yield via the SY exchange rate which is baked into lp_price already.
+        peg = cfg.get('peg') or 1.0
         for wallet, all_evs in events_by_wallet.items():
             all_evs.sort(key=lambda x: x['t'])
+
+            # Cost basis: sum of USD invested minus USD recovered across all LP events
+            # (pre-S2 + S2). LP price reflects current value of one LP token, so
+            # USD per event = |lp_delta| × lp_price × peg. No time-decay needed
+            # because lp_price itself evolves over time (unlike YT which decays).
+            usd_paid = 0.0
+            usd_recovered = 0.0
+            n_supplies = 0
+            n_withdraws = 0
+            for e in all_evs:
+                rate = e.get('rate') or 0
+                if not rate: continue
+                usd = abs(e['lp_delta']) * rate * peg
+                if e['lp_delta'] > 0:
+                    usd_paid += usd
+                    n_supplies += 1
+                else:
+                    usd_recovered += usd
+                    n_withdraws += 1
+            if n_supplies + n_withdraws > 0:
+                all_cost_basis[wallet][cfg['quest']] = {
+                    'usd_basis':     max(0.0, usd_paid - usd_recovered),
+                    'usd_paid':      usd_paid,
+                    'usd_recovered': usd_recovered,
+                    'n_supplies':    n_supplies,
+                    'n_withdraws':   n_withdraws,
+                }
+
             # Pre-S2 carry-in: net LP delta + lp_price snapshot at the boundary.
             pre_evs = [e for e in all_evs if e['t'] < S2_START_TS]
             evs = [e for e in all_evs if e['t'] >= S2_START_TS]
@@ -453,6 +483,7 @@ def main():
         snap = {
             'positions': snap_positions,
             'events': drawer_events,
+            'cost_basis_by_quest': all_cost_basis.get(wallet, {}),
             '_watermark': {'slot': 0, 'ts': now_ts},
         }
         db.put_cache(wallet, 'S2_EXPONENT_LP', snap, watermark_ts=now_ts)
