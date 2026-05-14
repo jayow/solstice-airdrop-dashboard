@@ -22,19 +22,43 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from rpc_helper import rpc
 
 EUSX_PEG_PDA = 'JDs1wmLaVB2KsAotjbBKVEsiV1gbrG3Qrjyht5LnX9YP'
-EUSX_PEG_OFFSET = 48          # u64 little-endian at byte 48, scaled by 1e18
+EUSX_PEG_OFFSET = 48          # legacy: this field is NOT the USD peg (it's some
+                              # other vault ratio ≈ 1.156). Kept for forensics.
 ASSUMED_APY = 0.06            # 6% — calibration target; only used for pre-snapshot back-extension
 SECONDS_PER_YEAR = 365.25 * 86400
+FALLBACK_PEG = 1.0319         # safety net if both API sources fail
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 DB = os.path.join(ROOT, 'data', 'solstice.db')
 
 
 def read_live_peg() -> float:
-    """Read current eUSX peg from chain. Raises if RPC unhappy."""
-    r = rpc('getAccountInfo', [EUSX_PEG_PDA, {'encoding': 'base64'}])
-    data = base64.b64decode(r['result']['value']['data'][0])
-    return struct.unpack_from('<Q', data, EUSX_PEG_OFFSET)[0] / 1e18
+    """Live eUSX→USD price. Pulls from Solstice's protocol API (the canonical
+    public source — same field shown on app.solstice.finance). Falls back to
+    Exponent's syExchangeRate, then a hardcoded recent value if both fail.
+
+    The on-chain PDA at JDs1wmLa offset 48 (~1.156) is NOT this number — it
+    appears to be some internal vault ratio. We used that historically; values
+    cached before this fix are ~12% high. The cumulative cache values for
+    pre-existing positions therefore overstate slightly, but going-forward
+    accrual uses the corrected price."""
+    import urllib3 as _u, requests as _rq
+    _u.disable_warnings()
+    # Source A: Solstice
+    try:
+        r = _rq.get('https://app.solstice.finance/api/protocol', timeout=8, verify=False).json()
+        p = float(r.get('eusxPrice') or 0)
+        if 0.9 < p < 2.0: return p
+    except Exception: pass
+    # Source B: Exponent
+    try:
+        r = _rq.get('https://api.exponent.finance/api/markets', timeout=8, verify=False).json()
+        for m in r:
+            if 'eUSX' in str((m.get('underlyingAsset') or {}).get('name', '')):
+                p = float(m.get('syExchangeRate') or 0)
+                if 0.9 < p < 2.0: return p
+    except Exception: pass
+    return FALLBACK_PEG
 
 
 def _conn():

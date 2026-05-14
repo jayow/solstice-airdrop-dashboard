@@ -51,7 +51,7 @@ MARKETS = {
         'market': 'rBbzpGk3PTX8mvQg95VWJ24EDgvxyDJYrEo9jtauvjP',
         'mult':   15,
         'quest':  'S2_EXPONENT_YIELD_EUSX_JUN26',
-        'base_usd': 1.156, # eUSX current peg (current snapshot — improve to time-varying later)
+        'base_usd': 1.0319, # eUSX/USD (Solstice eusxPrice & Exponent syExchangeRate, May 2026)
     },
 }
 

@@ -93,7 +93,10 @@ QUEST_MULT = {
     'S2_RAYDIUM_USX_USDC': 9,  'S2_RAYDIUM_EUSX_USX': 4,
 }
 
-EUSX_PEG = 1.156  # close enough for daily-rate calc; exact peg interpolation lives in eusx_peg.py
+EUSX_PEG = 1.0319  # eUSX/USD per Solstice eusxPrice & Exponent syExchangeRate (May 2026).
+                   # We previously read 1.156 from an on-chain PDA field that's actually a
+                   # different vault ratio, not the USD peg. Per-second history lives in
+                   # eusx_peg.peg_at() (rebuilt from Solstice API).
 
 
 def compute_daily_emission(evidence: dict) -> dict:

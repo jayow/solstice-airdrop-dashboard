@@ -91,13 +91,21 @@ def _extract_inner_ix_data(tx: dict) -> list:
 S2_START_TS = 1776038400
 S2_END_TS   = 1785024000   # only used to cap if walking beyond now
 
-# Live eUSX peg
-EUSX_PEG_PDA = 'JDs1wmLaVB2KsAotjbBKVEsiV1gbrG3Qrjyht5LnX9YP'
+# Live eUSX/USD price — pulled from Solstice's protocol API (canonical source).
+# We previously read offset 48 of an on-chain PDA which returned ~1.156, but
+# that turns out to be a different vault ratio, NOT the eUSX→USD price. The
+# correct number (~1.032 as of May 2026) lives in Solstice's /api/protocol
+# `eusxPrice` and Exponent's market `syExchangeRate`.
 import struct
 def get_eusx_peg():
-    r = rpc('getAccountInfo', [EUSX_PEG_PDA, {'encoding':'base64'}])
-    d = base64.b64decode(r['result']['value']['data'][0])
-    return struct.unpack('<Q', d[48:56])[0] / 1e18
+    import urllib3 as _u
+    _u.disable_warnings()
+    try:
+        r = requests.get('https://app.solstice.finance/api/protocol', timeout=8, verify=False).json()
+        p = float(r.get('eusxPrice') or 0)
+        if 0.9 < p < 2.0: return p
+    except Exception: pass
+    return 1.0319   # fallback
 
 MARKETS = {
     'USX-Jun26': {

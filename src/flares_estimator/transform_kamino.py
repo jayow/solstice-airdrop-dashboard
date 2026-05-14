@@ -83,14 +83,14 @@ IX_MAP = {
 def _current_usd_per_token(mint: str) -> float:
     if mint == EUSX_MINT:
         try: return eusx_peg_at(int(time.time()))
-        except Exception: return 1.156
+        except Exception: return 1.0319
     return 1.0
 
 
 def _peg_at(mint: str, ts: int) -> float:
     if mint == EUSX_MINT:
         try: return eusx_peg_at(ts)
-        except Exception: return 1.156
+        except Exception: return 1.0319
     return 1.0
 
 

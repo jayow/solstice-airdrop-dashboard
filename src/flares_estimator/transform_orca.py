@@ -21,7 +21,7 @@ DECREASE_IXS = {'decreaseliquidity', 'decreaseliquidityv2',
 # All amounts ≈ $1 (stablecoin pools); eUSX uses fixed peg.
 MINT_USD = {
     '6FrrzDk5mQARGc1TDYoyVnSyRdds1t4PbtohCD6p3tgG': 1.0,    # USX
-    '3ThdFZQKM6kRyVGLG48kaPg5TRMhYMKY1iCRa9xop1WC': 1.156,  # eUSX
+    '3ThdFZQKM6kRyVGLG48kaPg5TRMhYMKY1iCRa9xop1WC': 1.0319,  # eUSX (Solstice/Exponent API price)
     '2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH': 1.0,    # USDG
     'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v': 1.0,    # USDC
 }

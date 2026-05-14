@@ -21,7 +21,7 @@ POOLS = {
     'S2_RAYDIUM_USX_USDC': {'addr': 'EWivkwNtcxuPsU6RyD7Pfvs7u9Yv8nQ79tJ7xgGyPrp6', 'mult': 9,
                              'price_a': 1.0, 'price_b': 1.0, 'dec_a': 6, 'dec_b': 6},
     'S2_RAYDIUM_EUSX_USX': {'addr': 'BkvKpstxgeEJYzvFnWWuAbTDcrFMJBty3kXxUfGG9D7n', 'mult': 4,
-                             'price_a': 1.156, 'price_b': 1.0, 'dec_a': 6, 'dec_b': 6},
+                             'price_a': 1.0319, 'price_b': 1.0, 'dec_a': 6, 'dec_b': 6},
 }
 
 
@@ -111,7 +111,7 @@ def main():
                     'closeposition','closepositionwithtokenextensions','closepositionwithtoken22nft'}
     MINT_USD = {
         '6FrrzDk5mQARGc1TDYoyVnSyRdds1t4PbtohCD6p3tgG': 1.0,   # USX
-        '3ThdFZQKM6kRyVGLG48kaPg5TRMhYMKY1iCRa9xop1WC': 1.156, # eUSX
+        '3ThdFZQKM6kRyVGLG48kaPg5TRMhYMKY1iCRa9xop1WC': 1.0319, # eUSX (Solstice/Exponent API price)
         '2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH': 1.0,   # USDG
         'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v': 1.0,   # USDC
     }

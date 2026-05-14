@@ -34,7 +34,7 @@ POOLS = {
     'S2_ORCA_USX_USDC': {'addr': '2e3WeM4WwdEqwTtRnWN3gJSbhNg1P6Aj2y7kEdfrYbix', 'mult': 9,
                           'price_a': 1.0, 'price_b': 1.0, 'dec_a': 6, 'dec_b': 6},   # USX, USDC
     'S2_ORCA_EUSX_USX': {'addr': 'AUr5EVRwGDsKB2EeS1V63ncjHXDNRDLVfBP47qNvPoVf', 'mult': 4,
-                          'price_a': 1.156, 'price_b': 1.0, 'dec_a': 6, 'dec_b': 6}, # eUSX, USX
+                          'price_a': 1.0319, 'price_b': 1.0, 'dec_a': 6, 'dec_b': 6}, # eUSX, USX
     'S2_ORCA_USX_USDG': {'addr': 'J6h5bf3iohBXtsRNRFAqFc5FeBCh3yAjxXGuiE1sTc5Q', 'mult': 9,
                           'price_a': 1.0, 'price_b': 1.0, 'dec_a': 6, 'dec_b': 6},   # USDG, USX
 }
@@ -230,7 +230,7 @@ def main():
                         'closeposition','closepositionwithtokenextensions'}
         MINT_USD = {
             '6FrrzDk5mQARGc1TDYoyVnSyRdds1t4PbtohCD6p3tgG': 1.0,  # USX
-            '3ThdFZQKM6kRyVGLG48kaPg5TRMhYMKY1iCRa9xop1WC': 1.156, # eUSX
+            '3ThdFZQKM6kRyVGLG48kaPg5TRMhYMKY1iCRa9xop1WC': 1.0319, # eUSX (Solstice/Exponent API price)
             '2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH': 1.0,  # USDG
             'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v': 1.0,  # USDC
         }
