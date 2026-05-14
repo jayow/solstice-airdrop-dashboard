@@ -15,7 +15,7 @@ permissions:
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60   # sequential walkers + CI retries on Helius flake take ~30-45 min
     steps:
       - name: Checkout
         uses: actions/checkout@v4

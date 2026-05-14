@@ -52,13 +52,22 @@ MARKETS = {
 
 
 def fetch_all_sigs(addr: str) -> list:
+    """Walk full sig history newest→oldest. CRITICAL: an empty result mid-
+    pagination is NOT a reliable end-of-history marker — RPC nodes (especially
+    from CI runners) sometimes return [] under load even when more sigs exist.
+    Retry 3× before treating empty as terminal."""
+    import time as _t
     sigs, before = [], None
     while True:
-        p = [addr, {'limit': 1000}]
-        if before: p[1]['before'] = before
-        r = rpc('getSignaturesForAddress', p)
-        b = r.get('result') or []
-        if not b: break
+        b = []
+        for attempt in range(4):
+            p = [addr, {'limit': 1000}]
+            if before: p[1]['before'] = before
+            r = rpc('getSignaturesForAddress', p, force_refresh=(attempt > 0))
+            b = r.get('result') or []
+            if b: break
+            _t.sleep(0.5 * (attempt + 1))
+        if not b: break  # confirmed end of history (or persistent RPC failure)
         sigs.extend(b)
         if len(b) < 1000: break
         before = b[-1]['signature']

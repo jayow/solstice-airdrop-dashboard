@@ -123,14 +123,24 @@ MARKETS = {
 
 def fetch_all_sigs(addr: str, until_ts: int = 0) -> list:
     """Pull sigs newest→oldest. If until_ts > 0, stop once a sig is older than it;
-    if until_ts == 0, walk the full history (needed for pre-S2 carry-in)."""
+    if until_ts == 0, walk the full history (needed for pre-S2 carry-in).
+
+    CRITICAL: an empty result mid-pagination is NOT a reliable end-of-history
+    marker — RPC nodes (especially from CI runners) sometimes return [] under
+    load even when more sigs exist. Retry 4× before treating empty as terminal.
+    """
+    import time as _t
     sigs = []
     before = None
     while True:
-        params = [addr, {'limit': 1000}]
-        if before: params[1]['before'] = before
-        r = rpc('getSignaturesForAddress', params)
-        batch = r.get('result', []) or []
+        batch = []
+        for attempt in range(4):
+            params = [addr, {'limit': 1000}]
+            if before: params[1]['before'] = before
+            r = rpc('getSignaturesForAddress', params, force_refresh=(attempt > 0))
+            batch = r.get('result', []) or []
+            if batch: break
+            _t.sleep(0.5 * (attempt + 1))
         if not batch: break
         if until_ts > 0:
             keep = [s for s in batch if (s.get('blockTime') or 0) >= until_ts]
