@@ -31,8 +31,8 @@ import walker_db
 S2_START_TS = 1776038400
 S2_END_TS   = 1785024000   # cap if walking beyond now
 
-# Jun26 markets mature at 2026-06-01 12:58 UTC (per api.exponent.finance)
-MATURITY_TS = 1780664280
+# Jun26 markets mature at 2026-06-01 12:58:19 UTC (api.exponent.finance maturityDateUnixTs)
+MATURITY_TS = 1780318699
 
 EXPONENT_PROG = 'ExponentnaRg3CQbW6dqQNZKXp7gtZ9DGMp1cwC4HAS7'
 

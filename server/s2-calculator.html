@@ -77,6 +77,21 @@ input[type=text]:focus, input[type=date]:focus { outline: 1px solid var(--accent
 .fdv-table td.fdv-label { text-align: left; color: var(--ink-300); font-weight: 600; }
 .fdv-table td.fdv-price { color: var(--ink-500); }
 .fdv-table td.fdv-usd { color: var(--accent-300); font-weight: 600; }
+.fdv-table td.fdv-roi { color: var(--ink-300); font-size: 12px; }
+.fdv-table td.fdv-roi.pos { color: #86efac; }
+.fdv-table td.fdv-roi.neg { color: #fda4af; }
+
+/* Reuse the dashboard's hover-tip pattern for the cost-basis tooltip. */
+#hover-tooltip {
+  position: fixed; pointer-events: none; z-index: 9999;
+  background: rgba(15, 17, 22, 0.96); border: 1px solid rgba(255,255,255,.12);
+  border-radius: 8px; padding: 8px 12px; font-size: 12px; color: var(--ink-100);
+  font-variant-numeric: tabular-nums; white-space: pre-line;
+  box-shadow: 0 8px 24px rgba(0,0,0,.4);
+  opacity: 0; transition: opacity .08s;
+}
+#hover-tooltip.visible { opacity: 1; }
+.has-hover-tip { cursor: default; }
 
 .note { font-size: 11px; color: var(--ink-500); margin-top: 16px; line-height: 1.6; }
 .error { color: #fda4af; font-size: 12px; margin-top: 10px; }
@@ -91,6 +106,8 @@ footer { text-align: center; color: var(--ink-500); font-size: 11px; margin-top:
 </style>
 </head>
 <body>
+
+<div id="hover-tooltip"></div>
 
 <main>
   <header>
@@ -126,6 +143,7 @@ footer { text-align: center; color: var(--ink-500); font-size: 11px; margin-top:
       </div>
       <div id="calc-error" class="error" style="display:none;"></div>
       <div id="calc-source" class="source"></div>
+      <div id="calc-cost-basis" style="display:none; margin-top:14px; padding:12px 16px; background:rgba(252,211,77,.04); border:1px solid rgba(252,211,77,.18); border-radius:10px; font-size:13px;"></div>
 
       <div class="input-row" style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-top: 20px;">
         <div>
@@ -159,7 +177,7 @@ footer { text-align: center; color: var(--ink-500); font-size: 11px; margin-top:
       <div class="label" style="margin-bottom: 8px;">USD value by FDV</div>
       <table class="fdv-table">
         <thead>
-          <tr><th class="left">FDV</th><th>SLX price</th><th>Your USD value</th></tr>
+          <tr><th class="left">FDV</th><th>SLX price</th><th>Your USD value</th><th id="calc-fdv-roi-head">vs basis</th></tr>
         </thead>
         <tbody id="calc-fdv-rows"></tbody>
       </table>
@@ -182,7 +200,15 @@ const SLX_TOTAL_SUPPLY = 1_000_000_000;
 const S2_AIRDROP_PCT   = 0.03;
 const FDV_SCENARIOS_M  = [30, 50, 100, 150, 200, 300, 400, 500];
 
+// Exponent USX/eUSX Jun26 markets mature at 2026-06-01 12:58:19 UTC.
+// YT positions earn flares only until maturity (after that YT is worth $0).
+// Source: api.exponent.finance/api/markets → maturityDateUnixTs.
+const YT_MATURITY_TS = 1780318699;
+const YT_QUESTS = new Set(['S2_EXPONENT_YIELD_USX_JUN26', 'S2_EXPONENT_YIELD_EUSX_JUN26']);
+
 let DAILY = null, DATA = null;
+// Persistent loaded-wallet state — used by renderResults to do YT decay-aware projection.
+let WALLET_CONTEXT = null;   // { current_flares, yt_daily, nonyt_daily, cost_basis_total, cost_basis_breakdown[] }
 
 // ── KMB-aware number parser/formatter (geo-universal: always en-US commas) ──
 function parseAmount(s) {
@@ -231,9 +257,32 @@ function onSysTotalInput(el) {
 }
 
 function onEndDateChange() {
-  // End date drives the projection — always refresh sys total unless user has explicitly edited it.
+  // End date drives projections for both system total AND the user's flare
+  // projection (because YT contribution caps at maturity).
   if (!SYS_TOTAL_USER_EDITED) refreshSysProjection();
+  if (WALLET_CONTEXT) refreshUserProjection();
   onAnyInput();
+}
+
+function refreshUserProjection() {
+  if (!WALLET_CONTEXT) return;
+  const endIso = document.getElementById('calc-end').value || '2026-08-01';
+  const today = new Date(); today.setUTCHours(0, 0, 0, 0);
+  const todayTs = Math.floor(today.getTime() / 1000);
+  const daysToMaturity = Math.max(0, (YT_MATURITY_TS - todayTs) / 86400);
+  const end = new Date(endIso + 'T00:00:00Z');
+  const days = Math.max(0, Math.round((end - today) / 86400000));
+  const ytDays = Math.min(days, daysToMaturity);
+  const w = WALLET_CONTEXT;
+  const projected = w.current_flares + w.yt_daily * ytDays + w.nonyt_daily * days;
+  document.getElementById('calc-total').value = formatAmount(projected);
+  const hint = document.getElementById('calc-prefill-hint');
+  const ytNote = w.yt_daily > 0
+    ? ` · YT emission ($${formatAmount(w.yt_daily)}/d) capped at ${daysToMaturity.toFixed(1)}d (maturity 2026-06-01)`
+    : '';
+  hint.textContent = 'Pre-filled: ' + formatAmount(w.current_flares) + ' today + projected '
+    + formatAmount(projected - w.current_flares) + ' across ' + days + ' days.' + ytNote
+    + ' Edit to override.';
 }
 
 function onAnyInput() { renderResults(); }
@@ -281,15 +330,89 @@ function renderResults() {
   document.getElementById('calc-share').textContent = (share * 100).toFixed(4) + '%';
   document.getElementById('calc-slx').textContent = formatAmount(slx) + ' SLX';
 
+  const basis = (WALLET_CONTEXT && WALLET_CONTEXT.cost_basis && WALLET_CONTEXT.cost_basis.total) || 0;
   document.getElementById('calc-fdv-rows').innerHTML = FDV_SCENARIOS_M.map(fdvM => {
     const price = (fdvM * 1e6) / SLX_TOTAL_SUPPLY;
     const usd = slx * price;
+    let roiCell;
+    if (basis > 0) {
+      const mult = usd / basis;
+      const cls = mult >= 1 ? 'pos' : 'neg';
+      roiCell = `<td class="fdv-roi ${cls}">${mult.toFixed(2)}×</td>`;
+    } else {
+      roiCell = `<td class="fdv-roi" style="color:var(--ink-500);">—</td>`;
+    }
     return `<tr>
       <td class="fdv-label">$${fdvM}M</td>
       <td class="fdv-price">$${price.toFixed(3)}/SLX</td>
       <td class="fdv-usd">$${formatAmount(usd)}</td>
+      ${roiCell}
     </tr>`;
   }).join('');
+  // Update the column header to reflect basis state.
+  const head = document.getElementById('calc-fdv-roi-head');
+  if (head) head.textContent = basis > 0 ? 'vs cost basis' : '—';
+}
+
+// Global hover-tooltip handler — mirrors the dashboard's pattern.
+(function initHoverTip() {
+  const tip = document.getElementById('hover-tooltip');
+  if (!tip) return;
+  document.addEventListener('mousemove', (e) => {
+    const t = e.target.closest('.has-hover-tip');
+    if (!t) { tip.classList.remove('visible'); return; }
+    const text = t.getAttribute('data-tip');
+    if (!text) return;
+    tip.textContent = text;
+    const x = e.clientX + 14, y = e.clientY + 14;
+    tip.style.left = x + 'px';
+    tip.style.top  = y + 'px';
+    tip.classList.add('visible');
+    const r = tip.getBoundingClientRect();
+    if (r.right > window.innerWidth - 8) tip.style.left = (e.clientX - r.width - 14) + 'px';
+    if (r.bottom > window.innerHeight - 8) tip.style.top = (e.clientY - r.height - 14) + 'px';
+  });
+  document.addEventListener('mouseleave', () => tip.classList.remove('visible'));
+})();
+
+function extractCostBasis(evidence) {
+  // Returns { total: $, breakdown: [{label, usd}, …] } summing LEND/SUPPLY-type
+  // cost basis across all partners. BORROW positions are debt (not investment)
+  // and are excluded. YT positions use their decay-adjusted basis at S2 start.
+  const breakdown = [];
+  const ev = evidence || {};
+
+  // YT — sum across markets
+  const yt = ev.S2_EXPONENT_YT || {};
+  for (const mb of (yt.by_market || [])) {
+    const cb = mb.cost_basis;
+    if (!cb || cb.usd_basis === undefined) continue;
+    const isUsx = mb.market && mb.market.startsWith('Bxbi');
+    breakdown.push({ label: 'YT ' + (isUsx ? 'USX-Jun26' : 'eUSX-Jun26'), usd: cb.usd_basis || 0 });
+  }
+  // LP, Kamino, Loopscale, Orca, Raydium — single cost_basis_by_quest map per partner
+  const KEY_PARTNERS = [
+    ['S2_EXPONENT_LP', { S2_EXPONENT_LP_USX_JUN26: 'LP USX-Jun26', S2_EXPONENT_LP_EUSX_JUN26: 'LP eUSX-Jun26' }],
+    ['S2_KAMINO', {
+      S2_KAMINO_LEND_USX: 'Kamino lend USX', S2_KAMINO_LEND_EUSX: 'Kamino lend eUSX', S2_KAMINO_LEND_USDG: 'Kamino lend USDG',
+      S2_KAMINO_KVAULT_USDG_USX: 'Kamino kVault USDG/USX',
+    }],
+    ['S2_LOOPSCALE', { S2_LOOPSCALE_SUPPLY_USX_ONE: 'Loopscale supply USX ONE' }],
+    ['S2_ORCA', {
+      S2_ORCA_USX_USDC: 'Orca USX/USDC', S2_ORCA_EUSX_USX: 'Orca eUSX/USX', S2_ORCA_USX_USDG: 'Orca USX/USDG',
+    }],
+    ['S2_RAYDIUM', { S2_RAYDIUM_USX_USDC: 'Raydium USX/USDC', S2_RAYDIUM_EUSX_USX: 'Raydium eUSX/USX' }],
+  ];
+  for (const [evKey, questMap] of KEY_PARTNERS) {
+    const cbq = (ev[evKey] || {}).cost_basis_by_quest || {};
+    for (const [q, label] of Object.entries(questMap)) {
+      const cb = cbq[q];
+      if (!cb || cb.kind === 'borrow' || cb.usd_basis === undefined || cb.usd_basis <= 0) continue;
+      breakdown.push({ label, usd: cb.usd_basis });
+    }
+  }
+  const total = breakdown.reduce((s, b) => s + b.usd, 0);
+  return { total, breakdown };
 }
 
 async function calcLoadWallet() {
@@ -297,6 +420,7 @@ async function calcLoadWallet() {
   const err = document.getElementById('calc-error');
   const src = document.getElementById('calc-source');
   const hint = document.getElementById('calc-prefill-hint');
+  const cbInfo = document.getElementById('calc-cost-basis');
   err.style.display = 'none';
   if (!addr) {
     err.textContent = 'Paste a wallet address first.';
@@ -310,17 +434,60 @@ async function calcLoadWallet() {
     const p = await r.json();
     const current = p.total_flares || 0;
     const dailyByQuest = p.daily_emission_by_quest || {};
-    const dailyTotal = Object.values(dailyByQuest).reduce((a, b) => a + (b || 0), 0);
-    // Pre-populate end-date total = current + days_ahead * daily_emission
+    // Split daily emission: YT (stops at maturity) vs everything else (continues)
+    let ytDaily = 0, nonytDaily = 0;
+    for (const [q, v] of Object.entries(dailyByQuest)) {
+      if (!v) continue;
+      if (YT_QUESTS.has(q)) ytDaily += v;
+      else nonytDaily += v;
+    }
+    // Cost basis from evidence
+    const costBasis = extractCostBasis(p.evidence || {});
+
+    WALLET_CONTEXT = {
+      current_flares: current,
+      yt_daily: ytDaily,
+      nonyt_daily: nonytDaily,
+      cost_basis: costBasis,
+    };
+
+    // Compute end-date total using decay-aware math
     const endIso = document.getElementById('calc-end').value || '2026-08-01';
     const today = new Date(); today.setUTCHours(0, 0, 0, 0);
+    const todayTs = Math.floor(today.getTime() / 1000);
+    const daysToMaturity = Math.max(0, (YT_MATURITY_TS - todayTs) / 86400);
     const end = new Date(endIso + 'T00:00:00Z');
     const days = Math.max(0, Math.round((end - today) / 86400000));
-    const projected = current + days * dailyTotal;
+    const ytDays = Math.min(days, daysToMaturity);
+    const projected = current + ytDaily * ytDays + nonytDaily * days;
+
     document.getElementById('calc-total').value = formatAmount(projected);
-    hint.textContent = 'Pre-filled: ' + formatAmount(current) + ' today + '
-      + formatAmount(dailyTotal) + '/day × ' + days + ' days. Edit to use your own estimate.';
+    // Pre-fill hint mentions YT decay if applicable
+    const ytNote = ytDaily > 0
+      ? ` · YT emission ($${formatAmount(ytDaily)}/d) capped at ${daysToMaturity.toFixed(1)}d (maturity 2026-06-01)`
+      : '';
+    hint.textContent = 'Pre-filled: ' + formatAmount(current) + ' today + projected '
+      + formatAmount(projected - current) + ' across ' + days + ' days.' + ytNote
+      + ' Edit to override.';
     src.textContent = 'Loaded ' + addr.slice(0, 6) + '…' + addr.slice(-6);
+
+    // Show cost basis chip
+    if (cbInfo) {
+      if (costBasis.total > 0) {
+        const tip = costBasis.breakdown
+          .sort((a,b) => b.usd - a.usd)
+          .map(b => `${b.label}: ${'$' + Math.round(b.usd).toLocaleString('en-US')}`)
+          .join('\n').replace(/"/g, '&quot;');
+        cbInfo.innerHTML = `<span class="has-hover-tip" data-tip="${tip}">
+          <span style="color:var(--ink-500);">USD cost basis:</span>
+          <strong style="color:var(--accent-300); font-variant-numeric:tabular-nums;">$${formatAmount(costBasis.total)}</strong>
+          <span style="color:var(--ink-500); font-size:10px; margin-left:4px;">ⓘ ${costBasis.breakdown.length} position${costBasis.breakdown.length===1?'':'s'}</span>
+        </span>`;
+        cbInfo.style.display = 'block';
+      } else {
+        cbInfo.style.display = 'none';
+      }
+    }
     renderResults();
   } catch (e) {
     err.textContent = 'No data found for ' + addr + '. Check the address — it must be a wallet that appears in our dashboard.';
