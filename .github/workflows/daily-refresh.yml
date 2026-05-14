@@ -115,15 +115,16 @@ jobs:
           PRIOR="${{ steps.prior.outputs.prior_total }}"
           echo "Prior: $PRIOR"
           echo "New:   $NEW"
-          # Absolute floor: a healthy real-users total is ~$24B. Anything under
-          # $15B is almost certainly walker RPC failures, not legit. Refuse.
-          # This catches the "first run = prior is 0" loophole that lets bad
-          # data through the drop-percentage check.
+          # Absolute floor: ~60% of Solstice's latest published total. Solstice
+          # was 26.56B flares at 2026-05-14 00:00 UTC; floor is 16B flares.
+          # Anything below = walker RPC failures, not legitimate. Refuse commit.
+          # Update both this floor AND reference_solstice_published_total.md
+          # whenever Solstice publishes a meaningfully new daily total.
           python3 -c "
           import sys
           n = $NEW
-          if n < 15_000_000_000:
-              print(f'::error::Real-users total \${n:,.0f} is below absolute floor (\$15B). Walkers likely had silent RPC failures. Refusing to commit.', flush=True)
+          if n < 16_000_000_000:
+              print(f'::error::Real-users total {n:,.0f} flares is below absolute floor (16B). Walkers likely had silent RPC failures. Refusing to commit.', flush=True)
               sys.exit(1)
           " || exit 1
           # Drop-percentage check (only if prior is meaningful)

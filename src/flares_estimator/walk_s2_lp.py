@@ -294,16 +294,23 @@ def main():
     all_results = defaultdict(lambda: defaultdict(float))   # wallet → {quest: flares}
     all_events_by_wallet = defaultdict(list)                  # wallet → all events (both markets)
     all_snapshots = defaultdict(lambda: defaultdict(float))   # wallet → quest → final LP balance × rate
+    skipped_quests = set()  # quests whose vault returned 0 sigs (RPC flake) — don't sync (would zero existing data)
 
     for mname, cfg in MARKETS.items():
         print(f'=== {mname} (mult {cfg["mult"]}, peg ${cfg["peg"]:.4f}) ===', flush=True)
-        # Walk the FULL LP-vault history (since vault inception). Pre-S2 events
-        # are needed to establish each wallet's carry-in balance at S2 start —
-        # without it, wallets that minted LP pre-S2 and burned during S2 get
-        # negative balance and are silently skipped, under-crediting them.
+        # Walk the FULL LP-vault history. fetch_all_sigs has 4-retry-on-empty
+        # protection but persistent RPC failure can still return 0. Don't let
+        # that wipe existing wallet_quests data — track skipped quests and
+        # exclude from sync.
         sigs = fetch_all_sigs(cfg['lp_vault'], 0)
         in_s2 = sum(1 for s in sigs if (s.get('blockTime') or 0) >= S2_START_TS)
         print(f'  {len(sigs):,} LP-vault sigs total ({in_s2:,} in S2 window)', flush=True)
+        if len(sigs) == 0:
+            # The LP vaults have thousands of sigs in their lifetime — 0 is
+            # always an RPC failure, never legitimate.
+            print(f'  WARN: skipping {cfg["quest"]} sync — RPC empty for known-active LP vault', flush=True)
+            skipped_quests.add(cfg['quest'])
+            continue
 
         # Fetch txs in parallel
         def fetch(s):
@@ -400,7 +407,9 @@ def main():
     print(f'\nSaved {len(out)} wallets to {out_path}')
 
     # DB: walker_outputs + sync to wallet_quests
-    WALKER_QUESTS_DB = ['S2_EXPONENT_LP_USX_JUN26', 'S2_EXPONENT_LP_EUSX_JUN26']
+    WALKER_QUESTS_DB = [q for q in ['S2_EXPONENT_LP_USX_JUN26', 'S2_EXPONENT_LP_EUSX_JUN26'] if q not in skipped_quests]
+    if skipped_quests:
+        print(f'NOTE: skipped sync for {skipped_quests} (RPC empty for active vault)', flush=True)
     walker_db.prune('walk_s2_lp')
     rows_db = []
     for w_, pq_ in out.items():

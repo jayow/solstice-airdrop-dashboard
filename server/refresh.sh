@@ -81,10 +81,10 @@ data = json.load(open('server/data.json'))
 records = data['records']
 total_real = sum((r.get('total') or 0) for r in records if not r.get('is_protocol_pda'))
 chart = json.load(open('server/daily_totals.json'))
-SOL = 25497909198
-print(f'Real users total: {total_real:>16,.0f}')
-print(f'Chart last day:   {chart[\"days\"][-1][\"cumulative\"]:>16,.0f}')
-print(f'Solstice published (snapshot Apr 13 → last 00:00 UTC): {SOL:>14,.0f}  (yesterday — will be updated when Solstice publishes new one)')
+SOL = 26563444978  # 2026-05-14 00:00 UTC; bump when Solstice publishes new daily total
+print(f'Real users total: {total_real:>16,.0f} flares')
+print(f'Chart last day:   {chart[\"days\"][-1][\"cumulative\"]:>16,.0f} flares')
+print(f'Solstice published @ last 00:00 UTC: {SOL:>14,.0f} flares')
 print(f'Gap real vs Solstice: {total_real - SOL:>+,.0f}  ({total_real / SOL * 100:.1f}%)')
 "
 echo
