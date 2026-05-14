@@ -67,10 +67,14 @@ def main():
     nonzero = sum(1 for h in holders.values() if h['current_bal'] > 0)
     print(f'Non-zero balance holders: {nonzero:,}', flush=True)
 
-    # Walk each ATA's sig history during S2, compute time-integral
+    # Track per-owner signed share deltas across all events (for cost basis)
+    owner_share_deltas = defaultdict(list)  # owner → [(ts, signed_share_delta, sig)]
+
+    # Walk each ATA's FULL sig history (pre-S2 + S2). Pre-S2 sigs are needed
+    # so cost-basis captures the user's original deposit; flare math still
+    # integrates only from S2_START via the loop below.
     def process_ata(ata, info):
         owner = info['owner']
-        # Pull sigs during S2
         sigs = []
         before = None
         while True:
@@ -79,9 +83,7 @@ def main():
             r = rpc('getSignaturesForAddress', params)
             batch = r.get('result', []) or []
             if not batch: break
-            keep = [s for s in batch if (s.get('blockTime') or 0) >= S2_START_TS]
-            sigs.extend(keep)
-            if len(keep) < len(batch): break
+            sigs.extend(batch)
             if len(batch) < 1000: break
             before = batch[-1]['signature']
         if not sigs and info['current_bal'] == 0:
@@ -97,7 +99,7 @@ def main():
                 r = rpc('getTransaction', [s['signature'], {'encoding':'jsonParsed','maxSupportedTransactionVersion':0}])
                 return s, r.get('result')
             except: return s, None
-        events = []   # (ts, balance_after)
+        events = []   # (ts, balance_after, sig, prev_balance)
         with ThreadPoolExecutor(max_workers=8) as ex:
             futs = [ex.submit(fetch_tx, s) for s in sigs]
             for fut in as_completed(futs):
@@ -106,22 +108,32 @@ def main():
                 if (tx['meta'] or {}).get('err'): continue
                 pre = {(t['accountIndex'], t['mint']): t for t in tx['meta'].get('preTokenBalances', [])}
                 post = {(t['accountIndex'], t['mint']): t for t in tx['meta'].get('postTokenBalances', [])}
-                bal_after = None
+                bal_after = None; bal_before = None
                 for k in set(pre)|set(post):
                     idx, mint = k
                     if mint != SHARE_MINT: continue
                     pb = pre.get(k); pob = post.get(k)
                     if (pob or pb).get('owner') != owner: continue
-                    bal_after = ((pob or pb).get('uiTokenAmount', {}) or {}).get('uiAmount') or 0
+                    bal_before = float(((pb or {}).get('uiTokenAmount') or {}).get('uiAmount') or 0)
+                    bal_after = float(((pob or {}).get('uiTokenAmount') or {}).get('uiAmount') or 0)
                 if bal_after is not None:
-                    events.append((s['blockTime'], float(bal_after)))
+                    events.append((s['blockTime'], bal_after, s['signature'], bal_before))
         events.sort(key=lambda x: x[0])
-        # Integrate between events, assuming share_price constant (stablecoin pair)
+        # Record signed share deltas for cost-basis accumulation
+        for t, post_bal, sig, prev_bal in events:
+            delta = post_bal - prev_bal
+            if delta != 0:
+                owner_share_deltas[owner].append((t, delta, sig))
+        # Integrate between events, assuming share_price constant (stablecoin pair).
+        # Clip integration window to S2 (events may now include pre-S2 sigs for
+        # cost-basis purposes; we don't want pre-S2 time contributing flares).
         usd_days = 0.0
         for i in range(len(events)):
             bal = events[i][1]
+            seg_start = max(events[i][0], S2_START_TS)
             next_t = events[i+1][0] if i+1 < len(events) else now_ts
-            dt = (next_t - events[i][0]) / 86400
+            seg_end = max(next_t, S2_START_TS)
+            dt = (seg_end - seg_start) / 86400
             if dt > 0 and bal > 0:
                 usd_days += bal * share_price * dt
         # Pre-first-event: assume balance was 0 before user's first S2 tx
@@ -184,7 +196,10 @@ def main():
     for ata, info in holders.items():
         if info['current_bal'] > 0:
             owner_strategy_usd[info['owner']] += info['current_bal'] * share_price
-    for owner, usd in owner_strategy_usd.items():
+    # Also write per-owner kvault cost basis into cost_basis_by_quest.
+    # Cost basis = sum_signed(share_delta) × share_price (current).
+    all_owners = set(owner_strategy_usd.keys()) | set(owner_share_deltas.keys())
+    for owner in all_owners:
         row = con.execute(
             "SELECT raw_json FROM quest_cache WHERE wallet=? AND quest_key='S2_KAMINO'",
             (owner,)
@@ -198,10 +213,30 @@ def main():
                 'kamino_borrow_usx': 0.0, 'kamino_borrow_usdg': 0.0, 'kamino_kvault_usx_usdg': 0.0,
             }, 'events': [], '_watermark': {'slot': 0, 'ts': now_ts}}
         positions = raw.setdefault('positions', {})
-        positions['kamino_kvault_usx_usdg'] = round(usd, 2)
+        positions['kamino_kvault_usx_usdg'] = round(owner_strategy_usd.get(owner, 0), 2)
+        # Cost basis: sum signed share-delta × current share_price
+        deltas = owner_share_deltas.get(owner, [])
+        supplied = withdrawn = 0.0
+        n_s = n_w = 0
+        for _t, d, _sig in deltas:
+            usd = d * share_price
+            if d > 0:
+                supplied += usd; n_s += 1
+            else:
+                withdrawn += -usd; n_w += 1
+        cbq = raw.setdefault('cost_basis_by_quest', {})
+        if n_s + n_w > 0:
+            cbq['S2_KAMINO_KVAULT_USDG_USX'] = {
+                'kind':          'lend',
+                'usd_basis':     max(0.0, supplied - withdrawn),
+                'usd_paid':      supplied,
+                'usd_recovered': withdrawn,
+                'n_supplies':    n_s,
+                'n_withdraws':   n_w,
+            }
         _db2.put_cache(owner, 'S2_KAMINO', raw, watermark_ts=now_ts)
         backfilled += 1
-    print(f'Backfilled kvault USD into S2_KAMINO cache for {backfilled} wallets')
+    print(f'Backfilled kvault USD + cost basis into S2_KAMINO cache for {backfilled} wallets')
 
     # Top 5
     top = sorted(results.items(), key=lambda x: -x[1])[:5]
