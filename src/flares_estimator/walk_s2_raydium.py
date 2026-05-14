@@ -258,7 +258,9 @@ def main():
             owner, pos_pubkey, mint, usd = args
             existing = existing_by_owner_pos.get((owner, pos_pubkey), [])
             new_evs = extract_events_incremental(pos_pubkey, existing, _classify)
-            for e in new_evs: e.setdefault('mint_position', mint)
+            for e in new_evs:
+                e.setdefault('mint_position', mint)
+                e['quest'] = quest   # tag for cost-basis attribution
             position_events_by_owner[owner].extend(existing)
             position_events_by_owner[owner].extend(new_evs)
             all_evs = existing + new_evs

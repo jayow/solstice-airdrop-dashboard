@@ -889,11 +889,34 @@ function renderAmmBlock(p, key, label, txs) {
   const total = Object.entries(flaresMap).filter(([q]) => q.startsWith(QPRE)).reduce((s,[,v])=>s+v,0);
   if (total === 0 && !txs.length && !(ev.events||[]).length) return '';
   const pos = ev.positions || {};
+  const cbq = ev.cost_basis_by_quest || {};
+  const fmtUsd = v => '$' + Math.round(v).toLocaleString('en-US');
+  // poskey ('orca_usx_usdc') → quest code
+  const POSKEY_TO_QUEST = key === 'orca' ? {
+    'orca_usx_usdc': 'S2_ORCA_USX_USDC',
+    'orca_eusx_usx': 'S2_ORCA_EUSX_USX',
+    'orca_usx_usdg': 'S2_ORCA_USX_USDG',
+  } : {
+    'raydium_usx_usdc': 'S2_RAYDIUM_USX_USDC',
+    'raydium_eusx_usx': 'S2_RAYDIUM_EUSX_USX',
+  };
   const lines = [];
   for (const [k, v] of Object.entries(pos)) {
     if (!v) continue;
     const pretty = k.replace(key+'_','').replace('_','/').toUpperCase();
-    lines.push(`<div class="pos-meta-line"><span>${pretty} pool</span><span class="pos-meta-v">$${v.toLocaleString(undefined,{maximumFractionDigits:2})}</span></div>`);
+    const q = POSKEY_TO_QUEST[k];
+    const cb = q && cbq[q];
+    let cbChip = '';
+    if (cb && cb.kind === 'lend' && cb.usd_basis !== undefined) {
+      const flares = flaresMap[q] || 0;
+      const tip = [
+        `Supplied: ${fmtUsd(cb.usd_paid)} (${cb.n_supplies} ${cb.n_supplies===1?'event':'events'})`,
+        `Withdrew: ${fmtUsd(cb.usd_recovered)} (${cb.n_withdraws} ${cb.n_withdraws===1?'event':'events'})`,
+        (cb.usd_basis > 0 && flares > 0) ? `Flares per $: ${(flares/cb.usd_basis).toLocaleString(undefined,{maximumFractionDigits:1})}` : '',
+      ].filter(Boolean).join('\n').replace(/"/g, '&quot;');
+      cbChip = `<span class="has-hover-tip" data-tip="${tip}" style="margin-left:10px; font-size:11px; color:var(--ink-500);">cost basis <span style="color:var(--accent-300); font-weight:600;">${fmtUsd(cb.usd_basis)}</span> <span style="color:var(--ink-500);">ⓘ</span></span>`;
+    }
+    lines.push(`<div class="pos-meta-line"><span>${pretty} pool${cbChip}</span><span class="pos-meta-v">$${v.toLocaleString(undefined,{maximumFractionDigits:2})}</span></div>`);
   }
   const earning = lines.length > 0;
   const head = _protoHeader(label, total, earning);
