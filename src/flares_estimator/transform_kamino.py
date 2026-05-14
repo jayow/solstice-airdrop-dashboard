@@ -163,6 +163,69 @@ def transform_wallet(positions: dict, events: list, now_ts: int) -> dict:
     return dict(flares)
 
 
+def compute_cost_basis(events: list) -> dict:
+    """Compute per-quest USD cost basis from a wallet's Kamino events.
+
+    For LEND quests: usd_basis = sum(deposit USD) - sum(withdraw USD), capped at 0.
+    For BORROW quests: tracks borrowed - repaid as 'net_outstanding' (this is
+    debt, not investment — labeled differently in the UI).
+
+    USX/USDG are $1-pegged so token amount = USD. eUSX uses the historical
+    peg at the event timestamp. Returns: {quest_code: {usd_paid, usd_recovered,
+    usd_basis, n_supplies, n_withdraws}} for lend; similar shape with n_borrows
+    + n_repays + net_outstanding for borrow.
+    """
+    by_quest = {}
+    for e in events or []:
+        ix = (e.get('ix') or '').lower()
+        if ix not in IX_MAP: continue
+        side, sign = IX_MAP[ix]
+        ts = e.get('ts')
+        if ts is None: continue
+        for d in (e.get('deltas') or []):
+            mint = d.get('mint')
+            amt = float(d.get('amt') or 0)
+            if amt <= 0 or not mint: continue
+            usd = amt * _peg_at(mint, ts)
+            quest_map = LEND_QUESTS if side == 'lend' else BORROW_QUESTS
+            if mint not in quest_map: continue
+            qcode, _mult = quest_map[mint]
+            cb = by_quest.setdefault(qcode, {
+                'usd_paid': 0.0,        # supplies (lend) or borrows (borrow)
+                'usd_recovered': 0.0,   # withdrawals (lend) or repayments (borrow)
+                'n_in': 0,
+                'n_out': 0,
+            })
+            if sign > 0:
+                cb['usd_paid'] += usd
+                cb['n_in'] += 1
+            else:
+                cb['usd_recovered'] += usd
+                cb['n_out'] += 1
+    # Finalize: compute basis + rename keys per side
+    out = {}
+    for q, cb in by_quest.items():
+        if 'LEND' in q:
+            out[q] = {
+                'usd_basis':     max(0.0, cb['usd_paid'] - cb['usd_recovered']),
+                'usd_paid':      cb['usd_paid'],
+                'usd_recovered': cb['usd_recovered'],
+                'n_supplies':    cb['n_in'],
+                'n_withdraws':   cb['n_out'],
+                'kind':          'lend',
+            }
+        elif 'BORROW' in q:
+            out[q] = {
+                'net_outstanding': cb['usd_paid'] - cb['usd_recovered'],   # debt; can be negative if over-repaid
+                'usd_borrowed':  cb['usd_paid'],
+                'usd_repaid':    cb['usd_recovered'],
+                'n_borrows':     cb['n_in'],
+                'n_repays':      cb['n_out'],
+                'kind':          'borrow',
+            }
+    return out
+
+
 def _peg(mint: str, t0: int, t1: int) -> float:
     """Average peg over [t0, t1] — uses midpoint for smooth pegs."""
     return _peg_at(mint, (t0 + t1) // 2)

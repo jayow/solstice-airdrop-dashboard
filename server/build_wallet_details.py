@@ -64,7 +64,9 @@ def decode_evidence(qk: str, raw: dict) -> dict:
     if qk == 'S2_KAMINO':
         # Old shape: positions dict; new shape: obligations list
         p = raw.get('positions') or {}
-        return {'type': 'kamino', 'positions': p, 'obligations': raw.get('obligations', [])}
+        out = {'type': 'kamino', 'positions': p, 'obligations': raw.get('obligations', [])}
+        if raw.get('cost_basis_by_quest'): out['cost_basis_by_quest'] = raw['cost_basis_by_quest']
+        return out
     if qk in ('S2_LOOPSCALE', 'S2_ORCA', 'S2_RAYDIUM'):
         out = {'type': qk.split('_')[1].lower(), 'positions': raw.get('positions', {})}
         if raw.get('events'): out['events'] = raw['events']

@@ -265,6 +265,8 @@ def main():
         evts = events_by_wallet.get(owner, [])
         if all(v <= 0 for v in snap_map.values()) and not evts: continue
         evts.sort(key=lambda e: e.get('ts') or 0)
+        from transform_kamino import compute_cost_basis
+        cost_basis = compute_cost_basis(evts)
         snap = {
             'positions': {
                 'kamino_supply_usx':   round(snap_map.get('kamino_supply_usx', 0), 2),
@@ -275,6 +277,7 @@ def main():
                 'kamino_kvault_usx_usdg': 0.0,  # filled by walk_s2_kamino_strategy
             },
             'events': evts,
+            'cost_basis_by_quest': cost_basis,
             '_watermark': {'slot': 0, 'ts': now_ts},
         }
         db.put_cache(owner, 'S2_KAMINO', snap, watermark_ts=now_ts)

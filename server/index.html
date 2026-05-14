@@ -687,18 +687,39 @@ function renderKaminoBlock(p, txs) {
   const events = ev.events || [];
   if (total === 0 && !txs.length && !events.length) return '';
   const pos = ev.positions || {};
-  const lines = [];
+  const cbq = ev.cost_basis_by_quest || {};
+  const fmtUsd = v => '$' + Math.round(v).toLocaleString('en-US');
+  // Build a line per position with cost basis chip + tooltip
   const POSMAP = [
-    ['kamino_supply_usx',    'Supplying USX'],
-    ['kamino_supply_eusx',   'Supplying eUSX'],
-    ['kamino_supply_usdg',   'Supplying USDG'],
-    ['kamino_borrow_usx',    'Borrowing USX'],
-    ['kamino_borrow_usdg',   'Borrowing USDG'],
-    ['kamino_kvault_usx_usdg','kVault USDG/USX'],
+    ['kamino_supply_usx',     'Supplying USX',     'S2_KAMINO_LEND_USX'],
+    ['kamino_supply_eusx',    'Supplying eUSX',    'S2_KAMINO_LEND_EUSX'],
+    ['kamino_supply_usdg',    'Supplying USDG',    'S2_KAMINO_LEND_USDG'],
+    ['kamino_borrow_usx',     'Borrowing USX',     'S2_KAMINO_BORROW_USX'],
+    ['kamino_borrow_usdg',    'Borrowing USDG',    'S2_KAMINO_BORROW_USDG'],
+    ['kamino_kvault_usx_usdg','kVault USDG/USX',   'S2_KAMINO_KVAULT_USDG_USX'],
   ];
-  for (const [k, lbl] of POSMAP) {
+  const lines = [];
+  for (const [k, lbl, q] of POSMAP) {
     const v = pos[k] || 0;
-    if (v > 0) lines.push(`<div class="pos-meta-line"><span>${lbl}</span><span class="pos-meta-v">$${v.toLocaleString(undefined,{maximumFractionDigits:2})}</span></div>`);
+    if (v <= 0) continue;
+    const cb = cbq[q];
+    let cbChip = '';
+    if (cb && cb.kind === 'lend' && cb.usd_basis !== undefined) {
+      const flares = flaresMap[q] || 0;
+      const tip = [
+        `Supplied: ${fmtUsd(cb.usd_paid)} (${cb.n_supplies} ${cb.n_supplies===1?'event':'events'})`,
+        `Withdrew: ${fmtUsd(cb.usd_recovered)} (${cb.n_withdraws} ${cb.n_withdraws===1?'event':'events'})`,
+        (cb.usd_basis > 0 && flares > 0) ? `Flares per $: ${(flares/cb.usd_basis).toLocaleString(undefined,{maximumFractionDigits:1})}` : '',
+      ].filter(Boolean).join('\n').replace(/"/g, '&quot;');
+      cbChip = `<span class="has-hover-tip" data-tip="${tip}" style="margin-left:10px; font-size:11px; color:var(--ink-500);">cost basis <span style="color:var(--accent-300); font-weight:600;">${fmtUsd(cb.usd_basis)}</span> <span style="color:var(--ink-500);">ⓘ</span></span>`;
+    } else if (cb && cb.kind === 'borrow' && cb.net_outstanding !== undefined) {
+      const tip = [
+        `Borrowed: ${fmtUsd(cb.usd_borrowed)} (${cb.n_borrows} ${cb.n_borrows===1?'event':'events'})`,
+        `Repaid: ${fmtUsd(cb.usd_repaid)} (${cb.n_repays} ${cb.n_repays===1?'event':'events'})`,
+      ].join('\n').replace(/"/g, '&quot;');
+      cbChip = `<span class="has-hover-tip" data-tip="${tip}" style="margin-left:10px; font-size:11px; color:var(--ink-500);">net debt <span style="color:#fda4af; font-weight:600;">${fmtUsd(cb.net_outstanding)}</span> <span style="color:var(--ink-500);">ⓘ</span></span>`;
+    }
+    lines.push(`<div class="pos-meta-line"><span>${lbl}${cbChip}</span><span class="pos-meta-v">$${v.toLocaleString(undefined,{maximumFractionDigits:2})}</span></div>`);
   }
   const earning = lines.length > 0;
   const head = _protoHeader('Kamino', total, earning);
