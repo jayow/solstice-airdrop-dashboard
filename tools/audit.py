@@ -87,10 +87,13 @@ def tier1_structural(con, data, max_detail=10):
     out.append(Finding(sev, 1, 'system_total',
         f'SQLite={sql_total:,.0f}  JSON={json_total:,.0f}  delta={drift:+,.0f} ({drift_pct:.4f}%)'))
 
-    # 1.2 — per-wallet total: data.json record.total vs wallet_quests SUM
+    # 1.2 — per-wallet total: data.json record.total vs wallet_quests SUM.
+    # LEFT JOIN so ghost wallets (in wallet_quests but missing from `wallets`
+    # metadata table) still get compared — otherwise we get false-positive
+    # "JSON has flares that SQLite doesn't" findings.
     sql_per_wallet = dict(con.execute("""
         SELECT wq.wallet, SUM(wq.flares)
-        FROM wallet_quests wq JOIN wallets w USING (wallet)
+        FROM wallet_quests wq LEFT JOIN wallets w USING (wallet)
         WHERE COALESCE(w.classification,'') NOT IN ('pda_protocol','pda_or_uninit')
           AND wq.quest LIKE 'S2_%'
         GROUP BY wq.wallet
@@ -133,7 +136,15 @@ def tier1_structural(con, data, max_detail=10):
     out.append(Finding(sev, 1, 'hold_cache_consistency',
         f'{len(hold_bad)} wallets earning HOLD flares but cache shows empty timeline', detail))
 
-    # 1.4 — walker_outputs vs wallet_quests for same (wallet, quest)
+    # 1.4 — walker_outputs vs wallet_quests for same (wallet, quest).
+    # Walkers that have a downstream transform (e.g. walk_s2_kamino →
+    # transform_kamino piecewise integration) intentionally produce DIFFERENT
+    # numbers in walker_outputs vs wallet_quests — the transform is the more
+    # accurate value. We exempt those walkers from the strict check and
+    # tolerate up to 2% drift.
+    TRANSFORMED_WALKERS = {'walk_s2_kamino', 'walk_s2_loopscale'}  # has *_transform.py downstream
+    TRANSFORMED_TOLERANCE_PCT = 2.0
+
     drift_rows = list(con.execute("""
         SELECT wo.wallet, wo.quest, wo.flares AS wo_flares, wq.flares AS wq_flares,
                wo.walker
@@ -141,14 +152,19 @@ def tier1_structural(con, data, max_detail=10):
         JOIN wallet_quests wq ON wq.wallet=wo.wallet AND wq.quest=wo.quest
         WHERE ABS(COALESCE(wo.flares,0) - COALESCE(wq.flares,0)) > ?
     """, (DRIFT_ABS_FLARES,)))
-    # filter relative
-    drift_rows = [r for r in drift_rows
-                  if abs(r['wo_flares'] - r['wq_flares']) / max(abs(r['wq_flares']), 1) * 100 > DRIFT_REL_PCT]
+    filtered_drift = []
+    for r in drift_rows:
+        delta = abs(r['wo_flares'] - r['wq_flares'])
+        rel = delta / max(abs(r['wq_flares']), 1) * 100
+        if rel <= DRIFT_REL_PCT: continue
+        # Apply transformed-walker tolerance
+        if r['walker'] in TRANSFORMED_WALKERS and rel <= TRANSFORMED_TOLERANCE_PCT: continue
+        filtered_drift.append(r)
     detail = [f"  {r['wallet'][:12]}…  {r['quest']}  walker[{r['walker']}]={r['wo_flares']:,.0f}  wq={r['wq_flares']:,.0f}  delta={(r['wo_flares']-r['wq_flares']):+,.0f}"
-              for r in sorted(drift_rows, key=lambda r: -abs(r['wo_flares']-r['wq_flares']))[:max_detail]]
-    sev = 'PASS' if not drift_rows else ('WARN' if len(drift_rows) < 20 else 'FAIL')
-    out.append(Finding(sev, 1, 'walker_outputs_sync',
-        f'{len(drift_rows)} (wallet, quest) pairs where walker_outputs ≠ wallet_quests', detail))
+              for r in sorted(filtered_drift, key=lambda r: -abs(r['wo_flares']-r['wq_flares']))[:max_detail]]
+    sev = 'PASS' if not filtered_drift else ('WARN' if len(filtered_drift) < 20 else 'FAIL')
+    msg = f'{len(filtered_drift)} (wallet, quest) pairs drift > 2% (excluding transformed walkers: {", ".join(sorted(TRANSFORMED_WALKERS))})'
+    out.append(Finding(sev, 1, 'walker_outputs_sync', msg, detail))
 
     # 1.5 — no negative flares
     neg = list(con.execute("SELECT wallet, quest, flares FROM wallet_quests WHERE flares < 0 LIMIT 10"))
@@ -212,23 +228,29 @@ def tier3_solstice(con, data, max_detail=10):
 
 def tier4_invariants(con, data, max_detail=10):
     out = []
-    # 4.1 — each non-disabled quest should have at least one wallet earning
+    # 4.1 — each non-disabled quest should have at least one wallet earning.
+    # `deferred` flag = enabled in code but expected to have 0 earners until
+    # some external condition is met (3MO HOLD until day 90, REFERRAL until
+    # Solstice exposes SIWS data). Don't warn on those.
     try:
         sys.path.insert(0, os.path.join(ROOT, 'src', 'flares_estimator'))
         from quest_map import QUESTS
     except Exception:
         QUESTS = []
+    DEFERRED = {'S2_HOLD_USX_3MO', 'S2_HOLD_EUSX_3MO', 'S2_REFERRAL_BONUS'}
     quest_counts = dict(con.execute("SELECT quest, COUNT(*) FROM wallet_quests WHERE flares > 0 GROUP BY quest"))
     zero_quests = []
     for q in QUESTS:
         if q.get('disabled'): continue
         code = q['code']
+        if code in DEFERRED: continue
         if quest_counts.get(code, 0) == 0:
             zero_quests.append(code)
     detail = [f"  {q}" for q in zero_quests[:max_detail]]
     sev = 'PASS' if not zero_quests else 'WARN'
+    msg_extra = f' (skipped deferred: {", ".join(sorted(DEFERRED))})' if not zero_quests else ''
     out.append(Finding(sev, 4, 'enabled_quests_have_earners',
-        f'{len(zero_quests)} enabled quests have zero wallets earning', detail))
+        f'{len(zero_quests)} non-deferred enabled quests have zero earners' + msg_extra, detail))
 
     # 4.2 — system_daily_emission_by_quest in data.json matches sum of per-wallet rates
     # (sanity check on the build_wallet_details aggregation)
