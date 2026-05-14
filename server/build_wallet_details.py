@@ -105,15 +105,36 @@ def compute_daily_emission(evidence: dict) -> dict:
     in the projection calculator. Returns {quest_code: flares_per_day}."""
     rates = {}
 
-    # HOLD: balance at end of timeline × mult × peg
-    for ek, qcode, peg in [('S2_HOLD_USX', 'S2_HOLD_USX_DAILY', 1.0),
-                            ('S2_HOLD_EUSX', 'S2_HOLD_EUSX_DAILY', EUSX_PEG)]:
+    # HOLD: balance at end of timeline × mult × peg.
+    # Also emit bonus-tier daily rates if the wallet has qualified (held
+    # ≥$100 continuously for the threshold period). Bonus tiers (1MO=30d, 3MO=90d)
+    # use the same balance × peg base, with their respective multipliers.
+    HOLD_BONUSES = {
+        'S2_HOLD_USX':  [('S2_HOLD_USX_DAILY', 10, 0), ('S2_HOLD_USX_1MO', 6, 30), ('S2_HOLD_USX_3MO', 15, 90)],
+        'S2_HOLD_EUSX': [('S2_HOLD_EUSX_DAILY', 2, 0), ('S2_HOLD_EUSX_1MO', 4, 30), ('S2_HOLD_EUSX_3MO', 10, 90)],
+    }
+    for ek, tiers in HOLD_BONUSES.items():
         ev = evidence.get(ek) or {}
         tl = ev.get('timeline') or []
         if not tl: continue
+        peg = EUSX_PEG if ek == 'S2_HOLD_EUSX' else 1.0
         bal = tl[-1][1] if tl else 0
-        if bal > 0:
-            rates[qcode] = bal * peg * QUEST_MULT[qcode]
+        if bal <= 0: continue
+        now_ts = int(__import__('time').time())
+        # Walk backward through timeline to find longest continuous run of bal ≥ $100
+        MIN_BAL = 100.0
+        run_start = None
+        for ts, b in tl:
+            if (b * peg) >= MIN_BAL:
+                if run_start is None: run_start = ts
+            else:
+                run_start = None
+        # Current run duration (sec). bal at end is already > 0, so if run_start set
+        # the wallet is currently in a qualifying run.
+        run_secs = (now_ts - run_start) if run_start else 0
+        for qcode, mult, qual_days in tiers:
+            if qual_days == 0 or run_secs >= qual_days * 86400:
+                rates[qcode] = bal * peg * mult
 
     # YT: sum yt × mult for currently-emitting positions per market
     yt = evidence.get('S2_EXPONENT_YT') or {}
