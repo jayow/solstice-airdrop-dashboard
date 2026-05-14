@@ -43,6 +43,47 @@ IX_SIGN = {
 }
 
 
+def compute_cost_basis(events: list) -> dict:
+    """USD basis on the BORROW side: borrowed - repaid (net outstanding).
+
+    USX is $1-pegged so we sum USX-mint deltas directly. Skips collateral
+    ixs (those affect collateral, not principal).
+
+    Returns: {'S2_LOOPSCALE_BORROW_USX': {kind: 'borrow', net_outstanding,
+    usd_borrowed, usd_repaid, n_borrows, n_repays}}.
+    """
+    borrowed = repaid = 0.0
+    n_b = n_r = 0
+    for e in events or []:
+        if e.get('side') != 'borrow': continue
+        ix = (e.get('ix') or '').lower()
+        sign = IX_SIGN.get(ix)
+        if not sign: continue
+        # USX-mint deltas only — borrow quest is USX-only
+        usx_delta = 0.0
+        for d in (e.get('deltas') or []):
+            if d.get('mint') != USX_MINT: continue
+            usx_delta += float(d.get('amt') or 0)
+        if usx_delta <= 0: continue
+        if sign > 0:
+            borrowed += usx_delta
+            n_b += 1
+        else:
+            repaid += usx_delta
+            n_r += 1
+    if n_b + n_r == 0: return {}
+    return {
+        'S2_LOOPSCALE_BORROW_USX': {
+            'kind': 'borrow',
+            'net_outstanding': borrowed - repaid,
+            'usd_borrowed':    borrowed,
+            'usd_repaid':      repaid,
+            'n_borrows':       n_b,
+            'n_repays':        n_r,
+        }
+    }
+
+
 def transform_wallet(positions: dict, events: list, now_ts: int) -> float:
     end_ts = min(now_ts, S2_END_TS)
     by_loan = defaultdict(list)

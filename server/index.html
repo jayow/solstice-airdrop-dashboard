@@ -744,9 +744,22 @@ function renderLoopscaleBlock(p, txs) {
   const total = (flaresMap.S2_LOOPSCALE_SUPPLY_USX_ONE||0) + (flaresMap.S2_LOOPSCALE_BORROW_USX||0);
   if (total === 0 && !txs.length) return '';
   const pos = ev.positions || {};
+  const cbq = ev.cost_basis_by_quest || {};
+  const fmtUsd = v => '$' + Math.round(v).toLocaleString('en-US');
   const lines = [];
   if ((pos.loopscale_supply_usx||0) > 0) lines.push(`<div class="pos-meta-line"><span>Supplying USX to USX-ONE vault</span><span class="pos-meta-v">$${pos.loopscale_supply_usx.toLocaleString(undefined,{maximumFractionDigits:2})}</span></div>`);
-  if ((pos.loopscale_borrow_usx||0) > 0) lines.push(`<div class="pos-meta-line"><span>Borrowing USX</span><span class="pos-meta-v">$${pos.loopscale_borrow_usx.toLocaleString(undefined,{maximumFractionDigits:2})}</span></div>`);
+  if ((pos.loopscale_borrow_usx||0) > 0) {
+    const cb = cbq['S2_LOOPSCALE_BORROW_USX'];
+    let cbChip = '';
+    if (cb && cb.kind === 'borrow' && cb.net_outstanding !== undefined) {
+      const tip = [
+        `Borrowed: ${fmtUsd(cb.usd_borrowed)} (${cb.n_borrows} ${cb.n_borrows===1?'event':'events'})`,
+        `Repaid: ${fmtUsd(cb.usd_repaid)} (${cb.n_repays} ${cb.n_repays===1?'event':'events'})`,
+      ].join('\n').replace(/"/g, '&quot;');
+      cbChip = `<span class="has-hover-tip" data-tip="${tip}" style="margin-left:10px; font-size:11px; color:var(--ink-500);">net debt <span style="color:#fda4af; font-weight:600;">${fmtUsd(cb.net_outstanding)}</span> <span style="color:var(--ink-500);">ⓘ</span></span>`;
+    }
+    lines.push(`<div class="pos-meta-line"><span>Borrowing USX${cbChip}</span><span class="pos-meta-v">$${pos.loopscale_borrow_usx.toLocaleString(undefined,{maximumFractionDigits:2})}</span></div>`);
+  }
   const earning = lines.length > 0;
   const head = _protoHeader('Loopscale', total, earning);
   const events = ev.events || [];
