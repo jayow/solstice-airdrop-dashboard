@@ -56,20 +56,52 @@ else
   done
 fi
 
-# ── Phase 2: Kamino strategy (depends on Kamino cache) ───────
-echo "[$(date '+%H:%M:%S')] Phase 2: Kamino strategy backfill"
+# ── Phase 2: HOLD walkers (USX + eUSX, daily + 1MO + 3MO bonuses) ───
+# These weren't in refresh.sh before, so HOLD flares went stale between
+# manual runs. They share the S2_HOLD_USX / S2_HOLD_EUSX cache (TWAB timelines)
+# so each pair fires the same 24h-cache check internally.
+echo "[$(date '+%H:%M:%S')] Phase 2: HOLD walkers (USX + eUSX, 6 tiers)"
+for w in gt_hold_usx_daily gt_hold_usx_1mo gt_hold_usx_3mo gt_hold_eusx_daily gt_hold_eusx_1mo gt_hold_eusx_3mo; do
+  ( cd src && python3 -u -m flares_estimator.gt_walkers.$w ) > /tmp/walker_logs/refresh_$w.log 2>&1 &
+done
+wait
+echo "[$(date '+%H:%M:%S')]   ✓ HOLD walkers done"
+
+# ── Phase 3: Kamino strategy (depends on Kamino cache) ───────
+echo "[$(date '+%H:%M:%S')] Phase 3: Kamino strategy backfill"
 python3 src/flares_estimator/walk_s2_kamino_strategy.py > /tmp/walker_logs/refresh_kvault.log 2>&1
 echo "[$(date '+%H:%M:%S')]   ✓ Kamino strategy done"
 
-# ── Phase 3: transforms (event-integrated recomputes) ────────
-echo "[$(date '+%H:%M:%S')] Phase 3: transforms"
+# ── Phase 4: transforms (event-integrated recomputes) ────────
+echo "[$(date '+%H:%M:%S')] Phase 4: transforms"
 python3 src/flares_estimator/transform_kamino.py    > /tmp/walker_logs/refresh_xform_kam.log 2>&1
 python3 src/flares_estimator/transform_loopscale.py > /tmp/walker_logs/refresh_xform_loop.log 2>&1
 echo "[$(date '+%H:%M:%S')]   ✓ Transforms done"
 
-# ── Phase 4: rebuild dashboard ────────────────────────────────
-echo "[$(date '+%H:%M:%S')] Phase 4: rebuild dashboard"
+# ── Phase 5: HOLD cache → wallet_quests resync ───────────────
+# When a walker rebuilds a cache (e.g. force-refresh after stale-cache detection),
+# the wallet_quests rows for the 1MO/3MO bonus tiers can lag. Bonus-tier values
+# in wallet_quests are written by the bonus walker (gt_hold_*_1mo), which only
+# writes for wallets it CURRENTLY computes as qualifying — leaving stale 0s for
+# wallets whose cache was repaired AFTER the bonus walker ran. This resync
+# pass iterates every cache with positive timeline and writes fresh DAILY +
+# 1MO + 3MO values so wallet_quests reflects the cache exactly.
+echo "[$(date '+%H:%M:%S')] Phase 5: HOLD cache → wallet_quests resync"
+python3 tools/resync_hold_quests.py > /tmp/walker_logs/refresh_resync.log 2>&1 || echo "  ⚠️  resync errored — see refresh_resync.log"
+echo "[$(date '+%H:%M:%S')]   ✓ Resync done"
+
+# ── Phase 6: rebuild dashboard ────────────────────────────────
+echo "[$(date '+%H:%M:%S')] Phase 6: rebuild dashboard"
 bash server/rebuild.sh 2>&1 | grep -E '^(\=\=\=|Reconstructed|wallet_quests|Solstice|Wrote)' | head -20
+
+# ── Phase 7: audit (fail loudly on structural drift) ─────────
+echo "[$(date '+%H:%M:%S')] Phase 7: audit"
+if python3 tools/audit.py 2>&1 | tee /tmp/walker_logs/refresh_audit.log | tail -25; then
+  echo "[$(date '+%H:%M:%S')]   ✓ Audit clean"
+else
+  echo "[$(date '+%H:%M:%S')]   ❌ AUDIT FAILED — see refresh_audit.log. DO NOT PUSH."
+  # Continue to print summary but mark the refresh as suspect.
+fi
 
 # Summary
 END=$(date +%s)
