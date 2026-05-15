@@ -381,6 +381,26 @@ def tier4_invariants(con, data, max_detail=10):
             out.append(Finding('WARN', 4, 'walker_coverage',
                 'no coverage rows yet — walkers must run with instrumentation'))
         else:
+            # Coverage thresholds differ by walker:
+            # - LP/YT pool_tvl includes LP-vault-held YT/PT (used to bootstrap
+            #   the AMM, not S2-eligible user holdings). Real user coverage is
+            #   structurally < 100% — relax to 40%.
+            # - Borrow walkers compare cumulative-flares to current outstanding,
+            #   which is point-in-time noise (closed loans drop from current).
+            #   Use a generous floor.
+            # - Other walkers (Orca, Raydium, Kamino LEND, etc) should be > 90%.
+            COVERAGE_THRESHOLDS = {
+                'walk_s2_lp':       40.0,   # LP-vault-held YT/PT excluded
+                'walk_s2_yt':       40.0,   # same reason
+                'walk_s2_loopscale_borrow_': 30.0,   # outstanding is point-in-time
+            }
+            def threshold_for(walker, quest):
+                if walker == 'walk_s2_lp' or walker == 'walk_s2_yt':
+                    return COVERAGE_THRESHOLDS[walker]
+                if 'BORROW' in quest:
+                    return 30.0
+                return 90.0
+
             low_coverage = []
             stale = []
             now = int(time.time())
@@ -390,18 +410,19 @@ def tier4_invariants(con, data, max_detail=10):
                 age_h = (now - (r['refreshed_at'] or 0)) / 3600
                 if age_h > 26:
                     stale.append((r['walker'], r['quest'], age_h))
-                if pool <= 0: continue   # can't compute ratio
+                if pool <= 0: continue
                 pct = tracked / pool * 100
-                if pct < 90:
-                    low_coverage.append((r['walker'], r['quest'], pool, tracked, pct, r['n_positions']))
+                thr = threshold_for(r['walker'], r['quest'])
+                if pct < thr:
+                    low_coverage.append((r['walker'], r['quest'], pool, tracked, pct, r['n_positions'], thr))
             detail = [
-                f"  {wk}:{q}  pool=${p:,.0f}  tracked=${t:,.0f}  coverage={pct:.1f}%  n={n}"
-                for wk, q, p, t, pct, n in sorted(low_coverage, key=lambda x: x[4])
+                f"  {wk}:{q}  pool=${p:,.0f}  tracked=${t:,.0f}  coverage={pct:.1f}%  (threshold {thr:.0f}%)  n={n}"
+                for wk, q, p, t, pct, n, thr in sorted(low_coverage, key=lambda x: x[4])
             ]
             if stale:
                 detail += [f"  STALE  {w}:{q}  {h:.0f}h old" for w, q, h in stale[:max_detail]]
             sev = 'PASS' if (not low_coverage and not stale) else ('FAIL' if low_coverage else 'WARN')
-            msg = f'{len(low_coverage)} quests under 90% coverage'
+            msg = f'{len(low_coverage)} quests below walker-specific coverage threshold'
             if stale: msg += f', {len(stale)} stale rows (>26h)'
             out.append(Finding(sev, 4, 'walker_coverage', msg, detail))
 

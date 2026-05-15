@@ -102,6 +102,17 @@ python3 tools/walker_cursor_freshness.py --n 5 > /tmp/walker_logs/refresh_freshn
   echo "  ⚠️  freshness check errored — see refresh_freshness.log"
 echo "[$(date '+%H:%M:%S')]   ✓ Freshness check done"
 
+# ── Phase 6c: per-partner event integrity audit ──────────────
+# Validates each partner's quest_cache events (no dups, sorted, sane amts).
+# Cheap (purely local SQL) but catches walker correctness drift before it
+# pollutes the dashboard.
+echo "[$(date '+%H:%M:%S')] Phase 6c: per-partner event integrity"
+if python3 tools/audit_partner_events.py > /tmp/walker_logs/refresh_partner_audit.log 2>&1; then
+  echo "[$(date '+%H:%M:%S')]   ✓ Partner integrity clean"
+else
+  echo "[$(date '+%H:%M:%S')]   ❌ PARTNER INTEGRITY FAILED — see refresh_partner_audit.log"
+fi
+
 # ── Phase 7: audit (fail loudly on structural drift) ─────────
 echo "[$(date '+%H:%M:%S')] Phase 7: audit"
 if python3 tools/audit.py 2>&1 | tee /tmp/walker_logs/refresh_audit.log | tail -25; then

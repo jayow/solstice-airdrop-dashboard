@@ -25,21 +25,21 @@ import db as _db
 from rpc_helper import rpc
 
 # Configs per walker: how to find sampleable accounts in quest_cache.
+#
+# Per-position walkers (Orca/Raydium/Kamino/Loopscale) sample per-position
+# pubkeys; the comparison is meaningful because each position is exclusively
+# touched by its owner.
+#
+# Vault-driven walkers (LP/YT) walk a SHARED vault PDA that sees txs from
+# every user AND many non-event txs (refreshes, fees, etc). Their "latest
+# cached event ts" lags chain head by design — most txs don't generate
+# events. Freshness on these is a false positive. Skip them here; their
+# correctness is covered by walker_saturation + walker_coverage instead.
 WALKER_CFGS = {
     'walk_s2_orca':     {'quest_key': 'S2_ORCA',     'event_pubkey_field': 'pos_pubkey'},
     'walk_s2_raydium':  {'quest_key': 'S2_RAYDIUM',  'event_pubkey_field': 'pos_pubkey'},
     'walk_s2_kamino':   {'quest_key': 'S2_KAMINO',   'event_pubkey_field': 'pos_pubkey'},
     'walk_s2_loopscale':{'quest_key': 'S2_LOOPSCALE','event_pubkey_field': 'pos_pubkey'},
-    # LP/YT walk a fixed set of vault addresses, not per-wallet accounts.
-    # We sample those directly.
-    'walk_s2_lp':       {'fixed_pubkeys': [
-        'CRPy147RiyosYzEzU4NLVbhZjhy1GGAHtXyvbfFHK736',   # USX-Jun26 LP vault
-        '3wMTeNVRXsYaMuVMpX6uAXVdX2zi5puk7SbsU5YXts82',   # eUSX-Jun26 LP vault
-    ], 'quest_key': 'S2_EXPONENT_LP', 'event_match_field': 'market'},
-    'walk_s2_yt':       {'fixed_pubkeys': [
-        'BxbiZpzj32nrVGecFy8VQ1HohaW7ryhas1k9aiETDWdm',   # USX-Jun26 market
-        'rBbzpGk3PTX8mvQg95VWJ24EDgvxyDJYrEo9jtauvjP',    # eUSX-Jun26 market
-    ], 'quest_key': 'S2_EXPONENT_YIELD', 'event_match_field': 'market'},
 }
 
 
