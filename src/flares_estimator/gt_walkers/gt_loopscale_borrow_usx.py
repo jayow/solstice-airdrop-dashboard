@@ -25,6 +25,7 @@ import os, sys, base64, base58, struct, time, json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 THIS = os.path.dirname(os.path.abspath(__file__))
 if os.path.dirname(THIS) not in sys.path: sys.path.insert(0, os.path.dirname(THIS))
+from snapshot_ts import last_snapshot_ts
 from rpc_helper import rpc
 from gt_walkers._base import S2_START_TS, write_walker_outputs, sync_to_wallet_quests, report
 
@@ -64,7 +65,7 @@ def _enum_onchain(now_ts: int) -> dict:
 
 def run() -> dict:
     with report(WALKER_NAME, QUEST, [LOOPSCALE_PROG]):
-        now_ts = int(time.time())
+        now_ts = last_snapshot_ts()   # midnight-UTC cutoff
         # API path
         api_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), 'data', 's2_loopscale_flares.json')
         api_results = {}

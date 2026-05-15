@@ -19,6 +19,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from rpc_helper import rpc
+from snapshot_ts import last_snapshot_ts
 import db
 from incremental_events import extract_events_incremental
 
@@ -88,7 +89,7 @@ def _extract_events_for_position(pos_pubkey: str, existing_for_pos: list) -> lis
 
 def main():
     db.init()
-    now_ts = int(time.time())
+    now_ts = last_snapshot_ts()   # midnight-UTC cutoff (Solstice snapshot cadence)
 
     print('=== Enumerating Loopscale Loan accounts (USX principal) ===')
     filters = [

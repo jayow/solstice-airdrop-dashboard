@@ -281,6 +281,17 @@ def main():
             except Exception as e:
                 evidence[c['quest_key']] = {'error': str(e)}
 
+        # If wallet has zero S2 YT flares (never participated in S2 YT), zero
+        # out the YT cost basis. Otherwise an old pre-S2 round-trip can leak a
+        # phantom cost basis even though the wallet has no S2 stake.
+        yt_flares = sum((r.get('flares') or 0) for r in quest_rows
+                        if r.get('quest','').startswith('S2_EXPONENT_YIELD'))
+        if yt_flares <= 0:
+            for mb in (evidence.get('S2_EXPONENT_YT') or {}).get('by_market', []):
+                cb = mb.get('cost_basis')
+                if cb:
+                    cb['usd_basis'] = 0.0
+
         manual = manual_pda_labels.get(w)
         is_pda = (meta.get('classification') == 'pda_protocol') or (manual is not None)
         payload = {

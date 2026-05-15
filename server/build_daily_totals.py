@@ -430,9 +430,11 @@ def main():
     partner_grand_totals = {p: round(partner_cum[p], 0) for p in partners}
 
     grand_db = con.execute("SELECT SUM(flares) FROM wallet_quests WHERE flares > 0").fetchone()[0] or 0
+    # Match the filter used by build_data.py + audit.py: exclude pda_protocol,
+    # pda, AND pda_or_uninit so this number matches the records-list total.
     pda_excl = con.execute(
         "SELECT SUM(wq.flares) FROM wallet_quests wq JOIN wallets w ON wq.wallet=w.wallet "
-        "WHERE w.classification='pda_protocol'"
+        "WHERE w.classification IN ('pda_protocol','pda','pda_or_uninit')"
     ).fetchone()[0] or 0
     grand_non_pda = grand_db - pda_excl
 

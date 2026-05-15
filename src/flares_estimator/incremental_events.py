@@ -91,6 +91,13 @@ def extract_events_incremental(pos_pubkey: str,
     new_sigs = fetch_new_sigs(pos_pubkey, until_sig=last_sig, walker_name=walker_name)
     if not new_sigs: return []
 
+    # Skip sigs newer than the snapshot boundary — those flares wouldn't be
+    # counted anyway, and fetching their tx details burns RPC for nothing.
+    from snapshot_ts import last_snapshot_ts
+    snap = last_snapshot_ts()
+    new_sigs = [s for s in new_sigs if (s.get('blockTime') or 0) <= snap]
+    if not new_sigs: return []
+
     new_events = []
     for s in new_sigs:
         if s.get('err'): continue

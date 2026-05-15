@@ -22,6 +22,7 @@ import requests
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from rpc_helper import rpc
+from snapshot_ts import last_snapshot_ts
 import walker_db
 import db as _db
 from incremental_events import extract_events_incremental
@@ -64,12 +65,15 @@ def get_obligations(wallet: str) -> list:
 
 
 def main():
-    now_ts = int(time.time())
+    now_ts = last_snapshot_ts()   # midnight-UTC cutoff (Solstice snapshot cadence)
     print(f'S2 window: {datetime.fromtimestamp(S2_START_TS, UTC).strftime("%Y-%m-%d")} → now ({(now_ts-S2_START_TS)/86400:.1f} days)\n', flush=True)
 
-    # Self-enumerate Kamino obligation owners on Solstice market.
+    # Self-enumerate Kamino obligations + owners on Solstice market.
     # Kamino Lend program: `KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD`
     # Obligation layout: lendingMarket at offset 32, owner at offset 64.
+    # We capture BOTH the obligation pubkey AND the owner so we can walk every
+    # obligation's sig history directly — no dependency on Kamino's API to
+    # tell us obligation addresses (which omits closed/zero-balance obligations).
     KLEND = 'KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD'
     print(f'Enumerating Kamino obligations on Solstice market via getProgramAccounts...', flush=True)
     r = rpc('getProgramAccounts', [KLEND, {
@@ -77,14 +81,21 @@ def main():
         'dataSlice': {'offset': 64, 'length': 32},   # owner pubkey only
         'filters': [{'memcmp': {'offset': 32, 'bytes': SOLSTICE_MARKET}}]
     }], timeout=60)
-    owners = set()
+    obl_to_owner = {}  # obligation_pubkey -> owner_pubkey
     for a in (r.get('result') or []):
         try:
             d = base64.b64decode(a['account']['data'][0])
-            owners.add(base58.b58encode(d[:32]).decode())
+            obl_to_owner[a['pubkey']] = base58.b58encode(d[:32]).decode()
         except Exception: continue
+    owners = set(obl_to_owner.values())
     wallets = sorted(owners)
-    print(f'{len(wallets):,} unique Kamino obligation owners on Solstice market\n', flush=True)
+    print(f'{len(wallets):,} unique owners across {len(obl_to_owner):,} obligations on Solstice market\n', flush=True)
+
+    # Build owner → list of obligation pubkeys (on-chain truth, includes closed/zero-balance ones
+    # that the Kamino /users/<w>/obligations API filters out)
+    owner_obls = defaultdict(list)
+    for obl_pk, owner_pk in obl_to_owner.items():
+        owner_obls[owner_pk].append(obl_pk)
 
     reserve2mint = _reserve_to_mint()
     print(f'Loaded {len(reserve2mint)} reserves\n', flush=True)
@@ -138,7 +149,36 @@ def main():
     }
     RELEVANT_MINTS = {USX_MINT, EUSX_MINT, USDG_MINT, 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'}
 
+    def _classify(tx, s):
+        # First Kamino ix in our set wins. Refresh*/Init*/Set* lead in logs
+        # but aren't in KAMINO_IXS so we skip them.
+        ix_name = None
+        for ln in (tx['meta'].get('logMessages') or []):
+            if 'Program log: Instruction:' not in ln: continue
+            nm = ln.split('Instruction:',1)[1].strip().split()[0].lower()
+            if nm in KAMINO_IXS:
+                ix_name = nm; break
+        if not ix_name: return None
+        pre = tx['meta'].get('preTokenBalances') or []
+        post = tx['meta'].get('postTokenBalances') or []
+        pre_by_idx = {b['accountIndex']: b for b in pre}
+        deltas = {}
+        for b in post:
+            if b.get('mint') not in RELEVANT_MINTS: continue
+            p = pre_by_idx.get(b['accountIndex'], {})
+            bef = float(((p.get('uiTokenAmount') or {}).get('uiAmount')) or 0)
+            aft = float(((b.get('uiTokenAmount') or {}).get('uiAmount')) or 0)
+            d = aft - bef
+            if d > 0: deltas[b['mint']] = deltas.get(b['mint'], 0) + d
+        return {'ix': ix_name, 'deltas': [{'mint': m, 'amt': a} for m, a in deltas.items()]}
+
     def process_wallet(wallet: str):
+        # SAFE BEHAVIOR (reverted from on-chain-all-obligations walking).
+        # The "walk every obligation" approach over-counted Kamino Multiply
+        # wallets: their flash-loan-style deposit/withdraw within one tx
+        # produces apparent net inflows the classifier misattributes. The
+        # proper fix is per-reserve sig-history indexing with net-flow
+        # attribution by signer — left as TODO(s2-kamino-per-reserve-indexer).
         try:
             obls = get_obligations(wallet)
         except Exception: return wallet, None, None, None, 'api-fail'
@@ -160,50 +200,16 @@ def main():
                 if mint is None: continue
                 usd = int(b.get('marketValueSf','0')) / SF_DENOM
                 if usd > 0: deps[('borrow', mint)] = deps.get(('borrow',mint),0) + usd
-            # Save current-position snapshot regardless of S2 history
             for (side, mint), usd in deps.items():
                 k = SIDE_MINT_TO_POSKEY.get((side, mint))
                 if k: wallet_snap[k] += usd
             if not deps: continue
 
-            # Incremental walk: only fetch sigs newer than the last cached one
             existing = existing_by_user_pos.get((wallet, obl_addr), [])
-
-            def _classify(tx, s):
-                # Scan ALL ix log lines and keep the first one that's in our
-                # set. Kamino txs lead with Refresh*/Init*/Set* before the
-                # actual Deposit/Withdraw, so first-match-any breaks. We need
-                # first-match-IN-SET.
-                ix_name = None
-                for ln in (tx['meta'].get('logMessages') or []):
-                    if 'Program log: Instruction:' not in ln: continue
-                    nm = ln.split('Instruction:',1)[1].strip().split()[0].lower()
-                    if nm in KAMINO_IXS:
-                        ix_name = nm; break
-                if not ix_name: return None
-                pre = tx['meta'].get('preTokenBalances') or []
-                post = tx['meta'].get('postTokenBalances') or []
-                pre_by_idx = {b['accountIndex']: b for b in pre}
-                deltas = {}
-                for b in post:
-                    if b.get('mint') not in RELEVANT_MINTS: continue
-                    p = pre_by_idx.get(b['accountIndex'], {})
-                    bef = float(((p.get('uiTokenAmount') or {}).get('uiAmount')) or 0)
-                    aft = float(((b.get('uiTokenAmount') or {}).get('uiAmount')) or 0)
-                    d = aft - bef
-                    if d > 0: deltas[b['mint']] = deltas.get(b['mint'], 0) + d
-                return {'ix': ix_name, 'deltas': [{'mint': m, 'amt': a} for m, a in deltas.items()]}
-
             new_evs = extract_events_incremental(obl_addr, existing, _classify, walker_name='walk_s2_kamino')
             wallet_events.extend(existing)
             wallet_events.extend(new_evs)
 
-        # Flare math: delegate to transform_kamino.transform_wallet() so the
-        # walker's per-wallet output uses the same piecewise integral as the
-        # offline transform. This replaces the previous `usd × mult × days`
-        # approximation (which ignored carry-in and treated current position
-        # as constant over the held window — systematically wrong for wallets
-        # that scaled up/down or withdrew pre-S2 leaving a stale API balance).
         integrated = _transform_wallet_flares(dict(wallet_snap), wallet_events, now_ts)
         for q, v in integrated.items():
             if v > 0: per_quest[q] = v

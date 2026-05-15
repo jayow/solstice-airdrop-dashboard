@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 THIS = os.path.dirname(os.path.abspath(__file__))
 if os.path.dirname(THIS) not in sys.path: sys.path.insert(0, os.path.dirname(THIS))
+from snapshot_ts import last_snapshot_ts
 
 from gt_walkers._base import (
     S2_START_TS, S2_END_TS, USX_MINT,
@@ -30,7 +31,7 @@ def run(workers: int = 16, force_refresh: bool = False) -> dict:
         owners = discover_universe_for_mint(USX_MINT)
         print(f'    {len(owners):,} unique USX owners on-chain', flush=True)
 
-        now_ts = int(time.time())
+        now_ts = last_snapshot_ts()   # midnight-UTC cutoff
         end_ts = min(now_ts, S2_END_TS)
         results = {}
 

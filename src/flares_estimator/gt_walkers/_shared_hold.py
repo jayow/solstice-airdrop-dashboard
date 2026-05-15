@@ -7,6 +7,7 @@ THIS = os.path.dirname(os.path.abspath(__file__))
 if os.path.dirname(THIS) not in sys.path: sys.path.insert(0, os.path.dirname(THIS))
 
 from rpc_helper import rpc
+from snapshot_ts import last_snapshot_ts
 import db
 from ._base import S2_START_TS, S2_END_TS
 
@@ -17,15 +18,20 @@ def _list_atas(wallet: str, mint: str) -> list:
 
 
 def _walk_ata_sigs(ata: str) -> list:
+    snap = last_snapshot_ts()
     sigs = []; before = None
     for _ in range(10):
         params = [ata, {'limit': 1000, **({'before': before} if before else {})}]
         r = rpc('getSignaturesForAddress', params, timeout=20)
         page = r.get('result') or []
         if not page: break
+        raw_batch_len = len(page)
+        last_sig = page[-1]['signature']
+        # Drop sigs newer than snapshot boundary.
+        page = [s for s in page if (s.get('blockTime') or 0) <= snap]
         sigs.extend(page)
-        before = page[-1]['signature']
-        if len(page) < 1000: break
+        if raw_batch_len < 1000: break
+        before = last_sig
     sigs.sort(key=lambda s: s.get('blockTime') or 0)
     return sigs
 
@@ -83,7 +89,7 @@ def build_twab_timeline(wallet: str, mint: str) -> dict:
     Returns: {'atas': [...], 'timeline': [[ts, balance_total], ...], 'last_event_ts': int}
     """
     atas = _list_atas(wallet, mint)
-    end_ts = min(int(time.time()), S2_END_TS)
+    end_ts = min(last_snapshot_ts(), S2_END_TS)   # midnight-UTC cutoff
     if not atas:
         return {'atas': [], 'timeline': [[S2_START_TS, 0.0], [end_ts, 0.0]], 'last_event_ts': end_ts}
 

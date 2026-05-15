@@ -15,6 +15,7 @@ THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 PARENT_DIR = os.path.dirname(THIS_DIR)
 if PARENT_DIR not in sys.path:
     sys.path.insert(0, PARENT_DIR)
+from snapshot_ts import last_snapshot_ts
 
 import db
 from rpc_helper import rpc
@@ -25,7 +26,7 @@ MIN_HOLD_DAYS = 1.0           # Solstice "min one day rewarded daily"
 
 
 def s2_window_days(now_ts: int = None) -> float:
-    if now_ts is None: now_ts = int(time.time())
+    if now_ts is None: now_ts = last_snapshot_ts()   # midnight-UTC cutoff
     end_ts = min(now_ts, S2_END_TS)
     return max(0.0, (end_ts - S2_START_TS) / 86400.0)
 

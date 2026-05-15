@@ -24,6 +24,7 @@ import requests
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from rpc_helper import rpc
+from snapshot_ts import last_snapshot_ts
 import walker_db
 
 S2_START_TS = 1776038400
@@ -40,7 +41,7 @@ def get_share_price():
 
 
 def main():
-    now_ts = int(time.time())
+    now_ts = last_snapshot_ts()   # midnight-UTC cutoff (Solstice snapshot cadence)
     share_price = get_share_price()
     print(f'Strategy {STRATEGY[:8]}...  share price ${share_price:.10f}  mult {MULT}×', flush=True)
     print(f'S2 window: {(now_ts-S2_START_TS)/86400:.1f} days', flush=True)

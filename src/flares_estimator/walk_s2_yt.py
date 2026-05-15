@@ -26,6 +26,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from rpc_helper import rpc
+from snapshot_ts import last_snapshot_ts
 import walker_db
 
 S2_START_TS = 1776038400
@@ -59,11 +60,19 @@ MARKETS = {
 
 
 def fetch_all_sigs(addr: str) -> list:
-    """Walk full sig history newest→oldest. CRITICAL: an empty result mid-
-    pagination is NOT a reliable end-of-history marker — RPC nodes (especially
-    from CI runners) sometimes return [] under load even when more sigs exist.
-    Retry 3× before treating empty as terminal."""
+    """Walk full sig history newest→oldest, filtering to pre-snapshot only.
+
+    Sigs newer than last_snapshot_ts() are dropped — their flares aren't
+    counted by the integration step, so fetching them burns RPC for nothing.
+    Pagination decisions use the UNFILTERED batch (otherwise filtering small
+    intraday tails of a batch can falsely terminate the loop).
+
+    CRITICAL: an empty result mid-pagination is NOT a reliable end-of-history
+    marker — RPC nodes (especially from CI runners) sometimes return [] under
+    load even when more sigs exist. Retry 3× before treating empty as terminal.
+    """
     import time as _t
+    snap = last_snapshot_ts()
     sigs, before = [], None
     while True:
         b = []
@@ -75,9 +84,13 @@ def fetch_all_sigs(addr: str) -> list:
             if b: break
             _t.sleep(0.5 * (attempt + 1))
         if not b: break  # confirmed end of history (or persistent RPC failure)
+        raw_batch_len = len(b)
+        last_sig = b[-1]['signature']
+        # Filter out sigs newer than the snapshot boundary AFTER deciding pagination.
+        b = [s for s in b if (s.get('blockTime') or 0) <= snap]
         sigs.extend(b)
-        if len(b) < 1000: break
-        before = b[-1]['signature']
+        if raw_batch_len < 1000: break
+        before = last_sig
     return sigs
 
 
@@ -127,9 +140,14 @@ def extract_yt_events_from_tx(tx: dict, market_pk: str) -> list:
 
 
 def main():
-    now_ts = int(time.time())
+    # Anchor flare integration to LAST 00:00 UTC (Solstice's daily snapshot
+    # boundary). Running the walker mid-day must NOT integrate intraday flares
+    # or our totals diverge from Solstice's published value.
+    now_ts = last_snapshot_ts()   # midnight-UTC cutoff (Solstice snapshot cadence)
     end_ts = min(now_ts, S2_END_TS)
-    print(f'S2 window: {datetime.fromtimestamp(S2_START_TS, UTC).strftime("%Y-%m-%d")} → now ({(end_ts-S2_START_TS)/86400:.1f} days)\n', flush=True)
+    print(f'S2 window: {datetime.fromtimestamp(S2_START_TS, UTC).strftime("%Y-%m-%d")} → '
+          f'{datetime.fromtimestamp(end_ts, UTC).strftime("%Y-%m-%d %H:%M UTC")} '
+          f'(midnight cutoff, {(end_ts-S2_START_TS)/86400:.1f} days)\n', flush=True)
 
     all_results = defaultdict(lambda: defaultdict(float))
     all_events_by_wallet = defaultdict(list)   # wallet → list of all-market events for cache
@@ -317,29 +335,73 @@ def main():
                 timeline.append([end_ts, balance])
             if not timeline: continue
 
-            # Cost basis: per-market decay-adjusted USD invested (see decay_factor above)
-            usd_paid_decayed = 0.0   # decay-adjusted USD paid (pre-S2 buys time-decayed; post-S2 buys full)
-            usd_paid_nominal = 0.0   # raw USD paid (no decay) — useful for display
-            usd_recovered = 0.0
+            # Cost basis: group-and-decay model. See [[s2-yt-cost-basis-algorithm]]
+            # in memory for full spec.
+            #
+            # Split S1 events into groups separated by SELL→BUY transitions:
+            #   - Group with sells: bundle, decay net cash by LAST sell date
+            #   - Group with buys only: each buy decayed by its own date
+            # S2 events: face-value (buys add, sells subtract).
+            # Final cost_basis = max(0, S1_contribution + S2_contribution).
+            # Force 0 if wallet has no current YT AND no S2 YT flares earned —
+            # handled downstream in the build step where flare totals exist.
+            usd_paid_nominal = 0.0
+            usd_recovered_total = 0.0
             n_buys = n_sells = 0
+            s1_events, s2_events = [], []
             for e in evs:
                 usd = e['usd_value']
+                if usd <= 0:
+                    print(f'  WARN walk_s2_yt: dropping non-positive usd_value event '
+                          f'sig={e.get("sig","?")[:8]} usd={usd}', flush=True)
+                    continue
                 if e['yt_delta'] > 0:
-                    # decay factor for pre-S2 buys, identity for post-S2
-                    df = 1.0 if e['ts'] >= S2_START_TS else max(0.0, (MATURITY_TS - S2_START_TS) / (MATURITY_TS - e['ts']))
-                    usd_paid_decayed += usd * df
                     usd_paid_nominal += usd
                     n_buys += 1
                 else:
-                    usd_recovered += usd
+                    usd_recovered_total += usd
                     n_sells += 1
+                (s1_events if e['ts'] < S2_START_TS else s2_events).append(e)
+
+            # Build S1 groups demarcated by SELL→BUY transitions.
+            groups = []
+            current = []
+            last_was_sell = False
+            for e in s1_events:
+                is_buy = e['yt_delta'] > 0
+                if is_buy and last_was_sell:
+                    groups.append(current); current = []
+                current.append(e)
+                last_was_sell = (not is_buy)
+            if current: groups.append(current)
+
+            s1_contrib = 0.0
+            for g in groups:
+                has_sell = any(e['yt_delta'] < 0 for e in g)
+                if has_sell:
+                    buys_sum  = sum(e['usd_value'] for e in g if e['yt_delta'] > 0)
+                    sells_sum = sum(e['usd_value'] for e in g if e['yt_delta'] < 0)
+                    net = buys_sum - sells_sum
+                    last_sell_ts = max(e['ts'] for e in g if e['yt_delta'] < 0)
+                    decay = min(1.0, (MATURITY_TS - S2_START_TS) / max(1, (MATURITY_TS - last_sell_ts)))
+                    s1_contrib += net * decay
+                else:
+                    for e in g:
+                        decay = min(1.0, (MATURITY_TS - S2_START_TS) / max(1, (MATURITY_TS - e['ts'])))
+                        s1_contrib += e['usd_value'] * decay
+
+            s2_contrib = (sum(e['usd_value'] for e in s2_events if e['yt_delta'] > 0)
+                        - sum(e['usd_value'] for e in s2_events if e['yt_delta'] < 0))
+
             cost_basis_by_market[mp] = {
-                'usd_basis':     max(0.0, usd_paid_decayed - usd_recovered),
+                'usd_basis':     max(0.0, s1_contrib + s2_contrib),
                 'usd_paid':      usd_paid_nominal,
-                'usd_paid_decayed_at_s2': usd_paid_decayed,
-                'usd_recovered': usd_recovered,
+                'usd_recovered': usd_recovered_total,
+                's1_contribution': s1_contrib,
+                's2_contribution': s2_contrib,
                 'n_buys':        n_buys,
                 'n_sells':       n_sells,
+                'n_groups_s1':   len(groups),
             }
 
             positions_by_market[mp] = [{

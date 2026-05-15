@@ -14,6 +14,7 @@ Confidence: HIGH (direct on-chain enumeration + DB-cached extraction).
 import os, sys, time
 THIS = os.path.dirname(os.path.abspath(__file__))
 if os.path.dirname(THIS) not in sys.path: sys.path.insert(0, os.path.dirname(THIS))
+from snapshot_ts import last_snapshot_ts
 from gt_walkers._base import S2_START_TS, USX_JUN26_MARKET, write_walker_outputs, sync_to_wallet_quests, report
 from gt_walkers._shared_yt import market_meta, yt_holder_universe
 from quests.exponent_yt import ExponentYTExtractor
@@ -31,7 +32,7 @@ def run() -> dict:
         print(f'    {len(wallets):,} candidate wallets (active on-chain ∪ cached history)', flush=True)
 
         e = ExponentYTExtractor()
-        now_ts = int(time.time())
+        now_ts = last_snapshot_ts()   # midnight-UTC cutoff
         results = {}
         for w in wallets:
             cached = db.get_cache(w, 'S2_EXPONENT_YT')

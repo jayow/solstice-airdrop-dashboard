@@ -21,6 +21,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from rpc_helper import rpc
+from snapshot_ts import last_snapshot_ts
 import walker_db
 import db as _db
 from incremental_events import extract_events_incremental
@@ -94,7 +95,7 @@ def liquidity_to_usd(L: int, tick_lower: int, tick_upper: int, current_tick: int
 
 
 def main():
-    now_ts = int(time.time())
+    now_ts = last_snapshot_ts()   # midnight-UTC cutoff (Solstice snapshot cadence)
     print(f'S2 window: {(now_ts-S2_START_TS)/86400:.1f} days\n', flush=True)
 
     all_results = defaultdict(lambda: defaultdict(float))

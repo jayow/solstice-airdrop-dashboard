@@ -19,6 +19,7 @@ from collections import defaultdict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from rpc_helper import rpc
+from snapshot_ts import last_snapshot_ts
 import walker_db
 
 # Exponent program ID — emits the Wrapper events via emit_cpi
@@ -133,11 +134,16 @@ def fetch_all_sigs(addr: str, until_ts: int = 0) -> list:
     """Pull sigs newest→oldest. If until_ts > 0, stop once a sig is older than it;
     if until_ts == 0, walk the full history (needed for pre-S2 carry-in).
 
+    ALSO filters out sigs newer than last_snapshot_ts() — those flares aren't
+    counted by the integration step, so fetching their tx details is pure
+    RPC waste.
+
     CRITICAL: an empty result mid-pagination is NOT a reliable end-of-history
     marker — RPC nodes (especially from CI runners) sometimes return [] under
     load even when more sigs exist. Retry 4× before treating empty as terminal.
     """
     import time as _t
+    snap = last_snapshot_ts()
     sigs = []
     before = None
     while True:
@@ -150,14 +156,20 @@ def fetch_all_sigs(addr: str, until_ts: int = 0) -> list:
             if batch: break
             _t.sleep(0.5 * (attempt + 1))
         if not batch: break
+        raw_batch_len = len(batch)
+        last_sig = batch[-1]['signature']
+        # Filter: only keep sigs from before the snapshot boundary.
+        # Pagination uses raw_batch_len (not filtered), so intraday tails don't
+        # falsely terminate the walk.
+        batch = [s for s in batch if (s.get('blockTime') or 0) <= snap]
         if until_ts > 0:
             keep = [s for s in batch if (s.get('blockTime') or 0) >= until_ts]
             sigs.extend(keep)
             if len(keep) < len(batch): break
         else:
             sigs.extend(batch)
-        if len(batch) < 1000: break
-        before = batch[-1]['signature']
+        if raw_batch_len < 1000: break
+        before = last_sig
     return sigs
 
 
@@ -296,7 +308,7 @@ def main():
     MARKETS['eUSX-Jun26']['peg'] = eusx_peg
     print(f'eUSX live peg: ${eusx_peg:.6f}', flush=True)
 
-    now_ts = int(time.time())
+    now_ts = last_snapshot_ts()   # midnight-UTC cutoff (Solstice snapshot cadence)
     print(f'S2 window: {datetime.fromtimestamp(S2_START_TS, UTC).strftime("%Y-%m-%d")} → now ({(now_ts-S2_START_TS)/86400:.1f} days)\n', flush=True)
 
     all_results = defaultdict(lambda: defaultdict(float))   # wallet → {quest: flares}

@@ -18,6 +18,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from rpc_helper import rpc
+from snapshot_ts import last_snapshot_ts
 from loopscale_extractor import get_loopscale_borrow_history, USX_ONE_LP_MINT, USX_ONE_VAULT
 import walker_db
 
@@ -59,7 +60,8 @@ def get_vault_total_lp() -> float:
 
 
 def get_total_borrow_outstanding() -> float:
-    """Sum of principalOutstanding across all active USX loans (USD)."""
+    """Sum of active-loan principalUsd across all USX loans. The API's
+    `principalUsd` field is the USD value; closed loans report 0."""
     total, page = 0.0, 0
     while True:
         try:
@@ -72,11 +74,10 @@ def get_total_borrow_outstanding() -> float:
         items = r.get('items') or []
         if not items: break
         for it in items:
-            ln = it.get('loan') or it
-            # Loopscale principal stored as 6-decimal integer string
-            out = ln.get('principalOutstanding') or ln.get('outstandingPrincipal') or 0
+            ln = it.get('loan') or {}
+            if ln.get('closed'): continue
             try:
-                total += float(out) / 1e6
+                total += float(it.get('principalUsd') or 0)
             except Exception: pass
         if len(items) < 100: break
         page += 1
@@ -210,6 +211,7 @@ def walk_supply(now_ts: int, share_value: float):
         # pre-S2 and held through aren't anchored correctly. Without carry-in,
         # the first integration segment (S2_START → first S2 event) is dropped
         # and the wallet gets credit only after their first S2 sig.
+        snap = last_snapshot_ts()
         sigs = []
         before = None
         while True:
@@ -218,9 +220,12 @@ def walk_supply(now_ts: int, share_value: float):
             r = rpc('getSignaturesForAddress', params)
             batch = r.get('result', []) or []
             if not batch: break
+            raw_batch_len = len(batch)
+            last_sig = batch[-1]['signature']
+            batch = [s for s in batch if (s.get('blockTime') or 0) <= snap]
             sigs.extend(batch)
-            if len(batch) < 1000: break
-            before = batch[-1]['signature']
+            if raw_batch_len < 1000: break
+            before = last_sig
         if not sigs and current_bal == 0: return owner, 0.0, []
         # Fetch all txs in parallel, recording (blockTime, post_balance, sig) per sig.
         def fetch(s):
@@ -299,7 +304,7 @@ def walk_supply(now_ts: int, share_value: float):
 
 
 def main():
-    now_ts = int(time.time())
+    now_ts = last_snapshot_ts()   # midnight-UTC cutoff (Solstice snapshot cadence)
     print(f'S2 window: {(now_ts-S2_START_TS)/86400:.1f} days\n', flush=True)
     share_value = get_vault_share_value()
     print(f'USX ONE share value: ${share_value:.6f}\n', flush=True)
