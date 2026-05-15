@@ -153,6 +153,60 @@ CREATE INDEX IF NOT EXISTS idx_atas_wallet ON wallet_atas(wallet);
 CREATE INDEX IF NOT EXISTS idx_atas_mint   ON wallet_atas(mint);
 
 -- =====================================================================
+-- =====================================================================
+-- walker_coverage : per-walker-per-quest TVL reconciliation
+--
+-- At end of each walker run, the walker writes:
+--   pool_tvl_usd   : authoritative on-chain TVL for this quest's pool/market
+--   tracked_tvl_usd: SUM of wallet-tracked position USD across all wallets walked
+-- Audit compares (tracked / pool) — under 95 percent warns, under 90 fails.
+-- This is the only check that catches "we never enumerated this account" — the
+-- output-layer audits cannot see accounts we don't know exist.
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS walker_coverage (
+    walker          TEXT,
+    quest           TEXT,
+    pool_tvl_usd    REAL,
+    tracked_tvl_usd REAL,
+    n_positions     INTEGER,
+    refreshed_at    INTEGER,
+    PRIMARY KEY (walker, quest)
+);
+
+-- =====================================================================
+-- walker_saturation : sig-pagination saturation events
+--
+-- incremental_events.fetch_new_sigs() caps pagination at max_pages. If a
+-- single position had >max_pages*1000 sigs between refreshes, the walk
+-- silently truncates. Each saturation event is logged here so audit can
+-- catch it before flares go missing.
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS walker_saturation (
+    ts          INTEGER,
+    pubkey      TEXT,
+    walker      TEXT,
+    sigs_seen   INTEGER,
+    max_pages   INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_saturation_ts ON walker_saturation(ts);
+
+-- =====================================================================
+-- walker_freshness : sampled cursor-freshness checks per walker
+--
+-- For each sample, we record on-chain's latest sig ts vs our cache's
+-- latest sig ts for that account/position. Large lag = our cursor is
+-- behind the chain (missed sigs, broken pagination, etc).
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS walker_freshness (
+    ts                INTEGER,
+    walker            TEXT,
+    pubkey            TEXT,
+    our_latest_ts     INTEGER,
+    chain_latest_ts   INTEGER,
+    lag_seconds       INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_freshness_ts ON walker_freshness(ts);
+
 -- schema metadata
 -- =====================================================================
 CREATE TABLE IF NOT EXISTS meta (

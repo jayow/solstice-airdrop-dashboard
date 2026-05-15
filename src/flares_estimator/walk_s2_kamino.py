@@ -194,7 +194,7 @@ def main():
                     if d > 0: deltas[b['mint']] = deltas.get(b['mint'], 0) + d
                 return {'ix': ix_name, 'deltas': [{'mint': m, 'amt': a} for m, a in deltas.items()]}
 
-            new_evs = extract_events_incremental(obl_addr, existing, _classify)
+            new_evs = extract_events_incremental(obl_addr, existing, _classify, walker_name='walk_s2_kamino')
             wallet_events.extend(existing)
             wallet_events.extend(new_evs)
 
@@ -254,6 +254,33 @@ def main():
     walker_db.upsert_many('walk_s2_kamino', rows)
     walker_db.sync_to_wallet_quests('walk_s2_kamino', WALKER_QUESTS)
     print(f'DB: walker_outputs={len(rows)} rows; synced to wallet_quests')
+
+    # Coverage: Kamino API gives per-reserve total supply/borrow USD. Compare
+    # to sum of tracked per-wallet snapshot USD for each quest.
+    try:
+        metrics = _kget(f'/kamino-market/{SOLSTICE_MARKET}/reserves/metrics') or []
+    except Exception:
+        metrics = []
+    reserve_tvl = {}  # token -> (supply_usd, borrow_usd)
+    for m in metrics:
+        tok = m.get('liquidityToken')
+        reserve_tvl[tok] = (float(m.get('totalSupplyUsd') or 0),
+                            float(m.get('totalBorrowUsd') or 0))
+    quest_to_reserve = {
+        'S2_KAMINO_LEND_USX':   ('USX',  'supply', 'kamino_supply_usx'),
+        'S2_KAMINO_LEND_EUSX':  ('eUSX', 'supply', 'kamino_supply_eusx'),
+        'S2_KAMINO_LEND_USDG':  ('USDG', 'supply', 'kamino_supply_usdg'),
+        'S2_KAMINO_BORROW_USX': ('USX',  'borrow', 'kamino_borrow_usx'),
+        'S2_KAMINO_BORROW_USDG':('USDG', 'borrow', 'kamino_borrow_usdg'),
+    }
+    for quest, (tok, side, snap_key) in quest_to_reserve.items():
+        sup, bor = reserve_tvl.get(tok, (0, 0))
+        pool_tvl = sup if side == 'supply' else bor
+        tracked = sum(snap_map.get(snap_key, 0) for snap_map in snapshots.values())
+        n_holders = sum(1 for snap_map in snapshots.values() if snap_map.get(snap_key, 0) > 0)
+        walker_db.write_coverage('walk_s2_kamino', quest,
+                                 pool_tvl_usd=pool_tvl, tracked_tvl_usd=tracked,
+                                 n_positions=n_holders)
 
     # Per-wallet snapshot + event timeline → quest_cache (S2_KAMINO)
     import db

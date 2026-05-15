@@ -149,17 +149,28 @@ def compute_daily_emission(evidence: dict) -> dict:
                 q = 'S2_EXPONENT_YIELD_USX_JUN26' if market_pk.startswith('Bxbi') else 'S2_EXPONENT_YIELD_EUSX_JUN26'
                 rates[q] = rates.get(q, 0) + yt_amt * mult
 
-    # LP: snapshot lp_value × mult (positions list has lp_value_usd per market).
-    # Some legacy cache entries store LP positions as strings or partial dicts —
-    # defensively skip anything that doesn't look like our expected shape.
+    # LP: snapshot lp_value × mult. The walker writes positions as a flat dict
+    # with keys usx_jun26_lp_usd / eusx_jun26_lp_usd (see walk_s2_lp.py:487).
+    # Legacy entries used a list-of-dicts shape — handle both for safety.
     lp = evidence.get('S2_EXPONENT_LP') or {}
-    for p in (lp.get('positions') or []):
-        if not isinstance(p, dict): continue
-        v_usd = p.get('lp_value_usd') or 0
-        if v_usd <= 0: continue
-        m_pk = p.get('market', '')
-        q = 'S2_EXPONENT_LP_USX_JUN26' if m_pk.startswith('Bxbi') else 'S2_EXPONENT_LP_EUSX_JUN26'
-        rates[q] = rates.get(q, 0) + v_usd * QUEST_MULT[q]
+    positions = lp.get('positions')
+    if isinstance(positions, dict):
+        usx_usd  = positions.get('usx_jun26_lp_usd')  or 0
+        eusx_usd = positions.get('eusx_jun26_lp_usd') or 0
+        if usx_usd > 0:
+            q = 'S2_EXPONENT_LP_USX_JUN26'
+            rates[q] = rates.get(q, 0) + usx_usd * QUEST_MULT[q]
+        if eusx_usd > 0:
+            q = 'S2_EXPONENT_LP_EUSX_JUN26'
+            rates[q] = rates.get(q, 0) + eusx_usd * QUEST_MULT[q]
+    elif isinstance(positions, list):
+        for p in positions:
+            if not isinstance(p, dict): continue
+            v_usd = p.get('lp_value_usd') or 0
+            if v_usd <= 0: continue
+            m_pk = p.get('market', '')
+            q = 'S2_EXPONENT_LP_USX_JUN26' if m_pk.startswith('Bxbi') else 'S2_EXPONENT_LP_EUSX_JUN26'
+            rates[q] = rates.get(q, 0) + v_usd * QUEST_MULT[q]
 
     # Kamino / Loopscale / Orca / Raydium: positions dict has USD per position-key
     pos_to_quest = {

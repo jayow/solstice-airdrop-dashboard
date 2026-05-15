@@ -44,6 +44,45 @@ def get_vault_share_value():
     except Exception: return 0.0
 
 
+def get_vault_total_lp() -> float:
+    """USX ONE vault total LP supply (UI units). Used for coverage reconciliation."""
+    try:
+        r = requests.post(
+            f'{LOOP_API}/markets/lending_vaults/info',
+            json={'vaultAddresses':[USX_ONE_VAULT], 'page':0, 'pageSize':1},
+            timeout=15
+        ).json()
+        items = r.get('lendVaults', [])
+        if not items: return 0.0
+        return float(items[0]['vault']['lpSupply']) / 1e6
+    except Exception: return 0.0
+
+
+def get_total_borrow_outstanding() -> float:
+    """Sum of principalOutstanding across all active USX loans (USD)."""
+    total, page = 0.0, 0
+    while True:
+        try:
+            r = requests.post(
+                f'{LOOP_API}/markets/loans/info',
+                json={'principalMints':[USX_MINT], 'page':page, 'pageSize':100},
+                timeout=20
+            ).json()
+        except Exception: break
+        items = r.get('items') or []
+        if not items: break
+        for it in items:
+            ln = it.get('loan') or it
+            # Loopscale principal stored as 6-decimal integer string
+            out = ln.get('principalOutstanding') or ln.get('outstandingPrincipal') or 0
+            try:
+                total += float(out) / 1e6
+            except Exception: pass
+        if len(items) < 100: break
+        page += 1
+    return total
+
+
 def walk_borrow(now_ts: int):
     """For each Loopscale USX borrower (enumerated via API), integrate USD-days."""
     # Self-enumerate: page through Loopscale loans/info with USX principal filter,
@@ -337,6 +376,40 @@ def main():
     walker_db.upsert_many('walk_s2_loopscale', rows)
     walker_db.sync_to_wallet_quests('walk_s2_loopscale', WALKER_QUESTS)
     print(f'DB: walker_outputs={len(rows)} rows; synced to wallet_quests')
+
+    # Coverage reconciliation: walker-tracked TVL vs Loopscale's authoritative TVL.
+    onchain_supply_usd = get_vault_total_lp() * share_value
+    tracked_supply_usd = 0.0
+    n_supply_holders = 0
+    for user, evts in supply_events.items():
+        if evts:
+            bal = evts[-1]['post_bal']
+            if bal > 0:
+                tracked_supply_usd += bal * share_value
+                n_supply_holders += 1
+    walker_db.write_coverage('walk_s2_loopscale', 'S2_LOOPSCALE_SUPPLY_USX_ONE',
+                             pool_tvl_usd=onchain_supply_usd,
+                             tracked_tvl_usd=tracked_supply_usd,
+                             n_positions=n_supply_holders)
+
+    onchain_borrow_usd = get_total_borrow_outstanding()
+    # Per-wallet current outstanding from each wallet's latest history entry
+    tracked_borrow_usd = 0.0
+    n_borrow = 0
+    from loopscale_extractor import get_loopscale_borrow_history
+    for w in out.keys():
+        if 'S2_LOOPSCALE_BORROW_USX' not in out[w]: continue
+        try:
+            hist = get_loopscale_borrow_history(w)
+            outstanding = sum(h['principal_usx'] for h in hist if not h.get('end_ts'))
+            if outstanding > 0:
+                tracked_borrow_usd += outstanding
+                n_borrow += 1
+        except Exception: pass
+    walker_db.write_coverage('walk_s2_loopscale', 'S2_LOOPSCALE_BORROW_USX',
+                             pool_tvl_usd=onchain_borrow_usd,
+                             tracked_tvl_usd=tracked_borrow_usd,
+                             n_positions=n_borrow)
 
 
 if __name__ == '__main__':

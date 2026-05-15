@@ -216,12 +216,42 @@ def tier3_solstice(con, data, max_detail=10):
         if len(days) >= 2:
             today = days[-1]['cumulative']; prev = days[-2]['cumulative']
             growth_pct = (today - prev) / max(prev, 1) * 100
-            # Healthy daily growth ≈ 3-5%
             sev = 'PASS' if 1.5 < growth_pct < 7 else 'WARN'
             out.append(Finding(sev, 3, 'system_daily_growth',
                 f'system grew {growth_pct:.2f}% day-over-day (healthy range: 3-5%)'))
     except Exception as e:
         out.append(Finding('WARN', 3, 'system_daily_growth', f'could not compute: {e}'))
+
+    # 3.3 — our headline-total vs Solstice's published total. Pulls Solstice
+    # numbers from flares_snapshots (source='solstice_dashboard'); update with
+    # `python3 tools/set_solstice_total.py <total>` each day.
+    rows = list(con.execute("SELECT date_utc, grand_total FROM flares_snapshots "
+                            "WHERE source='solstice_dashboard' ORDER BY ts DESC LIMIT 2"))
+    if not rows:
+        out.append(Finding('WARN', 3, 'solstice_total_match',
+            'no solstice_dashboard snapshot in DB — run tools/set_solstice_total.py'))
+    else:
+        sol_today = rows[0]['grand_total']; sol_date = rows[0]['date_utc']
+        our_total = sum((r.get('total') or 0) for r in data['records'] if not r.get('is_protocol_pda'))
+        match_pct = our_total / sol_today * 100 if sol_today else 0
+        # Structural floor ~95% (referral SIWS-gated). < 92% = something broke.
+        sev = 'FAIL' if match_pct < 92 else ('WARN' if match_pct < 95 else 'PASS')
+        out.append(Finding(sev, 3, 'solstice_total_match',
+            f'us={our_total:,.0f}  Solstice[{sol_date}]={sol_today:,.0f}  match={match_pct:.2f}% '
+            '(structural ceiling ~95%; FAIL < 92%)'))
+
+        # 3.4 — growth-rate match: our daily emission rate vs Solstice's day-over-day delta
+        if len(rows) >= 2:
+            sol_prev = rows[1]['grand_total']
+            sol_growth = sol_today - sol_prev
+            our_daily = sum((data.get('system_daily_emission_by_quest') or {}).values())
+            if sol_growth > 0 and our_daily > 0:
+                ratio = our_daily / sol_growth * 100
+                # Healthy: our emission within 80-110% of Solstice's daily delta
+                sev = 'FAIL' if ratio < 70 else ('WARN' if ratio < 90 or ratio > 120 else 'PASS')
+                out.append(Finding(sev, 3, 'growth_rate_match',
+                    f'our daily emit={our_daily:,.0f}/d  Solstice grew={sol_growth:,.0f}/d  pace={ratio:.1f}% '
+                    '(healthy 90-110%)'))
 
     return out
 
@@ -257,7 +287,6 @@ def tier4_invariants(con, data, max_detail=10):
     # 4.2 — system_daily_emission_by_quest in data.json matches sum of per-wallet rates
     # (sanity check on the build_wallet_details aggregation)
     sysd = data.get('system_daily_emission_by_quest') or {}
-    # Recompute by reading per-wallet JSONs is expensive; we just check the dict isn't empty/missing
     if not sysd:
         out.append(Finding('FAIL', 4, 'system_daily_emission_present',
             'data.json missing system_daily_emission_by_quest field'))
@@ -266,6 +295,51 @@ def tier4_invariants(con, data, max_detail=10):
         sev = 'PASS' if total > 1e8 else 'WARN'
         out.append(Finding(sev, 4, 'system_daily_emission_present',
             f'system daily total: {total:,.0f} flares/d across {len(sysd)} quests'))
+
+    # 4.2b — PER-QUEST daily emission sanity: any non-deferred quest with
+    # significant cumulative MUST have positive daily emission. Catches
+    # consumer/walker shape-drift bugs (e.g. 2026-05-15 LP Schema A vs B)
+    # before they're silently visible in the dashboard for a full day.
+    # Excludes:
+    #   - DEFERRED quests (3MO HOLD, REFERRAL — known-empty by design)
+    #   - quests whose markets have matured (LP/YT post-maturity earn nothing)
+    MATURED_QUESTS = set()   # populate when JUN26 markets mature post 2026-06-01
+    SIG_CUM_THRESHOLD = 1_000_000  # flares
+    quest_cum = defaultdict(float)
+    for r in data['records']:
+        if r.get('is_protocol_pda'): continue
+        for q, f in (r.get('by_quest') or {}).items():
+            if f and f > 0: quest_cum[q] += f
+    zero_daily_with_cum = []
+    for q, cum in quest_cum.items():
+        if cum < SIG_CUM_THRESHOLD: continue
+        if q in DEFERRED or q in MATURED_QUESTS: continue
+        daily = sysd.get(q, 0) or 0
+        if daily <= 0:
+            zero_daily_with_cum.append((q, cum))
+    detail = [f"  {q}  cumulative={c:,.0f}  daily=0" for q, c in sorted(zero_daily_with_cum, key=lambda x:-x[1])]
+    sev = 'PASS' if not zero_daily_with_cum else 'FAIL'
+    out.append(Finding(sev, 4, 'per_quest_daily_emission',
+        f'{len(zero_daily_with_cum)} quests have significant cumulative but zero daily emission', detail))
+
+    # 4.2c — cumulative/daily ratio sanity. A quest with cumulative C and
+    # daily emission D should have a ratio C/D roughly equal to how long the
+    # quest has been earning. S2 has been live ~75 days; a healthy ratio is
+    # 5-500 days. Outside that, either the cum is wrong or the daily is wrong.
+    odd_ratios = []
+    for q, cum in quest_cum.items():
+        if cum < SIG_CUM_THRESHOLD: continue
+        if q in DEFERRED or q in MATURED_QUESTS: continue
+        daily = sysd.get(q, 0) or 0
+        if daily <= 0: continue  # handled above
+        ratio_days = cum / daily
+        if ratio_days < 5 or ratio_days > 500:
+            odd_ratios.append((q, cum, daily, ratio_days))
+    detail = [f"  {q}  cum={c:,.0f}  daily={d:,.0f}  ratio={r:.0f}d (healthy 5-500d)"
+              for q, c, d, r in sorted(odd_ratios, key=lambda x: abs(x[3]-50), reverse=True)[:max_detail]]
+    sev = 'PASS' if not odd_ratios else 'WARN'
+    out.append(Finding(sev, 4, 'cumulative_daily_ratio',
+        f'{len(odd_ratios)} quests have cumulative/daily ratio outside 5-500 days', detail))
 
     # 4.3 — eUSX peg snapshots aren't stuck at the wrong value
     snaps = list(con.execute("SELECT peg FROM eusx_peg_snapshots ORDER BY ts DESC LIMIT 5"))
@@ -286,6 +360,101 @@ def tier4_invariants(con, data, max_detail=10):
     sev = 'PASS' if rpc_n > 100000 else 'WARN'
     out.append(Finding(sev, 4, 'rpc_cache_populated',
         f'rpc_cache_responses has {rpc_n:,} entries'))
+
+    # 4.5 — walker_coverage: walker-tracked TVL vs on-chain TVL per quest.
+    # This is the ONLY check that catches "we never enumerated this account."
+    # Output-layer audits can't see accounts the walker doesn't know exist.
+    # Walkers write a row at end of each successful run. A missing row means
+    # the walker hasn't been run since this check existed (warn). A row with
+    # coverage < threshold means we're missing positions/wallets.
+    has_table = con.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='walker_coverage'"
+    ).fetchone()
+    if not has_table:
+        out.append(Finding('WARN', 4, 'walker_coverage', 'walker_coverage table missing — run walkers'))
+    else:
+        rows = list(con.execute(
+            'SELECT walker, quest, pool_tvl_usd, tracked_tvl_usd, n_positions, refreshed_at '
+            'FROM walker_coverage'
+        ))
+        if not rows:
+            out.append(Finding('WARN', 4, 'walker_coverage',
+                'no coverage rows yet — walkers must run with instrumentation'))
+        else:
+            low_coverage = []
+            stale = []
+            now = int(time.time())
+            for r in rows:
+                pool = r['pool_tvl_usd'] or 0
+                tracked = r['tracked_tvl_usd'] or 0
+                age_h = (now - (r['refreshed_at'] or 0)) / 3600
+                if age_h > 26:
+                    stale.append((r['walker'], r['quest'], age_h))
+                if pool <= 0: continue   # can't compute ratio
+                pct = tracked / pool * 100
+                if pct < 90:
+                    low_coverage.append((r['walker'], r['quest'], pool, tracked, pct, r['n_positions']))
+            detail = [
+                f"  {wk}:{q}  pool=${p:,.0f}  tracked=${t:,.0f}  coverage={pct:.1f}%  n={n}"
+                for wk, q, p, t, pct, n in sorted(low_coverage, key=lambda x: x[4])
+            ]
+            if stale:
+                detail += [f"  STALE  {w}:{q}  {h:.0f}h old" for w, q, h in stale[:max_detail]]
+            sev = 'PASS' if (not low_coverage and not stale) else ('FAIL' if low_coverage else 'WARN')
+            msg = f'{len(low_coverage)} quests under 90% coverage'
+            if stale: msg += f', {len(stale)} stale rows (>26h)'
+            out.append(Finding(sev, 4, 'walker_coverage', msg, detail))
+
+    # 4.5b — walker_freshness: per-account cursor lag vs on-chain head.
+    # `tools/walker_cursor_freshness.py` samples N accounts per walker, fetches
+    # the chain's latest sig for each, and records ts-lag. If any sample lags
+    # the chain by > 26h, our cursor logic broke for that walker.
+    has_fresh = con.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='walker_freshness'"
+    ).fetchone()
+    if has_fresh:
+        rows = list(con.execute(
+            'SELECT walker, pubkey, our_latest_ts, chain_latest_ts, lag_seconds, ts '
+            'FROM walker_freshness WHERE ts > strftime("%s","now") - 86400'
+        ))
+        if not rows:
+            out.append(Finding('WARN', 4, 'walker_freshness',
+                'no freshness samples in last 24h — run tools/walker_cursor_freshness.py'))
+        else:
+            STALE_THRESHOLD_S = 26 * 3600   # 26h = "missed at least 1 daily refresh"
+            stale = [r for r in rows if (r['lag_seconds'] or 0) > STALE_THRESHOLD_S]
+            # Group worst lag per walker
+            by_walker = defaultdict(list)
+            for r in rows: by_walker[r['walker']].append(r)
+            detail = []
+            for w in sorted(by_walker):
+                ws = by_walker[w]
+                worst = max(ws, key=lambda x: x['lag_seconds'] or 0)
+                worst_lag_h = (worst['lag_seconds'] or 0) / 3600
+                detail.append(f"  {w}: worst {worst_lag_h:.1f}h lag on {worst['pubkey'][:12]}…  (n={len(ws)})")
+            sev = 'FAIL' if stale else 'PASS'
+            msg = f'{len(rows)} freshness samples; {len(stale)} stale (> {STALE_THRESHOLD_S//3600}h lag)'
+            out.append(Finding(sev, 4, 'walker_freshness', msg, detail))
+
+    # 4.6 — walker_saturation: sig-pagination cap was hit in last 24h.
+    # When fetch_new_sigs fills all max_pages with full 1000-sig pages,
+    # the walk truncated and we don't know what was missed. Any event in
+    # the last 24h is a FAIL — bump max_pages or shorten refresh interval.
+    has_sat = con.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='walker_saturation'"
+    ).fetchone()
+    if has_sat:
+        recent = list(con.execute(
+            'SELECT walker, pubkey, sigs_seen, max_pages, ts FROM walker_saturation '
+            'WHERE ts > strftime("%s","now") - 86400 ORDER BY ts DESC LIMIT 20'
+        ))
+        detail = [
+            f"  {r['walker']} pubkey={r['pubkey'][:12]}…  pages_full={r['max_pages']}  sigs_seen={r['sigs_seen']}"
+            for r in recent
+        ]
+        sev = 'FAIL' if recent else 'PASS'
+        out.append(Finding(sev, 4, 'walker_saturation',
+            f'{len(recent)} pagination saturation events in last 24h (truncated walks)', detail))
 
     return out
 

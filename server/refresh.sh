@@ -94,6 +94,14 @@ echo "[$(date '+%H:%M:%S')]   ✓ Resync done"
 echo "[$(date '+%H:%M:%S')] Phase 6: rebuild dashboard"
 bash server/rebuild.sh 2>&1 | grep -E '^(\=\=\=|Reconstructed|wallet_quests|Solstice|Wrote)' | head -20
 
+# ── Phase 6b: walker cursor-freshness sampling ───────────────
+# Cheap (one RPC per sample, force_refresh) but catches the deepest class
+# of bug: walker cursor logic silently stops tracking new sigs.
+echo "[$(date '+%H:%M:%S')] Phase 6b: walker cursor freshness"
+python3 tools/walker_cursor_freshness.py --n 5 > /tmp/walker_logs/refresh_freshness.log 2>&1 || \
+  echo "  ⚠️  freshness check errored — see refresh_freshness.log"
+echo "[$(date '+%H:%M:%S')]   ✓ Freshness check done"
+
 # ── Phase 7: audit (fail loudly on structural drift) ─────────
 echo "[$(date '+%H:%M:%S')] Phase 7: audit"
 if python3 tools/audit.py 2>&1 | tee /tmp/walker_logs/refresh_audit.log | tail -25; then
@@ -108,16 +116,25 @@ END=$(date +%s)
 echo "[$(date '+%H:%M:%S')] === Refresh complete in $((END - START)) seconds ==="
 echo
 python3 -c "
-import json
+import json, sqlite3
 data = json.load(open('server/data.json'))
 records = data['records']
 total_real = sum((r.get('total') or 0) for r in records if not r.get('is_protocol_pda'))
 chart = json.load(open('server/daily_totals.json'))
-SOL = 26563444978  # 2026-05-14 00:00 UTC; bump when Solstice publishes new daily total
-print(f'Real users total: {total_real:>16,.0f} flares')
-print(f'Chart last day:   {chart[\"days\"][-1][\"cumulative\"]:>16,.0f} flares')
-print(f'Solstice published @ last 00:00 UTC: {SOL:>14,.0f} flares')
-print(f'Gap real vs Solstice: {total_real - SOL:>+,.0f}  ({total_real / SOL * 100:.1f}%)')
+# Pull Solstice's latest published total from DB (source of truth).
+# Update via: python3 tools/set_solstice_total.py <total>
+con = sqlite3.connect('data/solstice.db')
+row = con.execute(\"SELECT date_utc, grand_total FROM flares_snapshots \"
+                  \"WHERE source='solstice_dashboard' ORDER BY ts DESC LIMIT 1\").fetchone()
+if row:
+    sol_date, SOL = row
+    print(f'Real users total: {total_real:>16,.0f} flares')
+    print(f'Chart last day:   {chart[\"days\"][-1][\"cumulative\"]:>16,.0f} flares')
+    print(f'Solstice published @ {sol_date}: {SOL:>16,.0f} flares')
+    print(f'Gap real vs Solstice: {total_real - SOL:>+,.0f}  ({total_real / SOL * 100:.2f}%)')
+else:
+    print('⚠️  no solstice_dashboard snapshot in DB — run tools/set_solstice_total.py <total>')
+    print(f'Real users total: {total_real:>16,.0f} flares')
 "
 echo
 echo "Hard-refresh browser at http://localhost:8000 to see the new numbers."

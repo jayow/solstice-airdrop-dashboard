@@ -46,12 +46,14 @@ MARKETS = {
         'mult':   30,
         'quest':  'S2_EXPONENT_YIELD_USX_JUN26',
         'base_usd': 1.0,   # USX = $1
+        'yt_mint': 'Au8g11nXqXrUAmL14GM3gQnrnJnr4dcpgc5DNAnu9F9s',
     },
     'eUSX-Jun26': {
         'market': 'rBbzpGk3PTX8mvQg95VWJ24EDgvxyDJYrEo9jtauvjP',
         'mult':   15,
         'quest':  'S2_EXPONENT_YIELD_EUSX_JUN26',
         'base_usd': 1.0319, # eUSX/USD (Solstice eusxPrice & Exponent syExchangeRate, May 2026)
+        'yt_mint': 'GEYwnvNzqFXrLnNq4riXbn2ASnwU3cF8RXW6wXKHM4sw',
     },
 }
 
@@ -236,6 +238,26 @@ def main():
         for w, f in top:
             if f > 0: print(f'    {w}  {f:,.2f}')
         print(flush=True)
+
+        # Coverage: on-chain YT supply vs sum of wallet-tracked final YT balances.
+        try:
+            sup_r = rpc('getTokenSupply', [cfg['yt_mint']], timeout=15)
+            onchain_yt = float((sup_r.get('result') or {}).get('value', {}).get('uiAmount') or 0)
+        except Exception:
+            onchain_yt = 0.0
+        # Sum each wallet's final YT balance for THIS market only.
+        tracked_yt = 0.0
+        n_holders = 0
+        for w_, evs_ in events_by_wallet.items():  # events_by_wallet is per-market
+            bal = sum(d for (_, d, _, _) in evs_)
+            if bal > 0:
+                tracked_yt += bal
+                n_holders += 1
+        b_usd = cfg.get('base_usd', 1.0)
+        walker_db.write_coverage('walk_s2_yt', cfg['quest'],
+                                 pool_tvl_usd=onchain_yt * b_usd,
+                                 tracked_tvl_usd=tracked_yt * b_usd,
+                                 n_positions=n_holders)
 
     # Save outputs
     out = {w: dict(pq) for w, pq in all_results.items() if pq}

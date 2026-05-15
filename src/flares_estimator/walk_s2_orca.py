@@ -315,7 +315,7 @@ def main():
         def walk(args):
             owner, pos_pubkey, mint, usd = args
             existing = existing_by_owner_pos.get((owner, pos_pubkey), [])
-            new_evs = extract_events_incremental(pos_pubkey, existing, _classify)
+            new_evs = extract_events_incremental(pos_pubkey, existing, _classify, walker_name='walk_s2_orca')
             for e in new_evs:
                 e.setdefault('mint_position', mint)
                 e['quest'] = quest   # tag so downstream can attribute cost basis per quest
@@ -339,6 +339,13 @@ def main():
 
         q_total = sum(r.get(quest, 0) for r in all_results.values())
         print(f'  {quest} total: {q_total:,.0f}\n', flush=True)
+
+        # Coverage: sum of tracked-position USD vs pool TVL. Captures any
+        # positions we failed to enumerate (RPC truncation, decoder skip, etc).
+        tracked_tvl = sum(usd for (_, _, _, usd) in position_owners)
+        walker_db.write_coverage('walk_s2_orca', quest,
+                                 pool_tvl_usd=float(tvl), tracked_tvl_usd=tracked_tvl,
+                                 n_positions=len(position_owners))
 
     # Save
     out = {w: dict(r) for w, r in all_results.items() if any(v > 0 for v in r.values())}

@@ -83,7 +83,7 @@ def _classify_loopscale_tx(tx: dict, s: dict) -> dict | None:
 def _extract_events_for_position(pos_pubkey: str, existing_for_pos: list) -> list:
     """Incremental walk — return only events newer than the last cached one
     for this position. Caller merges with `existing_for_pos`."""
-    return extract_events_incremental(pos_pubkey, existing_for_pos, _classify_loopscale_tx)
+    return extract_events_incremental(pos_pubkey, existing_for_pos, _classify_loopscale_tx, walker_name='walk_s2_loopscale_events')
 
 
 def main():

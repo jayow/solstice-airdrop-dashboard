@@ -438,6 +438,32 @@ def main():
             if f > 0: print(f'    {w}  {f:,.2f}')
         print(flush=True)
 
+        # Coverage: on-chain LP-token supply vs sum of wallet-tracked LP balances.
+        # If on-chain > tracked, we missed wallet activity in this market.
+        try:
+            sup_r = rpc('getTokenSupply', [cfg['lp_mint']], timeout=15)
+            sup_val = (sup_r.get('result') or {}).get('value', {})
+            onchain_lp_ui = float(sup_val.get('uiAmount') or 0)
+        except Exception:
+            onchain_lp_ui = 0.0
+        # Sum each wallet's net LP balance for this market from cached events.
+        tracked_lp_ui = 0.0
+        last_rate = None
+        n_holders = 0
+        for w_, evs_ in events_by_wallet.items():
+            bal = sum(float(e.get('lp_delta') or 0) for e in evs_)
+            if bal > 0:
+                tracked_lp_ui += bal
+                n_holders += 1
+            for e in reversed(evs_):
+                if e.get('rate'): last_rate = last_rate or e['rate']
+        rate = last_rate or 1.0
+        peg_val = (cfg.get('peg') or 1.0)
+        walker_db.write_coverage('walk_s2_lp', cfg['quest'],
+                                 pool_tvl_usd=onchain_lp_ui * rate * peg_val,
+                                 tracked_tvl_usd=tracked_lp_ui * rate * peg_val,
+                                 n_positions=n_holders)
+
     # Save
     out = {w: dict(r) for w, r in all_results.items()}
     out_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'data', 's2_lp_flares.json')

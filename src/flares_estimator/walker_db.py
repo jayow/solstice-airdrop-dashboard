@@ -87,3 +87,20 @@ def wallets_with_quest_above(quest: str, threshold: float = 0) -> list:
         'SELECT wallet FROM wallet_quests WHERE quest=? AND flares > ?',
         (quest, threshold)
     )]
+
+
+def write_coverage(walker: str, quest: str, pool_tvl_usd: float,
+                   tracked_tvl_usd: float, n_positions: int = 0):
+    """Persist this walker's TVL coverage for a quest.
+
+    Called by each walker at end-of-run. Audit reads (tracked / pool) to detect
+    "we never enumerated this account" bugs — the only failure mode that the
+    output-layer audits CANNOT catch."""
+    db.init()
+    db.conn().execute(
+        'INSERT OR REPLACE INTO walker_coverage'
+        '(walker, quest, pool_tvl_usd, tracked_tvl_usd, n_positions, refreshed_at) '
+        'VALUES (?, ?, ?, ?, ?, strftime("%s","now"))',
+        (walker, quest, float(pool_tvl_usd or 0), float(tracked_tvl_usd or 0),
+         int(n_positions or 0))
+    )

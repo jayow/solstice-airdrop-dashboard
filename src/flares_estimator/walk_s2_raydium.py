@@ -36,6 +36,17 @@ def get_pool_tick(pool_id: str) -> int:
     return 0
 
 
+def get_pool_tvl(pool_id: str) -> float:
+    """Get current pool TVL (USD) from Raydium API. Used for walker_coverage."""
+    try:
+        r = requests.get(f'https://api-v3.raydium.io/pools/info/ids?ids={pool_id}', timeout=15).json()
+        data = r.get('data') or []
+        if data and data[0]:
+            return float(data[0].get('tvl') or 0)
+    except Exception: pass
+    return 0.0
+
+
 def find_nft_owner(mint: str) -> str:
     import time as _t
     for attempt in range(3):
@@ -257,7 +268,7 @@ def main():
         def walk(args):
             owner, pos_pubkey, mint, usd = args
             existing = existing_by_owner_pos.get((owner, pos_pubkey), [])
-            new_evs = extract_events_incremental(pos_pubkey, existing, _classify)
+            new_evs = extract_events_incremental(pos_pubkey, existing, _classify, walker_name='walk_s2_raydium')
             for e in new_evs:
                 e.setdefault('mint_position', mint)
                 e['quest'] = quest   # tag for cost-basis attribution
@@ -281,6 +292,14 @@ def main():
 
         q_total = sum(r.get(quest, 0) for r in all_results.values())
         print(f'  {quest} total: {q_total:,.0f}\n', flush=True)
+
+        # Coverage: tracked-position USD vs pool TVL.
+        tracked_tvl = sum(usd for (_, _, _, usd) in position_owners)
+        pool_tvl_usd = get_pool_tvl(pool_addr)
+        walker_db.write_coverage('walk_s2_raydium', quest,
+                                 pool_tvl_usd=pool_tvl_usd,
+                                 tracked_tvl_usd=tracked_tvl,
+                                 n_positions=len(position_owners))
 
     out = {w: dict(r) for w, r in all_results.items() if any(v > 0 for v in r.values())}
     out_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'data', 's2_raydium_flares.json')

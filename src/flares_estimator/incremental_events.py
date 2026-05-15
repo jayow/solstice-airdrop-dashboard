@@ -32,13 +32,22 @@ def latest_sig_for_position(existing_events_for_position: list) -> str | None:
     return sorted_evs[0].get('sig')
 
 
-def fetch_new_sigs(pubkey: str, until_sig: str | None, max_pages: int = 5) -> list:
+def fetch_new_sigs(pubkey: str, until_sig: str | None, max_pages: int = 5,
+                   walker_name: str = '?') -> list:
     """Walk getSignaturesForAddress on `pubkey`, stopping at `until_sig` or
     after max_pages. Returns sigs in time order (oldest first) so they can be
-    appended to existing events safely."""
+    appended to existing events safely.
+
+    If we hit `max_pages` AND the last page came back full (1000 sigs), the
+    walk was truncated — we don't know what we missed. Log to walker_saturation
+    so audit can flag it.
+    """
     sigs = []
     before = None
+    pages_used = 0
+    last_batch_full = False
     for _ in range(max_pages):
+        pages_used += 1
         params = [pubkey, {'limit': 1000}]
         if before:    params[1]['before'] = before
         if until_sig: params[1]['until'] = until_sig
@@ -46,18 +55,31 @@ def fetch_new_sigs(pubkey: str, until_sig: str | None, max_pages: int = 5) -> li
             r = rpc('getSignaturesForAddress', params, timeout=20)
         except Exception: break
         batch = r.get('result') or []
-        if not batch: break
+        if not batch:
+            last_batch_full = False
+            break
         sigs.extend(batch)
-        if len(batch) < 1000: break
+        last_batch_full = (len(batch) == 1000)
+        if not last_batch_full: break
         before = batch[-1]['signature']
-    # API returns newest-first; reverse to chronological
+    if pages_used == max_pages and last_batch_full:
+        try:
+            import time as _t, db as _db
+            _db.init()
+            _db.conn().execute(
+                'INSERT INTO walker_saturation (ts, pubkey, walker, sigs_seen, max_pages) '
+                'VALUES (?, ?, ?, ?, ?)',
+                (int(_t.time()), pubkey, walker_name, len(sigs), max_pages)
+            )
+        except Exception: pass
     sigs.reverse()
     return sigs
 
 
 def extract_events_incremental(pos_pubkey: str,
                                 existing_events_for_position: list,
-                                classify_fn) -> list:
+                                classify_fn,
+                                walker_name: str = '?') -> list:
     """Walk new signatures for a position PDA, classify each via `classify_fn`,
     return ONLY new events (caller merges with existing).
 
@@ -66,7 +88,7 @@ def extract_events_incremental(pos_pubkey: str,
     incremental run knows what's already processed.
     """
     last_sig = latest_sig_for_position(existing_events_for_position)
-    new_sigs = fetch_new_sigs(pos_pubkey, until_sig=last_sig)
+    new_sigs = fetch_new_sigs(pos_pubkey, until_sig=last_sig, walker_name=walker_name)
     if not new_sigs: return []
 
     new_events = []
