@@ -68,6 +68,9 @@ CACHEABLE_METHODS = {
     "getTokenSupply",
     "getInflationReward",
     "getBlockTime",
+    # Helius-exclusive — single call replaces getSignaturesForAddress +
+    # N × getTransaction. See helius_get_transactions_for_address() helper.
+    "getTransactionsForAddress",
 }
 
 # Methods whose responses are IMMUTABLE for finalized data — once fetched,
@@ -233,6 +236,71 @@ def _derive_token_transfers(tx: dict) -> list:
             "toTokenAccount":   ata if delta > 0 else None,
         })
     return transfers
+
+
+def helius_get_transactions_for_address(address: str, transactionDetails: str = "full",
+                                         sortOrder: str = "asc",
+                                         min_block_time: int | None = None,
+                                         max_block_time: int | None = None,
+                                         status: str = "succeeded",
+                                         max_per_page: int = 1000,
+                                         max_pages: int = 200) -> list:
+    """Paginate Helius's getTransactionsForAddress and return concatenated results.
+
+    Single call replaces (getSignaturesForAddress + N × getTransaction) — Helius
+    bundles tx body, meta, and balance data per page. Up to 1000 txs per page;
+    follow `paginationToken` until null.
+
+    Filters applied server-side:
+      - blockTime range [min_block_time, max_block_time] (inclusive)
+      - status (succeeded / failed / any)
+
+    Caching: each PAGE is cached separately keyed by (address, page_token+filter
+    fingerprint). Pagination tokens stay stable for finalized history so cache
+    hits compound across runs.
+
+    Returns: list of transaction objects (signatures mode) or full tx objects
+    (full mode). Order: oldest-first when sortOrder='asc', newest-first 'desc'.
+
+    Args:
+      address: base58 pubkey to query
+      transactionDetails: 'full' (default) or 'signatures'
+      sortOrder: 'asc' (chronological) or 'desc' (newest first)
+      min_block_time / max_block_time: inclusive blockTime bounds (unix seconds)
+      status: 'succeeded' (default), 'failed', or 'any'
+      max_per_page: 1..1000 (Helius cap)
+      max_pages: defensive cap to avoid unbounded paging
+
+    Raises if Helius is not the active provider.
+    """
+    if "helius" not in HELIUS.lower():
+        raise RuntimeError("getTransactionsForAddress requires a Helius RPC endpoint")
+    filters = {"status": status}
+    if min_block_time is not None or max_block_time is not None:
+        bt = {}
+        if min_block_time is not None: bt["gte"] = min_block_time
+        if max_block_time is not None: bt["lte"] = max_block_time
+        filters["blockTime"] = bt
+
+    all_txs = []
+    pagination_token = None
+    for _page in range(max_pages):
+        params = [address, {
+            "transactionDetails": transactionDetails,
+            "sortOrder": sortOrder,
+            "limit": max_per_page,
+            "filters": filters,
+        }]
+        if pagination_token:
+            params[1]["paginationToken"] = pagination_token
+        r = rpc("getTransactionsForAddress", params, timeout=45)
+        result = r.get("result") or {}
+        page = result.get("data") or []
+        if not page: break
+        all_txs.extend(page)
+        pagination_token = result.get("paginationToken")
+        if not pagination_token: break
+    return all_txs
 
 
 if __name__ == "__main__":
