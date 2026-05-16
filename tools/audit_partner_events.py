@@ -41,10 +41,20 @@ def check_events_sorted(events: list) -> int:
 
 
 def check_duplicate_sigs(events: list) -> int:
-    """Return count of (sig, pos_pubkey) duplicates."""
+    """Return count of TRUE event duplicates.
+
+    Key on (sig, pos_pubkey, ix, first_mint) so a single tx that does
+    multiple distinct ops against one obligation (e.g. borrow USX + deposit
+    eUSX + borrow eUSX in one Kamino multiply tx) is correctly seen as 3
+    distinct events, not 3 duplicates."""
     seen = Counter()
     for e in events:
-        seen[(e.get('sig'), e.get('pos_pubkey'))] += 1
+        ix = (e.get('ix') or '').lower()
+        first_mint = ''
+        deltas = e.get('deltas') or []
+        if deltas: first_mint = (deltas[0].get('mint') or '')
+        key = (e.get('sig'), e.get('pos_pubkey'), ix, first_mint)
+        seen[key] += 1
     return sum(1 for k, v in seen.items() if v > 1 and k[0])
 
 
