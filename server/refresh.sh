@@ -38,7 +38,7 @@ else
   PID_LP=$!
   python3 src/flares_estimator/walk_s2_yt.py        > /tmp/walker_logs/refresh_yt.log 2>&1 &
   PID_YT=$!
-  python3 src/flares_estimator/walk_s2_kamino.py    > /tmp/walker_logs/refresh_kamino.log 2>&1 &
+  python3 src/flares_estimator/walk_s2_kamino_v3.py --write > /tmp/walker_logs/refresh_kamino.log 2>&1 &
   PID_KAM=$!
   python3 src/flares_estimator/walk_s2_loopscale.py > /tmp/walker_logs/refresh_loop.log 2>&1 &
   PID_LOOP=$!
