@@ -321,13 +321,22 @@ def main():
         walker_db.sync_to_wallet_quests('walk_s2_kamino', WALKER_QUESTS)
         print(f'\n✓ wallet_quests: {len(rows)} rows under walker "walk_s2_kamino"')
 
-        # Write quest_cache per user with snapshot + events (drawer reads these).
+        # Write quest_cache for EVERY obligation owner we walked. Stale v1
+        # cache entries (with phantom multiply deposits) MUST be wiped first
+        # — transform_kamino reads cache for every wallet, not just ours.
         _db.init()
+        wiped = _db.conn().execute("DELETE FROM quest_cache WHERE quest_key='S2_KAMINO'").rowcount
+        _db.conn().commit()
+        print(f'✓ wiped {wiped} stale S2_KAMINO cache entries')
         n_cache = 0
-        # Build snapshot dict per user (reuse snapshots dict from above)
-        # Note: snapshots dict from get_user_snapshot loop in main scope
-        for user in results:
-            user_snap = snapshots.get(user, {})
+        all_walked_users = set(obl_to_owner.values())   # 1351 unique owners
+        for user in all_walked_users:
+            user_snap = snapshots.get(user, {})   # may be missing if walker didn't fetch snapshot
+            if not user_snap:
+                # Pull snapshot now for wallets we didn't query (had 0 events).
+                # Their cache should reflect current position so dashboard shows it.
+                try: user_snap = get_user_snapshot(user)
+                except Exception: user_snap = {}
             full_snap = {
                 'kamino_supply_usx':  user_snap.get('kamino_supply_usx', 0) or 0,
                 'kamino_supply_eusx': user_snap.get('kamino_supply_eusx', 0) or 0,
@@ -336,8 +345,7 @@ def main():
                 'kamino_borrow_usdg': user_snap.get('kamino_borrow_usdg', 0) or 0,
                 'kamino_kvault_usx_usdg': 0,   # filled by walk_s2_kamino_strategy
             }
-            # Sort events by ts for cache display
-            evs = sorted(events_by_user[user], key=lambda e: e['ts'])
+            evs = sorted(events_by_user.get(user, []), key=lambda e: e['ts'])
             payload = {
                 'positions': full_snap,
                 'events':    evs,
@@ -346,7 +354,7 @@ def main():
             }
             _db.put_cache(user, 'S2_KAMINO', payload, watermark_ts=end_ts)
             n_cache += 1
-        print(f'✓ quest_cache: {n_cache} entries written with full event timelines')
+        print(f'✓ quest_cache: {n_cache} entries written (cleared stale v1 entries)')
     else:
         print('\n(Did NOT write to DB. Pass --write to promote v3 results.)')
 
