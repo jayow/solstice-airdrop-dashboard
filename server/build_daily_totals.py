@@ -193,7 +193,7 @@ def main():
     # `pda_protocol` is kept here too because the dashboard hides it by
     # default via the Hide-PDAs toggle.
     pda_set = set()
-    for r in con.execute("SELECT wallet FROM wallets WHERE classification IN ('pda','pda_or_uninit','pda_protocol')"):
+    for r in con.execute("SELECT wallet FROM wallets WHERE classification IN ('pda','pda_or_uninit','pda_protocol','institution')"):
         pda_set.add(r['wallet'])
     p_pdas = os.path.join(ROOT, 'data', 'protocol_pdas.json')
     if os.path.exists(p_pdas):
@@ -434,7 +434,7 @@ def main():
     # pda, AND pda_or_uninit so this number matches the records-list total.
     pda_excl = con.execute(
         "SELECT SUM(wq.flares) FROM wallet_quests wq JOIN wallets w ON wq.wallet=w.wallet "
-        "WHERE w.classification IN ('pda_protocol','pda','pda_or_uninit')"
+        "WHERE w.classification IN ('pda_protocol','pda','pda_or_uninit','institution')"
     ).fetchone()[0] or 0
     grand_non_pda = grand_db - pda_excl
 

@@ -234,11 +234,14 @@ def tier3_solstice(con, data, max_detail=10):
         sol_today = rows[0]['grand_total']; sol_date = rows[0]['date_utc']
         our_total = sum((r.get('total') or 0) for r in data['records'] if not r.get('is_protocol_pda'))
         match_pct = our_total / sol_today * 100 if sol_today else 0
-        # Structural floor ~95% (referral SIWS-gated). < 92% = something broke.
-        sev = 'FAIL' if match_pct < 92 else ('WARN' if match_pct < 95 else 'PASS')
+        # Structural floor lowered to ~78% after tagging institutional wallets
+        # (Squads multisig + Clique L2T) as PDA-equivalent. CWGGhiez alone
+        # accounts for ~18% of Solstice's total. Gap = SIWS-gated referrals
+        # (~5%) + tagged institutional float (~14-18%). FAIL < 72% = broken.
+        sev = 'FAIL' if match_pct < 72 else ('WARN' if match_pct < 78 else 'PASS')
         out.append(Finding(sev, 3, 'solstice_total_match',
             f'us={our_total:,.0f}  Solstice[{sol_date}]={sol_today:,.0f}  match={match_pct:.2f}% '
-            '(structural ceiling ~95%; FAIL < 92%)'))
+            '(structural floor ~78% post institutional exclusion; FAIL < 72%)'))
 
         # 3.4 — growth-rate match: our daily emission rate vs Solstice's day-over-day delta
         if len(rows) >= 2:

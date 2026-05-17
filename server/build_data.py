@@ -98,9 +98,11 @@ def main():
             'in_partner_footprint': bool(m.get('in_partner_footprint')),
             'in_exponent': bool(m.get('in_exponent')),
             'n_protocols_with_flares': m.get('n_protocols') or 0,
-            'is_protocol_pda': (cls == 'pda_protocol') or (wallet in manual_pda_labels),
-            'pda_source': 'manual' if wallet in manual_pda_labels else ('auto' if cls == 'pda_protocol' else None),
-            'pda_label':  manual_pda_labels.get(wallet, {}).get('label') if wallet in manual_pda_labels else None,
+            'is_protocol_pda': (cls in ('pda_protocol', 'institution')) or (wallet in manual_pda_labels),
+            'pda_source': 'manual' if wallet in manual_pda_labels else ('auto' if cls in ('pda_protocol', 'institution') else None),
+            'pda_label':  (manual_pda_labels.get(wallet, {}).get('label')
+                           if wallet in manual_pda_labels
+                           else ('Institutional wallet' if cls == 'institution' else None)),
         })
 
     # 5. Sort + ranks
@@ -108,7 +110,7 @@ def main():
     for i, r in enumerate(records): r['rank_all'] = i + 1
     s1_only = [r for r in records if r['is_s1']]
     for i, r in enumerate(s1_only): r['rank_s1'] = i + 1
-    real_only = [r for r in records if r.get('class') in ('real_user', 'passive_user', 'institution')]
+    real_only = [r for r in records if r.get('class') in ('real_user', 'passive_user') and not r.get('is_protocol_pda')]
     real_only.sort(key=lambda x: -x['total'])
     for i, r in enumerate(real_only): r['rank_real'] = i + 1
 

@@ -1,0 +1,15 @@
+{
+  "comment": "Known protocol-internal addresses and institutional wallets that should be excluded from the real-user leaderboard. Used as a manual override when on-chain heuristic (uninit OR owner!=System) misses them — typically because the address is a system-owned ed25519 pubkey derived by a program, OR a regular EOA fronting a Squads multisig + Clique L2T compliance wrapper (institutional).",
+  "addresses": {
+    "DPWdWoffzBjcRoiz2Mx6Fbd4BWLUoc114M8BLT3kDgZz": {
+      "label": "Loopscale borrower-out intermediate PDA",
+      "protocol": "loopscale",
+      "source": "manual"
+    },
+    "CWGGhiezrFdQg7b8gBERUJz6w9MceyShnV2ZY4YnnWJq": {
+      "label": "Institutional vault (Squads multisig + Clique L2T compliance, $7.68M USX/eUSX-Jun26 LP)",
+      "protocol": "exponent",
+      "source": "manual"
+    }
+  }
+}
