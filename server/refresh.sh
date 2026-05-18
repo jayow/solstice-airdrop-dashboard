@@ -17,6 +17,14 @@ mkdir -p /tmp/walker_logs
 START=$(date +%s)
 echo "[$(date '+%H:%M:%S')] === Solstice S2 refresh start ==="
 
+# ── Phase 0: pull today's Solstice baseline from their API ─────
+# `app.solstice.finance/api/rewards/global/analytics` → flare.totalFlare is
+# the canonical published total. Auto-fetched here so audit.py at the end
+# can compare against today's value without a manual paste.
+echo "[$(date '+%H:%M:%S')] Phase 0: fetch Solstice baseline"
+python3 tools/set_solstice_total.py 2>&1 | sed 's/^/  /' || \
+  echo "  ⚠️  baseline fetch failed — audit will use prior day's value"
+
 # ── Phase 1: walkers ────────────────────────────────────────
 # REFRESH_MODE=ci → run sequentially. GitHub Actions runner can't sustain the
 # parallel burst (100+ concurrent Helius connections) — silent RPC failures

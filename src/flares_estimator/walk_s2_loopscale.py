@@ -19,7 +19,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from rpc_helper import rpc
 from snapshot_ts import last_snapshot_ts
-from loopscale_extractor import get_loopscale_borrow_history, USX_ONE_LP_MINT, USX_ONE_VAULT
+from loopscale_extractor import (
+    get_loopscale_borrow_history,
+    USX_ONE_LP_MINT, USX_ONE_VAULT,
+    USX_RWA_LP_MINT, USX_RWA_VAULT,
+)
 import walker_db
 
 S2_START_TS = 1776038400
@@ -28,11 +32,11 @@ USX_MINT = '6FrrzDk5mQARGc1TDYoyVnSyRdds1t4PbtohCD6p3tgG'
 LOOP_API = 'https://tars.loopscale.com/v1'
 
 
-def get_vault_share_value():
-    """USX ONE vault share value = cumulativePrincipalDeposited / lpSupply."""
+def get_vault_share_value(vault_addr: str = USX_ONE_VAULT) -> float:
+    """Vault share value = cumulativePrincipalDeposited / lpSupply."""
     r = requests.post(
         f'{LOOP_API}/markets/lending_vaults/info',
-        json={'vaultAddresses':[USX_ONE_VAULT], 'page':0, 'pageSize':1},
+        json={'vaultAddresses':[vault_addr], 'page':0, 'pageSize':1},
         timeout=15
     ).json()
     items = r.get('lendVaults', [])
@@ -45,12 +49,12 @@ def get_vault_share_value():
     except Exception: return 0.0
 
 
-def get_vault_total_lp() -> float:
-    """USX ONE vault total LP supply (UI units). Used for coverage reconciliation."""
+def get_vault_total_lp(vault_addr: str = USX_ONE_VAULT) -> float:
+    """Vault total LP supply (UI units). Used for coverage reconciliation."""
     try:
         r = requests.post(
             f'{LOOP_API}/markets/lending_vaults/info',
-            json={'vaultAddresses':[USX_ONE_VAULT], 'page':0, 'pageSize':1},
+            json={'vaultAddresses':[vault_addr], 'page':0, 'pageSize':1},
             timeout=15
         ).json()
         items = r.get('lendVaults', [])
@@ -146,16 +150,23 @@ def walk_borrow(now_ts: int):
     return results
 
 
-def walk_supply(now_ts: int, share_value: float):
-    """For each USX ONE LP holder, walk their ATA sig history.
+def walk_supply(now_ts: int, share_value: float,
+                lp_mint: str = USX_ONE_LP_MINT,
+                vault_label: str = 'USX ONE'):
+    """For each LP holder of the given share mint, walk their ATA sig history.
 
-    Loopscale users don't hold LP-USX-ONE in their wallet ATAs directly; the
-    LP is custodied by a Loopscale VaultStake PDA owned by the Loopscale
-    program. Each VaultStake stores the REAL user pubkey at offset 73 of its
-    account data (disc e1228035a7efb66b). We need to re-key every PDA-owned
-    holder back to the real user — otherwise flares get attributed to the
-    Loopscale vault PDAs, which the dashboard filters out as PDAs, leaving
-    real users with $0.
+    Loopscale users don't hold the LP share token in their wallet ATAs
+    directly; the LP is custodied by a Loopscale VaultStake PDA owned by the
+    Loopscale program. Each VaultStake stores the REAL user pubkey at offset
+    73 of its account data (disc e1228035a7efb66b). We need to re-key every
+    PDA-owned holder back to the real user — otherwise flares get attributed
+    to the Loopscale vault PDAs, which the dashboard filters out as PDAs,
+    leaving real users with $0.
+
+    `lp_mint` selects which Loopscale lending vault to walk:
+      - USX_ONE_LP_MINT → S2_LOOPSCALE_SUPPLY_USX_ONE
+      - USX_RWA_LP_MINT → S2_LOOPSCALE_SUPPLY_USX_RWA
+    Both use multiplier 5×.
     """
     LOOPSCALE_PROGRAM = '1oopBoJG58DgkUVKkEzKgyG9dvRmpgeEm1AVjoHkF78'
     VAULT_STAKE_DISC = 'e1228035a7efb66b'
@@ -166,7 +177,7 @@ def walk_supply(now_ts: int, share_value: float):
         r = rpc('getProgramAccounts', [prog, {
             'encoding': 'jsonParsed',
             'filters': [
-                {'memcmp': {'offset': 0, 'bytes': USX_ONE_LP_MINT}}
+                {'memcmp': {'offset': 0, 'bytes': lp_mint}}
             ]
         }], timeout=120)
         accs = r.get('result', []) or []
@@ -196,7 +207,7 @@ def walk_supply(now_ts: int, share_value: float):
         except Exception: continue
 
     nonzero = sum(1 for h in holders if h['current_bal'] > 0)
-    print(f'  USX ONE LP-mint accounts: {len(holders)}  non-zero now: {nonzero}  re-keyed via VaultStake: {n_rekeyed}', flush=True)
+    print(f'  {vault_label} LP-mint accounts: {len(holders)}  non-zero now: {nonzero}  re-keyed via VaultStake: {n_rekeyed}', flush=True)
 
     # share_value passed in by caller — used to convert LP deltas to USD for
     # cost-basis math. For short S2 windows this approximation (using current
@@ -245,7 +256,7 @@ def walk_supply(now_ts: int, share_value: float):
                 bal_after = None
                 for k in set(pre)|set(post):
                     idx, mint = k
-                    if mint != USX_ONE_LP_MINT: continue
+                    if mint != lp_mint: continue
                     pb = pre.get(k); pob = post.get(k)
                     if (pob or pb).get('owner') != onchain_owner: continue
                     bal_after = ((pob or pb).get('uiTokenAmount', {}) or {}).get('uiAmount') or 0
@@ -299,37 +310,52 @@ def walk_supply(now_ts: int, share_value: float):
             n_done += 1
             if n_done % 25 == 0: print(f'    supply walk {n_done}/{len(holders)}', flush=True)
     total = sum(results.values())
-    print(f'  supply walk: {sum(1 for v in results.values() if v>0)} wallets, total {total:,.0f} flares\n', flush=True)
+    print(f'  {vault_label} supply walk: {sum(1 for v in results.values() if v>0)} wallets, total {total:,.0f} flares\n', flush=True)
     return dict(results), dict(events_by_user)
 
 
 def main():
     now_ts = last_snapshot_ts()   # midnight-UTC cutoff (Solstice snapshot cadence)
     print(f'S2 window: {(now_ts-S2_START_TS)/86400:.1f} days\n', flush=True)
-    share_value = get_vault_share_value()
-    print(f'USX ONE share value: ${share_value:.6f}\n', flush=True)
+    one_share_value = get_vault_share_value(USX_ONE_VAULT)
+    rwa_share_value = get_vault_share_value(USX_RWA_VAULT)
+    print(f'USX ONE share value: ${one_share_value:.6f}', flush=True)
+    print(f'USX RWA share value: ${rwa_share_value:.6f}\n', flush=True)
 
     print('=== BORROW (1×) ===', flush=True)
     borrow = walk_borrow(now_ts)
 
-    print('=== SUPPLY (5×) ===', flush=True)
-    supply, supply_events = walk_supply(now_ts, share_value)
+    print('=== SUPPLY USX ONE (5×) ===', flush=True)
+    supply_one, supply_one_events = walk_supply(now_ts, one_share_value,
+                                                 lp_mint=USX_ONE_LP_MINT,
+                                                 vault_label='USX ONE')
+
+    print('=== SUPPLY USX RWA (5×) ===', flush=True)
+    supply_rwa, supply_rwa_events = walk_supply(now_ts, rwa_share_value,
+                                                 lp_mint=USX_RWA_LP_MINT,
+                                                 vault_label='USX RWA')
 
     # Combine
     out = defaultdict(dict)
     for w, v in borrow.items(): out[w]['S2_LOOPSCALE_BORROW_USX'] = v
-    for w, v in supply.items():
+    for w, v in supply_one.items():
         if v > 0: out[w]['S2_LOOPSCALE_SUPPLY_USX_ONE'] = v
+    for w, v in supply_rwa.items():
+        if v > 0: out[w]['S2_LOOPSCALE_SUPPLY_USX_RWA'] = v
 
     # Merge SUPPLY LP-timeline events into S2_LOOPSCALE cache so cost basis
     # can be computed downstream. Preserves existing borrow events; supply
     # events get side='supply' + ix='lp_balance_change' + lp_delta + share_value.
+    # Done once per vault (ONE + RWA) — events get a `vault` tag so consumers
+    # can disambiguate.
     import db as _db
     _db.init()
-    print(f'\nMerging supply events into S2_LOOPSCALE cache for {len(supply_events)} users...', flush=True)
-    n_merged = 0
-    for user, evts in supply_events.items():
-        # Read existing cache (if any) → preserves borrow events
+    # First pass: drop ALL prior supply events from all caches we'll touch
+    # (combines both ONE+RWA user sets so cache is clean before re-emit).
+    all_supply_users = set(supply_one_events.keys()) | set(supply_rwa_events.keys())
+    print(f'\nMerging supply events into S2_LOOPSCALE cache for {len(all_supply_users)} users (ONE + RWA)...', flush=True)
+    cache_state: dict[str, dict] = {}  # user → raw cache dict (mutated across passes)
+    for user in all_supply_users:
         r = _db.conn().execute("SELECT raw_json FROM quest_cache WHERE wallet=? AND quest_key='S2_LOOPSCALE'", (user,)).fetchone()
         if r:
             try: raw = json.loads(r['raw_json'])
@@ -339,27 +365,36 @@ def main():
         existing_events = raw.get('events') or []
         # Drop any prior supply events (we re-emit them fresh) — keep borrow
         existing_events = [e for e in existing_events if e.get('side') != 'supply']
-        # Format new supply events
-        for e in evts:
-            existing_events.append({
-                'ts': e['ts'],
-                'side': 'supply',
-                'ix': 'lp_balance_change',
-                'sig': e['sig'],
-                'lp_delta': e['lp_delta'],
-                'prev_bal': e['prev_bal'],
-                'post_bal': e['post_bal'],
-                'share_value': share_value,
-            })
-        existing_events.sort(key=lambda e: e.get('ts') or 0)
         raw['events'] = existing_events
-        # Set/update loopscale_supply_usx from the LP-walker view (last observed
-        # balance × current share_value). Don't clobber other position fields.
-        positions = raw.get('positions') or {}
-        if evts:
-            last_bal = evts[-1]['post_bal']
-            positions['loopscale_supply_usx'] = round(last_bal * share_value, 2)
-        raw['positions'] = positions
+        raw.setdefault('positions', {})
+        cache_state[user] = raw
+
+    # Second pass: emit fresh supply events per vault, tagging with `vault`
+    for vault_key, events_map, sv in (('USX_ONE', supply_one_events, one_share_value),
+                                      ('USX_RWA', supply_rwa_events, rwa_share_value)):
+        pos_key = 'loopscale_supply_usx' if vault_key == 'USX_ONE' else 'loopscale_supply_usx_rwa'
+        for user, evts in events_map.items():
+            raw = cache_state[user]
+            for e in evts:
+                raw['events'].append({
+                    'ts': e['ts'],
+                    'side': 'supply',
+                    'vault': vault_key,
+                    'ix': 'lp_balance_change',
+                    'sig': e['sig'],
+                    'lp_delta': e['lp_delta'],
+                    'prev_bal': e['prev_bal'],
+                    'post_bal': e['post_bal'],
+                    'share_value': sv,
+                })
+            if evts:
+                last_bal = evts[-1]['post_bal']
+                raw['positions'][pos_key] = round(last_bal * sv, 2)
+
+    # Third pass: sort + write back
+    n_merged = 0
+    for user, raw in cache_state.items():
+        raw['events'].sort(key=lambda e: e.get('ts') or 0)
         raw['_watermark'] = {'slot': 0, 'ts': now_ts}
         _db.put_cache(user, 'S2_LOOPSCALE', raw, watermark_ts=now_ts)
         n_merged += 1
@@ -368,11 +403,12 @@ def main():
     out_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'data', 's2_loopscale_flares.json')
     with open(out_path, 'w') as f: json.dump(out, f, indent=2)
     n_borrow = sum(1 for v in out.values() if v.get('S2_LOOPSCALE_BORROW_USX'))
-    n_supply = sum(1 for v in out.values() if v.get('S2_LOOPSCALE_SUPPLY_USX_ONE'))
-    print(f'\nSaved: borrow={n_borrow} wallets, supply={n_supply} wallets → {out_path}')
+    n_supply_one = sum(1 for v in out.values() if v.get('S2_LOOPSCALE_SUPPLY_USX_ONE'))
+    n_supply_rwa = sum(1 for v in out.values() if v.get('S2_LOOPSCALE_SUPPLY_USX_RWA'))
+    print(f'\nSaved: borrow={n_borrow} wallets, supply_one={n_supply_one}, supply_rwa={n_supply_rwa} → {out_path}')
 
     # Write to DB: walker_outputs + sync to wallet_quests
-    WALKER_QUESTS = ['S2_LOOPSCALE_BORROW_USX', 'S2_LOOPSCALE_SUPPLY_USX_ONE']
+    WALKER_QUESTS = ['S2_LOOPSCALE_BORROW_USX', 'S2_LOOPSCALE_SUPPLY_USX_ONE', 'S2_LOOPSCALE_SUPPLY_USX_RWA']
     walker_db.prune('walk_s2_loopscale')
     rows = []
     for w, pq in out.items():
@@ -382,20 +418,25 @@ def main():
     walker_db.sync_to_wallet_quests('walk_s2_loopscale', WALKER_QUESTS)
     print(f'DB: walker_outputs={len(rows)} rows; synced to wallet_quests')
 
-    # Coverage reconciliation: walker-tracked TVL vs Loopscale's authoritative TVL.
-    onchain_supply_usd = get_vault_total_lp() * share_value
-    tracked_supply_usd = 0.0
-    n_supply_holders = 0
-    for user, evts in supply_events.items():
-        if evts:
-            bal = evts[-1]['post_bal']
-            if bal > 0:
-                tracked_supply_usd += bal * share_value
-                n_supply_holders += 1
-    walker_db.write_coverage('walk_s2_loopscale', 'S2_LOOPSCALE_SUPPLY_USX_ONE',
-                             pool_tvl_usd=onchain_supply_usd,
-                             tracked_tvl_usd=tracked_supply_usd,
-                             n_positions=n_supply_holders)
+    # Coverage reconciliation: walker-tracked TVL vs Loopscale's authoritative
+    # TVL — per vault.
+    for quest_code, vault_addr, sv, events_map in (
+        ('S2_LOOPSCALE_SUPPLY_USX_ONE', USX_ONE_VAULT, one_share_value, supply_one_events),
+        ('S2_LOOPSCALE_SUPPLY_USX_RWA', USX_RWA_VAULT, rwa_share_value, supply_rwa_events),
+    ):
+        onchain_supply_usd = get_vault_total_lp(vault_addr) * sv
+        tracked_supply_usd = 0.0
+        n_supply_holders = 0
+        for user, evts in events_map.items():
+            if evts:
+                bal = evts[-1]['post_bal']
+                if bal > 0:
+                    tracked_supply_usd += bal * sv
+                    n_supply_holders += 1
+        walker_db.write_coverage('walk_s2_loopscale', quest_code,
+                                 pool_tvl_usd=onchain_supply_usd,
+                                 tracked_tvl_usd=tracked_supply_usd,
+                                 n_positions=n_supply_holders)
 
     onchain_borrow_usd = get_total_borrow_outstanding()
     # Per-wallet current outstanding from each wallet's latest history entry

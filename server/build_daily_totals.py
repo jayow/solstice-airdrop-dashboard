@@ -363,8 +363,9 @@ def main():
             'kamino_kvault_usx_usdg':  ('S2_KAMINO_KVAULT_USDG_USX', 10),
         }),
         ('S2_LOOPSCALE', 'loopscale', LOOP_SIGN, {
-            'loopscale_supply_usx':    ('S2_LOOPSCALE_SUPPLY_USX_ONE', 5),
-            'loopscale_borrow_usx':    ('S2_LOOPSCALE_BORROW_USX', 1),
+            'loopscale_supply_usx':     ('S2_LOOPSCALE_SUPPLY_USX_ONE', 5),
+            'loopscale_supply_usx_rwa': ('S2_LOOPSCALE_SUPPLY_USX_RWA', 5),
+            'loopscale_borrow_usx':     ('S2_LOOPSCALE_BORROW_USX', 1),
         }),
     ]
     # For each cache, integrate per-position USD-over-time, summed across the

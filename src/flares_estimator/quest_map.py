@@ -85,6 +85,8 @@ QUESTS = [
     # LOOPSCALE
     {"code": "S2_LOOPSCALE_SUPPLY_USX_ONE", "type": "LEND",   "protocol": "loopscale", "mult": 5,
      "mint": "6FrrzDk5mQARGc1TDYoyVnSyRdds1t4PbtohCD6p3tgG"},
+    {"code": "S2_LOOPSCALE_SUPPLY_USX_RWA", "type": "LEND",   "protocol": "loopscale", "mult": 5,
+     "mint": "6FrrzDk5mQARGc1TDYoyVnSyRdds1t4PbtohCD6p3tgG"},
     {"code": "S2_LOOPSCALE_BORROW_USX",     "type": "BORROW", "protocol": "loopscale", "mult": 1,
      "mint": "6FrrzDk5mQARGc1TDYoyVnSyRdds1t4PbtohCD6p3tgG"},
 

@@ -20,6 +20,13 @@ EUSX_MINT = "3ThdFZQKM6kRyVGLG48kaPg5TRMhYMKY1iCRa9xop1WC"
 USX_ONE_VAULT = "3s3vAaYpwkyjrgzpBRwgSDxpwHPD1jic25mb1VDzM8Rk"
 USX_ONE_LP_MINT = "3PQotuGMnMgEXrErizQbzPPhSMb79xQgkEDn2hk2KPWn"
 
+# USX RWA Vault — Lend USX against Real World Assets. Same mechanic as USX ONE,
+# different vault address and LP share mint. Quest S2_LOOPSCALE_SUPPLY_USX_RWA
+# at multiplier 5×. Vault NOT featured on Solstice's /api/partners cards yet,
+# but the quest is active in /api/flares/quests and ~$2M is deposited.
+USX_RWA_VAULT = "FLu6RJEr4bKAfd37oqCdZE6zoiyUZQELN7WYBN3VR3hP"
+USX_RWA_LP_MINT = "9nHYLLXsigUSv8bMDdwXNQKowAPRrqgU4JQNuiSwJqrx"
+
 # Cached vault state
 _vault_cache: Dict[str, dict] = {}
 
