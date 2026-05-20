@@ -161,15 +161,33 @@ def main():
         print(f'  {len(sigs):,} market sigs', flush=True)
 
         # Fetch all txs in parallel; extract per-wallet event tuples including base.
+        # CRITICAL: silent RPC failures (tx == None or exception) silently dropped
+        # entire wallets' BUY events on 2026-05-20, halving USX-Jun26 flares and
+        # zeroing eUSX-Jun26. The walker now retries up to 4× with force_refresh
+        # on retry attempts, and TRACKS unrecoverable failures so the caller
+        # knows the run is incomplete.
+        import time as _t
         events_by_wallet = defaultdict(list)  # wallet -> [(ts, delta_yt, base_amt, sig), ...]
+        n_failed_fetches = [0]   # mutable counter accessible from threads
+
         def fetch(s):
-            try:
-                tx = rpc('getTransaction', [s['signature'],
-                        {'encoding': 'jsonParsed', 'maxSupportedTransactionVersion': 0}]).get('result')
-                if not tx: return []
-                evs = extract_yt_events_from_tx(tx, market_pk)
-                return [(ts, user, delta, base, s['signature']) for ts, user, delta, base in evs]
-            except Exception: return []
+            for attempt in range(4):
+                try:
+                    tx = rpc('getTransaction', [s['signature'],
+                            {'encoding': 'jsonParsed', 'maxSupportedTransactionVersion': 0}],
+                            force_refresh=(attempt > 0)).get('result')
+                    if tx is None:
+                        # null result from RPC — retry with force_refresh
+                        _t.sleep(0.3 * (attempt + 1))
+                        continue
+                    evs = extract_yt_events_from_tx(tx, market_pk)
+                    return [(ts, user, delta, base, s['signature']) for ts, user, delta, base in evs]
+                except Exception:
+                    _t.sleep(0.3 * (attempt + 1))
+                    continue
+            # All retries exhausted — count as unrecoverable
+            n_failed_fetches[0] += 1
+            return []
 
         n_done = 0
         with ThreadPoolExecutor(max_workers=24) as ex:
@@ -183,6 +201,17 @@ def main():
         n_users = len(events_by_wallet)
         n_events = sum(len(v) for v in events_by_wallet.values())
         print(f'  {n_users} unique users, {n_events} buy/sell events', flush=True)
+        if n_failed_fetches[0] > 0:
+            # If we miss > 0.5% of sigs after retries, abort — partial walker
+            # output silently corrupts wallet flares (see CWGGhiez-style drops
+            # on 2026-05-20 where missing BUY events made balance = 0).
+            fail_pct = 100.0 * n_failed_fetches[0] / max(1, len(sigs))
+            print(f'  ⚠️  {n_failed_fetches[0]} unrecoverable sig fetches ({fail_pct:.2f}%)', flush=True)
+            if fail_pct > 0.5:
+                raise RuntimeError(f'walk_s2_yt aborting: {n_failed_fetches[0]} sig fetches '
+                                   f'failed after retries ({fail_pct:.2f}% of {len(sigs)} sigs). '
+                                   f'Partial data would silently miss BUY events and zero out '
+                                   f'wallet flares. Re-run when RPC is healthier.')
 
         # Cost-basis math: how much USD a wallet has effectively invested in YT.
         # Pre-S2 buys time-decay linearly toward $0 at maturity (YT is a decaying
