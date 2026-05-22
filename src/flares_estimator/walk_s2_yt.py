@@ -32,12 +32,19 @@ import walker_db
 S2_START_TS = 1776038400
 S2_END_TS   = 1785024000   # cap if walking beyond now
 
-# Jun26 markets mature at 2026-06-01 12:58:19 UTC (api.exponent.finance maturityDateUnixTs)
-MATURITY_TS = 1780318699
+# Maturity timestamps are per-market (V1 Jun01, V2 Sep16). Each MARKETS entry
+# carries its own `maturity_ts` and the decay/cost-basis helpers take it
+# explicitly. NB: do not reintroduce a module-level MATURITY_TS — V2 markets
+# silently broke cost-basis math when they shared the V1 value.
+MATURITY_JUN26 = 1780318699   # 2026-06-01 12:58:19 UTC (V1)
+MATURITY_SEP26 = 1789552700   # 2026-09-16 09:58:20 UTC (V2)
 
 EXPONENT_PROG = 'ExponentnaRg3CQbW6dqQNZKXp7gtZ9DGMp1cwC4HAS7'
 
 # Anchor event discriminators = sha256("event:<EventName>")[:8]
+# Verified 2026-05-21: V1 and V2 emit identical WrapperBuyYtEvent /
+# WrapperSellYtEvent discriminators and 104-byte payload layouts. Same parser
+# works for both market versions.
 _BUY_YT_DISC  = hashlib.sha256(b'event:WrapperBuyYtEvent').digest()[:8]
 _SELL_YT_DISC = hashlib.sha256(b'event:WrapperSellYtEvent').digest()[:8]
 
@@ -48,6 +55,7 @@ MARKETS = {
         'quest':  'S2_EXPONENT_YIELD_USX_JUN26',
         'base_usd': 1.0,   # USX = $1
         'yt_mint': 'Au8g11nXqXrUAmL14GM3gQnrnJnr4dcpgc5DNAnu9F9s',
+        'maturity_ts': MATURITY_JUN26,
     },
     'eUSX-Jun26': {
         'market': 'rBbzpGk3PTX8mvQg95VWJ24EDgvxyDJYrEo9jtauvjP',
@@ -55,6 +63,25 @@ MARKETS = {
         'quest':  'S2_EXPONENT_YIELD_EUSX_JUN26',
         'base_usd': 1.0319, # eUSX/USD (Solstice eusxPrice & Exponent syExchangeRate, May 2026)
         'yt_mint': 'GEYwnvNzqFXrLnNq4riXbn2ASnwU3cF8RXW6wXKHM4sw',
+        'maturity_ts': MATURITY_JUN26,
+    },
+    'USX-Sep26': {
+        # V2 USX-Sep26: market PDA == vault PDA == sig-walk anchor (verified
+        # from WrapperBuyYtEvent payload bytes 0-31 in tx 36EkRUH8...).
+        'market': '2pZuAPFRJLbT57qJ1ebs8B2ExWwHywyaHUC6Y515BaMm',
+        'mult':   45,    # 1.5× boost over Jun01's 30× — Solstice retention mechanic
+        'quest':  'S2_EXPONENT_YIELD_USX_SEP26',
+        'base_usd': 1.0,
+        'yt_mint': '6gUU7UXtGgJ3tmeb2gXxQcVeM2L82bg9MzRYxu2YUspu',
+        'maturity_ts': MATURITY_SEP26,
+    },
+    'eUSX-Sep26': {
+        'market': 'EsVGeJ99ADQGwGWLiBEg93xBtmuMjyC4P5zG9bpVMJWf',
+        'mult':   22.5,  # 1.5× boost over Jun01's 15×
+        'quest':  'S2_EXPONENT_YIELD_EUSX_SEP26',
+        'base_usd': 1.0319,
+        'yt_mint': '2wZkuwSiDyHZuuZfS9C9kFkZNsgwHGjKtCxX3B6Ck6EX',
+        'maturity_ts': MATURITY_SEP26,
     },
 }
 
@@ -219,6 +246,7 @@ def main():
         # "still invested." Post-S2 buys count at full USD paid. Sells subtract
         # full USD recovered (1:1, no decay adjustment — they got that real cash).
         BASE_USD = cfg['base_usd']
+        MATURITY_TS = cfg['maturity_ts']
         def decay_factor(buy_ts: int) -> float:
             if buy_ts >= S2_START_TS: return 1.0
             if MATURITY_TS <= buy_ts: return 0.0
@@ -314,7 +342,8 @@ def main():
     print(f'Saved {len(out)} wallets to {out_path}')
 
     # DB — only real quest rows go into walker_outputs (skip the __cost_usd sidecars).
-    WALKER_QUESTS = ['S2_EXPONENT_YIELD_USX_JUN26', 'S2_EXPONENT_YIELD_EUSX_JUN26']
+    WALKER_QUESTS = ['S2_EXPONENT_YIELD_USX_JUN26', 'S2_EXPONENT_YIELD_EUSX_JUN26',
+                     'S2_EXPONENT_YIELD_USX_SEP26', 'S2_EXPONENT_YIELD_EUSX_SEP26']
     walker_db.prune('walk_s2_yt')
     rows = []
     for w, pq in out.items():
@@ -404,6 +433,7 @@ def main():
                 last_was_sell = (not is_buy)
             if current: groups.append(current)
 
+            mat_ts = cfg['maturity_ts']
             s1_contrib = 0.0
             for g in groups:
                 has_sell = any(e['yt_delta'] < 0 for e in g)
@@ -412,11 +442,11 @@ def main():
                     sells_sum = sum(e['usd_value'] for e in g if e['yt_delta'] < 0)
                     net = buys_sum - sells_sum
                     last_sell_ts = max(e['ts'] for e in g if e['yt_delta'] < 0)
-                    decay = min(1.0, (MATURITY_TS - S2_START_TS) / max(1, (MATURITY_TS - last_sell_ts)))
+                    decay = min(1.0, (mat_ts - S2_START_TS) / max(1, (mat_ts - last_sell_ts)))
                     s1_contrib += net * decay
                 else:
                     for e in g:
-                        decay = min(1.0, (MATURITY_TS - S2_START_TS) / max(1, (MATURITY_TS - e['ts'])))
+                        decay = min(1.0, (mat_ts - S2_START_TS) / max(1, (mat_ts - e['ts'])))
                         s1_contrib += e['usd_value'] * decay
 
             s2_contrib = (sum(e['usd_value'] for e in s2_events if e['yt_delta'] > 0)

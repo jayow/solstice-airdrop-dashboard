@@ -127,6 +127,30 @@ MARKETS = {
         'peg':          None,   # populated from chain
         'quest':        'S2_EXPONENT_LP_EUSX_JUN26',
     },
+    # V2 Sep16 2026 maturity markets (launched 2026-05-18, 1.5× boost vs Jun01).
+    # V2 emits the same WrapperProvideLiquidity / WrapperWithdrawLiquidity events
+    # as V1 with identical 96-byte payload — no parser changes needed.
+    # market == sig-walk anchor (vault PDA == market PDA in V2).
+    # lp_vault is the ATA the market PDA owns that holds all LP tokens (from
+    # getTokenLargestAccounts on the LP mint, 2026-05-21).
+    'USX-Sep26': {
+        'market':       '2pZuAPFRJLbT57qJ1ebs8B2ExWwHywyaHUC6Y515BaMm',
+        'lp_vault':     '83ayni8GmBwXwM4LXTEzgVV6sLZSYNJMT2JiFzAaQ2KJ',
+        'lp_mint':      'UPvchSL3aVFwaqVEQKJ3msSLfhKJe468DBPJYgWLNw5',
+        'underlying':   '6FrrzDk5mQARGc1TDYoyVnSyRdds1t4PbtohCD6p3tgG',
+        'mult':         30,    # 1.5× boost over Jun01's 20×
+        'peg':          1.0,
+        'quest':        'S2_EXPONENT_LP_USX_SEP26',
+    },
+    'eUSX-Sep26': {
+        'market':       'EsVGeJ99ADQGwGWLiBEg93xBtmuMjyC4P5zG9bpVMJWf',
+        'lp_vault':     'jNP3KbSyrE6hrjNsShmX2q4LBZTpvDLkudedSmdDVGY',
+        'lp_mint':      '72AitxuVjN9LF88jMEMKX6NRqTufeJ9XRdtkj96UuKT2',
+        'underlying':   '3ThdFZQKM6kRyVGLG48kaPg5TRMhYMKY1iCRa9xop1WC',
+        'mult':         15,    # 1.5× boost over Jun01's 10×
+        'peg':          None,   # populated from chain
+        'quest':        'S2_EXPONENT_LP_EUSX_SEP26',
+    },
 }
 
 
@@ -483,7 +507,9 @@ def main():
     print(f'\nSaved {len(out)} wallets to {out_path}')
 
     # DB: walker_outputs + sync to wallet_quests
-    WALKER_QUESTS_DB = [q for q in ['S2_EXPONENT_LP_USX_JUN26', 'S2_EXPONENT_LP_EUSX_JUN26'] if q not in skipped_quests]
+    WALKER_QUESTS_DB = [q for q in ['S2_EXPONENT_LP_USX_JUN26', 'S2_EXPONENT_LP_EUSX_JUN26',
+                                     'S2_EXPONENT_LP_USX_SEP26', 'S2_EXPONENT_LP_EUSX_SEP26']
+                        if q not in skipped_quests]
     if skipped_quests:
         print(f'NOTE: skipped sync for {skipped_quests} (RPC empty for active vault)', flush=True)
     walker_db.prune('walk_s2_lp')
@@ -525,6 +551,8 @@ def main():
         snap_positions = {
             'usx_jun26_lp_usd': round(all_snapshots[wallet].get('S2_EXPONENT_LP_USX_JUN26', 0), 2),
             'eusx_jun26_lp_usd': round(all_snapshots[wallet].get('S2_EXPONENT_LP_EUSX_JUN26', 0), 2),
+            'usx_sep26_lp_usd': round(all_snapshots[wallet].get('S2_EXPONENT_LP_USX_SEP26', 0), 2),
+            'eusx_sep26_lp_usd': round(all_snapshots[wallet].get('S2_EXPONENT_LP_EUSX_SEP26', 0), 2),
         }
         snap = {
             'positions': snap_positions,

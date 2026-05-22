@@ -53,6 +53,15 @@ QUESTS = [
      "market": "BxbiZpzj32nrVGecFy8VQ1HohaW7ryhas1k9aiETDWdm"},
     {"code": "S2_EXPONENT_LP_EUSX_JUN26",     "type": "LIQUIDITY_POSITION", "protocol": "exponent",  "mult": 10,
      "market": "rBbzpGk3PTX8mvQg95VWJ24EDgvxyDJYrEo9jtauvjP"},
+    # V2 Sep16 2026 maturity (launched 2026-05-18, 1.5× boost vs Jun01)
+    {"code": "S2_EXPONENT_YIELD_USX_SEP26",   "type": "YIELD_TRADE",        "protocol": "exponent",  "mult": 45,
+     "yt_mint": "6gUU7UXtGgJ3tmeb2gXxQcVeM2L82bg9MzRYxu2YUspu"},
+    {"code": "S2_EXPONENT_YIELD_EUSX_SEP26",  "type": "YIELD_TRADE",        "protocol": "exponent",  "mult": 22.5,
+     "yt_mint": "2wZkuwSiDyHZuuZfS9C9kFkZNsgwHGjKtCxX3B6Ck6EX"},
+    {"code": "S2_EXPONENT_LP_USX_SEP26",      "type": "LIQUIDITY_POSITION", "protocol": "exponent",  "mult": 30,
+     "market": "2pZuAPFRJLbT57qJ1ebs8B2ExWwHywyaHUC6Y515BaMm"},
+    {"code": "S2_EXPONENT_LP_EUSX_SEP26",     "type": "LIQUIDITY_POSITION", "protocol": "exponent",  "mult": 15,
+     "market": "EsVGeJ99ADQGwGWLiBEg93xBtmuMjyC4P5zG9bpVMJWf"},
 
     # KAMINO — lending + borrow + vault
     {"code": "S2_KAMINO_LEND_USX",            "type": "LEND",   "protocol": "kamino",   "mult": 5,

@@ -20,10 +20,12 @@ QUESTS_ORDER = [
     'S2_HOLD_USX_DAILY', 'S2_HOLD_USX_1MO', 'S2_HOLD_USX_3MO',
     'S2_HOLD_EUSX_DAILY', 'S2_HOLD_EUSX_1MO', 'S2_HOLD_EUSX_3MO',
     'S2_EXPONENT_YIELD_USX_JUN26', 'S2_EXPONENT_YIELD_EUSX_JUN26',
+    'S2_EXPONENT_YIELD_USX_SEP26', 'S2_EXPONENT_YIELD_EUSX_SEP26',
     'S2_EXPONENT_LP_USX_JUN26', 'S2_EXPONENT_LP_EUSX_JUN26',
+    'S2_EXPONENT_LP_USX_SEP26', 'S2_EXPONENT_LP_EUSX_SEP26',
     'S2_KAMINO_LEND_USX', 'S2_KAMINO_LEND_EUSX', 'S2_KAMINO_LEND_USDG',
     'S2_KAMINO_BORROW_USX', 'S2_KAMINO_BORROW_USDG', 'S2_KAMINO_KVAULT_USDG_USX',
-    'S2_LOOPSCALE_SUPPLY_USX_ONE', 'S2_LOOPSCALE_BORROW_USX',
+    'S2_LOOPSCALE_SUPPLY_USX_ONE', 'S2_LOOPSCALE_SUPPLY_USX_RWA', 'S2_LOOPSCALE_BORROW_USX',
     'S2_ORCA_USX_USDC', 'S2_ORCA_EUSX_USX', 'S2_ORCA_USX_USDG',
     'S2_RAYDIUM_USX_USDC', 'S2_RAYDIUM_EUSX_USX',
     'S2_REFERRAL_BONUS',
@@ -83,12 +85,16 @@ QUEST_MULT = {
     'S2_HOLD_EUSX_DAILY': 2,
     'S2_EXPONENT_YIELD_USX_JUN26': 30,
     'S2_EXPONENT_YIELD_EUSX_JUN26': 15,
+    'S2_EXPONENT_YIELD_USX_SEP26': 45,
+    'S2_EXPONENT_YIELD_EUSX_SEP26': 22.5,
     'S2_EXPONENT_LP_USX_JUN26': 20,
     'S2_EXPONENT_LP_EUSX_JUN26': 10,
+    'S2_EXPONENT_LP_USX_SEP26': 30,
+    'S2_EXPONENT_LP_EUSX_SEP26': 15,
     'S2_KAMINO_LEND_USX': 5,    'S2_KAMINO_LEND_EUSX': 1,    'S2_KAMINO_LEND_USDG': 5,
     'S2_KAMINO_BORROW_USX': 1,  'S2_KAMINO_BORROW_USDG': 1,
     'S2_KAMINO_KVAULT_USDG_USX': 10,
-    'S2_LOOPSCALE_SUPPLY_USX_ONE': 5,  'S2_LOOPSCALE_BORROW_USX': 1,
+    'S2_LOOPSCALE_SUPPLY_USX_ONE': 5,  'S2_LOOPSCALE_SUPPLY_USX_RWA': 5,  'S2_LOOPSCALE_BORROW_USX': 1,
     'S2_ORCA_USX_USDC': 9,   'S2_ORCA_EUSX_USX': 4,   'S2_ORCA_USX_USDG': 9,
     'S2_RAYDIUM_USX_USDC': 9,  'S2_RAYDIUM_EUSX_USX': 4,
 }
@@ -136,40 +142,55 @@ def compute_daily_emission(evidence: dict) -> dict:
             if qual_days == 0 or run_secs >= qual_days * 86400:
                 rates[qcode] = bal * peg * mult
 
-    # YT: sum yt × mult for currently-emitting positions per market
+    # YT: sum yt × mult for currently-emitting positions per market.
+    # Market PDA → (YIELD quest code, mult) — covers V1 (Jun26) + V2 (Sep26).
+    YT_MARKET_TO_QUEST = {
+        'BxbiZpzj32nrVGecFy8VQ1HohaW7ryhas1k9aiETDWdm': 'S2_EXPONENT_YIELD_USX_JUN26',
+        'rBbzpGk3PTX8mvQg95VWJ24EDgvxyDJYrEo9jtauvjP': 'S2_EXPONENT_YIELD_EUSX_JUN26',
+        '2pZuAPFRJLbT57qJ1ebs8B2ExWwHywyaHUC6Y515BaMm': 'S2_EXPONENT_YIELD_USX_SEP26',
+        'EsVGeJ99ADQGwGWLiBEg93xBtmuMjyC4P5zG9bpVMJWf': 'S2_EXPONENT_YIELD_EUSX_SEP26',
+    }
     yt = evidence.get('S2_EXPONENT_YT') or {}
     for mkt in (yt.get('by_market') or []):
         market_pk = mkt.get('market')
-        mult = QUEST_MULT.get('S2_EXPONENT_YIELD_USX_JUN26' if market_pk.startswith('Bxbi')
-                              else 'S2_EXPONENT_YIELD_EUSX_JUN26', 0)
+        q = YT_MARKET_TO_QUEST.get(market_pk)
+        if not q: continue
+        mult = QUEST_MULT.get(q, 0)
         for p in mkt.get('positions') or []:
             # Trust on-chain: any non-zero YT balance earns flares.
             yt_amt = p.get('yt') or 0
             if yt_amt > 0:
-                q = 'S2_EXPONENT_YIELD_USX_JUN26' if market_pk.startswith('Bxbi') else 'S2_EXPONENT_YIELD_EUSX_JUN26'
                 rates[q] = rates.get(q, 0) + yt_amt * mult
 
     # LP: snapshot lp_value × mult. The walker writes positions as a flat dict
     # with keys usx_jun26_lp_usd / eusx_jun26_lp_usd (see walk_s2_lp.py:487).
     # Legacy entries used a list-of-dicts shape — handle both for safety.
+    LP_MARKET_TO_QUEST = {
+        'BxbiZpzj32nrVGecFy8VQ1HohaW7ryhas1k9aiETDWdm': 'S2_EXPONENT_LP_USX_JUN26',
+        'rBbzpGk3PTX8mvQg95VWJ24EDgvxyDJYrEo9jtauvjP': 'S2_EXPONENT_LP_EUSX_JUN26',
+        '2pZuAPFRJLbT57qJ1ebs8B2ExWwHywyaHUC6Y515BaMm': 'S2_EXPONENT_LP_USX_SEP26',
+        'EsVGeJ99ADQGwGWLiBEg93xBtmuMjyC4P5zG9bpVMJWf': 'S2_EXPONENT_LP_EUSX_SEP26',
+    }
     lp = evidence.get('S2_EXPONENT_LP') or {}
     positions = lp.get('positions')
     if isinstance(positions, dict):
-        usx_usd  = positions.get('usx_jun26_lp_usd')  or 0
-        eusx_usd = positions.get('eusx_jun26_lp_usd') or 0
-        if usx_usd > 0:
-            q = 'S2_EXPONENT_LP_USX_JUN26'
-            rates[q] = rates.get(q, 0) + usx_usd * QUEST_MULT[q]
-        if eusx_usd > 0:
-            q = 'S2_EXPONENT_LP_EUSX_JUN26'
-            rates[q] = rates.get(q, 0) + eusx_usd * QUEST_MULT[q]
+        for pos_key, qcode in [
+            ('usx_jun26_lp_usd',  'S2_EXPONENT_LP_USX_JUN26'),
+            ('eusx_jun26_lp_usd', 'S2_EXPONENT_LP_EUSX_JUN26'),
+            ('usx_sep26_lp_usd',  'S2_EXPONENT_LP_USX_SEP26'),
+            ('eusx_sep26_lp_usd', 'S2_EXPONENT_LP_EUSX_SEP26'),
+        ]:
+            v = positions.get(pos_key) or 0
+            if v > 0:
+                rates[qcode] = rates.get(qcode, 0) + v * QUEST_MULT[qcode]
     elif isinstance(positions, list):
         for p in positions:
             if not isinstance(p, dict): continue
             v_usd = p.get('lp_value_usd') or 0
             if v_usd <= 0: continue
             m_pk = p.get('market', '')
-            q = 'S2_EXPONENT_LP_USX_JUN26' if m_pk.startswith('Bxbi') else 'S2_EXPONENT_LP_EUSX_JUN26'
+            q = LP_MARKET_TO_QUEST.get(m_pk)
+            if not q: continue
             rates[q] = rates.get(q, 0) + v_usd * QUEST_MULT[q]
 
     # Kamino / Loopscale / Orca / Raydium: positions dict has USD per position-key

@@ -32,16 +32,22 @@ S2_START_TS = 1776038400          # 2026-04-13 00:00 UTC
 EUSX_PEG    = 1.156               # live peg captured from chain; close enough for chart
 HOLD_MULT   = {'USX': 10, 'eUSX': 2}
 YT_MULT     = {
-    'BxbiZpzj32nrVGecFy8VQ1HohaW7ryhas1k9aiETDWdm': 30,
-    'rBbzpGk3PTX8mvQg95VWJ24EDgvxyDJYrEo9jtauvjP': 15,
+    'BxbiZpzj32nrVGecFy8VQ1HohaW7ryhas1k9aiETDWdm': 30,    # USX-Jun26 (V1)
+    'rBbzpGk3PTX8mvQg95VWJ24EDgvxyDJYrEo9jtauvjP': 15,    # eUSX-Jun26 (V1)
+    '2pZuAPFRJLbT57qJ1ebs8B2ExWwHywyaHUC6Y515BaMm': 45,    # USX-Sep26 (V2, 1.5× boost)
+    'EsVGeJ99ADQGwGWLiBEg93xBtmuMjyC4P5zG9bpVMJWf': 22.5,  # eUSX-Sep26 (V2)
 }
 LP_QUEST_TO_MULT = {
-    'BxbiZpzj32nrVGecFy8VQ1HohaW7ryhas1k9aiETDWdm': 20,    # USX-Jun26 LP
-    'rBbzpGk3PTX8mvQg95VWJ24EDgvxyDJYrEo9jtauvjP': 10,    # eUSX-Jun26 LP
+    'BxbiZpzj32nrVGecFy8VQ1HohaW7ryhas1k9aiETDWdm': 20,    # USX-Jun26 LP (V1)
+    'rBbzpGk3PTX8mvQg95VWJ24EDgvxyDJYrEo9jtauvjP': 10,    # eUSX-Jun26 LP (V1)
+    '2pZuAPFRJLbT57qJ1ebs8B2ExWwHywyaHUC6Y515BaMm': 30,    # USX-Sep26 LP (V2)
+    'EsVGeJ99ADQGwGWLiBEg93xBtmuMjyC4P5zG9bpVMJWf': 15,    # eUSX-Sep26 LP (V2)
 }
 LP_PEG = {
     'BxbiZpzj32nrVGecFy8VQ1HohaW7ryhas1k9aiETDWdm': 1.0,
     'rBbzpGk3PTX8mvQg95VWJ24EDgvxyDJYrEo9jtauvjP': EUSX_PEG,
+    '2pZuAPFRJLbT57qJ1ebs8B2ExWwHywyaHUC6Y515BaMm': 1.0,
+    'EsVGeJ99ADQGwGWLiBEg93xBtmuMjyC4P5zG9bpVMJWf': EUSX_PEG,
 }
 
 # Per-event sign convention: + = position USD grew, - = shrank, 0 = no change
@@ -260,6 +266,8 @@ def main():
     YT_QUEST = {
         'BxbiZpzj32nrVGecFy8VQ1HohaW7ryhas1k9aiETDWdm': 'S2_EXPONENT_YIELD_USX_JUN26',
         'rBbzpGk3PTX8mvQg95VWJ24EDgvxyDJYrEo9jtauvjP': 'S2_EXPONENT_YIELD_EUSX_JUN26',
+        '2pZuAPFRJLbT57qJ1ebs8B2ExWwHywyaHUC6Y515BaMm': 'S2_EXPONENT_YIELD_USX_SEP26',
+        'EsVGeJ99ADQGwGWLiBEg93xBtmuMjyC4P5zG9bpVMJWf': 'S2_EXPONENT_YIELD_EUSX_SEP26',
     }
     for r in con.execute("SELECT wallet, raw_json FROM quest_cache WHERE quest_key='S2_EXPONENT_YT'"):
         if r['wallet'] in pda_set: continue
@@ -298,6 +306,8 @@ def main():
     LP_QUEST_CODE = {
         'BxbiZpzj32nrVGecFy8VQ1HohaW7ryhas1k9aiETDWdm': 'S2_EXPONENT_LP_USX_JUN26',
         'rBbzpGk3PTX8mvQg95VWJ24EDgvxyDJYrEo9jtauvjP': 'S2_EXPONENT_LP_EUSX_JUN26',
+        '2pZuAPFRJLbT57qJ1ebs8B2ExWwHywyaHUC6Y515BaMm': 'S2_EXPONENT_LP_USX_SEP26',
+        'EsVGeJ99ADQGwGWLiBEg93xBtmuMjyC4P5zG9bpVMJWf': 'S2_EXPONENT_LP_EUSX_SEP26',
     }
     for r in con.execute("SELECT wallet, raw_json FROM quest_cache WHERE quest_key='S2_EXPONENT_LP'"):
         if r['wallet'] in pda_set: continue
