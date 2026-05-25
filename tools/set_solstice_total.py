@@ -22,12 +22,13 @@ DB = os.path.join(ROOT, 'data', 'solstice.db')
 API_URL = 'https://app.solstice.finance/api/rewards/global/analytics'
 
 
-def fetch_from_api(timeout: int = 10) -> float:
-    """Returns Solstice's live `flare.totalFlare` value."""
+def fetch_from_api(timeout: int = 10) -> tuple[float, int]:
+    """Returns (flare.totalFlare, users.totalUsers) from Solstice's analytics."""
     r = requests.get(API_URL, timeout=timeout,
                      headers={'User-Agent': 'solstice-flares-dashboard/1.0'})
     r.raise_for_status()
-    return float(r.json()['flare']['totalFlare'])
+    j = r.json()
+    return float(j['flare']['totalFlare']), int(j.get('users', {}).get('totalUsers', 0))
 
 
 def main():
@@ -37,9 +38,10 @@ def main():
     ap.add_argument('--date', default=None, help='YYYY-MM-DD (UTC), defaults to today')
     args = ap.parse_args()
 
+    total_users = 0
     if args.total is None:
         try:
-            args.total = fetch_from_api()
+            args.total, total_users = fetch_from_api()
             print(f'  Auto-fetched from {API_URL}')
         except Exception as e:
             print(f'  ERROR fetching from API: {e}', file=sys.stderr)
@@ -54,10 +56,10 @@ def main():
         'INSERT OR REPLACE INTO flares_snapshots '
         '(ts, date_utc, source, universe_size, grand_total, quest_totals_json) '
         'VALUES (?, ?, ?, ?, ?, ?)',
-        (midnight_ts, date_utc, 'solstice_dashboard', 0, args.total, '{}'))
+        (midnight_ts, date_utc, 'solstice_dashboard', total_users, args.total, '{}'))
     con.commit()
     con.close()
-    print(f'Recorded Solstice grand_total = {args.total:,.2f} for {date_utc} (ts={midnight_ts})')
+    print(f'Recorded Solstice grand_total = {args.total:,.2f}  totalUsers = {total_users:,} for {date_utc} (ts={midnight_ts})')
 
 
 if __name__ == '__main__':
