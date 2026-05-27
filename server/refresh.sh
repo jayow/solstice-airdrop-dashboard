@@ -121,6 +121,19 @@ else
   echo "[$(date '+%H:%M:%S')]   ❌ PARTNER INTEGRITY FAILED — see refresh_partner_audit.log"
 fi
 
+# ── Phase 6d: snapshot Solstice public surfaces + diff vs yesterday ──────
+# Flags silent doc/dashboard/marketing changes (e.g. removed "$650M TVL" S2 condition).
+echo "[$(date '+%H:%M:%S')] Phase 6d: Solstice surface snapshot + diff"
+python3 tools/snapshot_solstice.py 2>&1 | tail -3 | sed 's/^/  /'
+python3 tools/diff_solstice_snapshots.py 2>&1 | sed 's/^/  /'
+LATEST_DIFF=$(ls -1 data/solstice_snapshots/*_diff.md 2>/dev/null | tail -1)
+if [ -n "$LATEST_DIFF" ] && grep -q '^## ⚠️' "$LATEST_DIFF" 2>/dev/null; then
+  echo "[$(date '+%H:%M:%S')]   ⚠️  Solstice surface changed — see $LATEST_DIFF"
+  awk '/^## ⚠️/,/^## Full diffs/' "$LATEST_DIFF" | head -40 | sed 's/^/    /'
+elif [ -n "$LATEST_DIFF" ]; then
+  echo "[$(date '+%H:%M:%S')]   ✓ No high-signal Solstice changes"
+fi
+
 # ── Phase 7: audit (fail loudly on structural drift) ─────────
 echo "[$(date '+%H:%M:%S')] Phase 7: audit"
 if python3 tools/audit.py 2>&1 | tee /tmp/walker_logs/refresh_audit.log | tail -25; then

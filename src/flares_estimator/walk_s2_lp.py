@@ -330,6 +330,7 @@ def _get_pt_mint(market_pk: str):
 def main():
     eusx_peg = get_eusx_peg()
     MARKETS['eUSX-Jun26']['peg'] = eusx_peg
+    MARKETS['eUSX-Sep26']['peg'] = eusx_peg
     print(f'eUSX live peg: ${eusx_peg:.6f}', flush=True)
 
     now_ts = last_snapshot_ts()   # midnight-UTC cutoff (Solstice snapshot cadence)
