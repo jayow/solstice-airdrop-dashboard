@@ -1,7 +1,7 @@
 {
-  "generated_at_utc": "2026-05-27T02:59:53.763575+00:00",
+  "generated_at_utc": "2026-05-28T03:58:01.001618+00:00",
   "s2_start_ts": 1776038400,
-  "last_complete_midnight_ts": 1779840000,
+  "last_complete_midnight_ts": 1779926400,
   "partners": [
     "exponent",
     "kamino",
@@ -12,1562 +12,1597 @@
     "yield_vault"
   ],
   "partner_totals": {
-    "exponent": 24801126181.0,
-    "kamino": 3824637989.0,
-    "loopscale": 299716525.0,
-    "raydium": 1470906643.0,
-    "solstice": 1243414.0,
-    "whirlpool": 3108456668.0,
-    "yield_vault": 4791426.0
+    "exponent": 25564036530.0,
+    "kamino": 4036806887.0,
+    "loopscale": 307086398.0,
+    "raydium": 1508626174.0,
+    "solstice": 4402469.0,
+    "whirlpool": 3180597502.0,
+    "yield_vault": 4994958.0
   },
   "days": [
     {
       "date": "2026-04-13",
-      "cumulative": 664184352.0,
-      "inflation": 664184352.0,
+      "cumulative": 669090422.0,
+      "inflation": 669090422.0,
       "by_partner": {
         "exponent": {
-          "cumulative": 467615685.0,
-          "inflation": 467615685.0
+          "cumulative": 469565246.0,
+          "inflation": 469565246.0
         },
         "kamino": {
-          "cumulative": 86923591.0,
-          "inflation": 86923591.0
+          "cumulative": 89706820.0,
+          "inflation": 89706820.0
         },
         "loopscale": {
-          "cumulative": 5518693.0,
-          "inflation": 5518693.0
+          "cumulative": 5517614.0,
+          "inflation": 5517614.0
         },
         "raydium": {
-          "cumulative": 33419628.0,
-          "inflation": 33419628.0
+          "cumulative": 33514890.0,
+          "inflation": 33514890.0
         },
         "solstice": {
-          "cumulative": 57037.0,
-          "inflation": 57037.0
+          "cumulative": 103419.0,
+          "inflation": 103419.0
         },
         "whirlpool": {
-          "cumulative": 70605411.0,
-          "inflation": 70605411.0
+          "cumulative": 70637352.0,
+          "inflation": 70637352.0
         },
         "yield_vault": {
-          "cumulative": 44306.0,
-          "inflation": 44306.0
+          "cumulative": 45081.0,
+          "inflation": 45081.0
         }
       }
     },
     {
       "date": "2026-04-14",
-      "cumulative": 1331881116.0,
-      "inflation": 667696764.0,
+      "cumulative": 1341629533.0,
+      "inflation": 672539111.0,
       "by_partner": {
         "exponent": {
-          "cumulative": 938660136.0,
-          "inflation": 471044451.0
+          "cumulative": 942491960.0,
+          "inflation": 472926714.0
         },
         "kamino": {
-          "cumulative": 173847181.0,
-          "inflation": 86923591.0
+          "cumulative": 179413639.0,
+          "inflation": 89706820.0
         },
         "loopscale": {
-          "cumulative": 11052425.0,
-          "inflation": 5533732.0
+          "cumulative": 11050254.0,
+          "inflation": 5532640.0
         },
         "raydium": {
-          "cumulative": 66842104.0,
-          "inflation": 33422476.0
+          "cumulative": 67032626.0,
+          "inflation": 33517736.0
         },
         "solstice": {
-          "cumulative": 109549.0,
-          "inflation": 52512.0
+          "cumulative": 205761.0,
+          "inflation": 102342.0
         },
         "whirlpool": {
-          "cumulative": 141211874.0,
-          "inflation": 70606462.0
+          "cumulative": 141275755.0,
+          "inflation": 70638402.0
         },
         "yield_vault": {
-          "cumulative": 157847.0,
-          "inflation": 113541.0
+          "cumulative": 159538.0,
+          "inflation": 114457.0
         }
       }
     },
     {
       "date": "2026-04-15",
-      "cumulative": 2003291569.0,
-      "inflation": 671410453.0,
+      "cumulative": 2017893878.0,
+      "inflation": 676264345.0,
       "by_partner": {
         "exponent": {
-          "cumulative": 1413422095.0,
-          "inflation": 474761959.0
+          "cumulative": 1419134918.0,
+          "inflation": 476642958.0
         },
         "kamino": {
-          "cumulative": 260770772.0,
-          "inflation": 86923591.0
+          "cumulative": 269120459.0,
+          "inflation": 89706820.0
         },
         "loopscale": {
-          "cumulative": 16589196.0,
-          "inflation": 5536771.0
+          "cumulative": 16585930.0,
+          "inflation": 5535676.0
         },
         "raydium": {
-          "cumulative": 100264580.0,
-          "inflation": 33422476.0
+          "cumulative": 100550362.0,
+          "inflation": 33517736.0
         },
         "solstice": {
-          "cumulative": 156803.0,
-          "inflation": 47254.0
+          "cumulative": 315661.0,
+          "inflation": 109900.0
         },
         "whirlpool": {
-          "cumulative": 211818645.0,
-          "inflation": 70606771.0
+          "cumulative": 211914465.0,
+          "inflation": 70638711.0
         },
         "yield_vault": {
-          "cumulative": 269478.0,
-          "inflation": 111631.0
+          "cumulative": 272082.0,
+          "inflation": 112544.0
         }
       }
     },
     {
       "date": "2026-04-16",
-      "cumulative": 2675281372.0,
-      "inflation": 671989802.0,
+      "cumulative": 2694729647.0,
+      "inflation": 676835769.0,
       "by_partner": {
         "exponent": {
-          "cumulative": 1888563645.0,
-          "inflation": 475141549.0
+          "cumulative": 1896153437.0,
+          "inflation": 477018519.0
         },
         "kamino": {
-          "cumulative": 347694363.0,
-          "inflation": 86923591.0
+          "cumulative": 358827279.0,
+          "inflation": 89706820.0
         },
         "loopscale": {
-          "cumulative": 22327899.0,
-          "inflation": 5738703.0
+          "cumulative": 22323348.0,
+          "inflation": 5737418.0
         },
         "raydium": {
-          "cumulative": 133687378.0,
-          "inflation": 33422797.0
+          "cumulative": 134068420.0,
+          "inflation": 33518057.0
         },
         "solstice": {
-          "cumulative": 201089.0,
-          "inflation": 44286.0
+          "cumulative": 418893.0,
+          "inflation": 103232.0
         },
         "whirlpool": {
-          "cumulative": 282426690.0,
-          "inflation": 70608046.0
+          "cumulative": 282554449.0,
+          "inflation": 70639984.0
         },
         "yield_vault": {
-          "cumulative": 380308.0,
-          "inflation": 110830.0
+          "cumulative": 383821.0,
+          "inflation": 111739.0
         }
       }
     },
     {
       "date": "2026-04-17",
-      "cumulative": 3346571656.0,
-      "inflation": 671290284.0,
+      "cumulative": 3370854907.0,
+      "inflation": 676125260.0,
       "by_partner": {
         "exponent": {
-          "cumulative": 2362849310.0,
-          "inflation": 474285666.0
+          "cumulative": 2372318672.0,
+          "inflation": 476165235.0
         },
         "kamino": {
-          "cumulative": 434617953.0,
-          "inflation": 86923591.0
+          "cumulative": 448534099.0,
+          "inflation": 89706820.0
         },
         "loopscale": {
-          "cumulative": 28227759.0,
-          "inflation": 5899860.0
+          "cumulative": 28221781.0,
+          "inflation": 5898433.0
         },
         "raydium": {
-          "cumulative": 167108866.0,
-          "inflation": 33421488.0
+          "cumulative": 167585171.0,
+          "inflation": 33516752.0
         },
         "solstice": {
-          "cumulative": 240853.0,
-          "inflation": 39764.0
+          "cumulative": 504156.0,
+          "inflation": 85262.0
         },
         "whirlpool": {
-          "cumulative": 353036101.0,
-          "inflation": 70609411.0
+          "cumulative": 353195791.0,
+          "inflation": 70641342.0
         },
         "yield_vault": {
-          "cumulative": 490812.0,
-          "inflation": 110504.0
+          "cumulative": 495238.0,
+          "inflation": 111417.0
         }
       }
     },
     {
       "date": "2026-04-18",
-      "cumulative": 4019499454.0,
-      "inflation": 672927798.0,
+      "cumulative": 4048653857.0,
+      "inflation": 677798950.0,
       "by_partner": {
         "exponent": {
-          "cumulative": 2838751879.0,
-          "inflation": 475902568.0
+          "cumulative": 2850148196.0,
+          "inflation": 477829524.0
         },
         "kamino": {
-          "cumulative": 521541544.0,
-          "inflation": 86923591.0
+          "cumulative": 538240918.0,
+          "inflation": 89706820.0
         },
         "loopscale": {
-          "cumulative": 34146064.0,
-          "inflation": 5918305.0
+          "cumulative": 34138643.0,
+          "inflation": 5916862.0
         },
         "raydium": {
-          "cumulative": 200530354.0,
-          "inflation": 33421488.0
+          "cumulative": 201101923.0,
+          "inflation": 33516752.0
         },
         "solstice": {
-          "cumulative": 280263.0,
-          "inflation": 39409.0
+          "cumulative": 577895.0,
+          "inflation": 73739.0
         },
         "whirlpool": {
-          "cumulative": 423648096.0,
-          "inflation": 70611995.0
+          "cumulative": 423839698.0,
+          "inflation": 70643906.0
         },
         "yield_vault": {
-          "cumulative": 601255.0,
-          "inflation": 110442.0
+          "cumulative": 606585.0,
+          "inflation": 111347.0
         }
       }
     },
     {
       "date": "2026-04-19",
-      "cumulative": 4695495917.0,
-      "inflation": 675996463.0,
+      "cumulative": 4729547651.0,
+      "inflation": 680893794.0,
       "by_partner": {
         "exponent": {
-          "cumulative": 3317723654.0,
-          "inflation": 478971775.0
+          "cumulative": 3331073167.0,
+          "inflation": 480924971.0
         },
         "kamino": {
-          "cumulative": 608465135.0,
-          "inflation": 86923591.0
+          "cumulative": 627947738.0,
+          "inflation": 89706820.0
         },
         "loopscale": {
-          "cumulative": 40064486.0,
-          "inflation": 5918422.0
+          "cumulative": 40055621.0,
+          "inflation": 5916979.0
         },
         "raydium": {
-          "cumulative": 233952170.0,
-          "inflation": 33421816.0
+          "cumulative": 234619002.0,
+          "inflation": 33517079.0
         },
         "solstice": {
-          "cumulative": 318600.0,
-          "inflation": 38337.0
+          "cumulative": 650628.0,
+          "inflation": 72734.0
         },
         "whirlpool": {
-          "cumulative": 494260520.0,
-          "inflation": 70612424.0
+          "cumulative": 494484033.0,
+          "inflation": 70644336.0
         },
         "yield_vault": {
-          "cumulative": 711353.0,
-          "inflation": 110098.0
+          "cumulative": 717462.0,
+          "inflation": 110877.0
         }
       }
     },
     {
       "date": "2026-04-20",
-      "cumulative": 5370965554.0,
-      "inflation": 675469637.0,
+      "cumulative": 5409911520.0,
+      "inflation": 680363868.0,
       "by_partner": {
         "exponent": {
-          "cumulative": 3796170172.0,
-          "inflation": 478446518.0
+          "cumulative": 3811469623.0,
+          "inflation": 480396457.0
         },
         "kamino": {
-          "cumulative": 695388725.0,
-          "inflation": 86923591.0
+          "cumulative": 717654558.0,
+          "inflation": 89706820.0
         },
         "loopscale": {
-          "cumulative": 45983191.0,
-          "inflation": 5918704.0
+          "cumulative": 45972882.0,
+          "inflation": 5917261.0
         },
         "raydium": {
-          "cumulative": 267374070.0,
-          "inflation": 33421900.0
+          "cumulative": 268136165.0,
+          "inflation": 33517163.0
         },
         "solstice": {
-          "cumulative": 355286.0,
-          "inflation": 36686.0
+          "cumulative": 721949.0,
+          "inflation": 71321.0
         },
         "whirlpool": {
-          "cumulative": 564873394.0,
-          "inflation": 70612874.0
+          "cumulative": 565128818.0,
+          "inflation": 70644785.0
         },
         "yield_vault": {
-          "cumulative": 820717.0,
-          "inflation": 109364.0
+          "cumulative": 827523.0,
+          "inflation": 110062.0
         }
       }
     },
     {
       "date": "2026-04-21",
-      "cumulative": 6037824802.0,
-      "inflation": 666859247.0,
+      "cumulative": 6081717871.0,
+      "inflation": 671806351.0,
       "by_partner": {
         "exponent": {
-          "cumulative": 4265954352.0,
-          "inflation": 469784181.0
+          "cumulative": 4283199904.0,
+          "inflation": 471730281.0
         },
         "kamino": {
-          "cumulative": 782312316.0,
-          "inflation": 86923591.0
+          "cumulative": 807361377.0,
+          "inflation": 89706820.0
         },
         "loopscale": {
-          "cumulative": 51958150.0,
-          "inflation": 5974960.0
+          "cumulative": 51946343.0,
+          "inflation": 5973461.0
         },
         "raydium": {
-          "cumulative": 300795946.0,
-          "inflation": 33421875.0
+          "cumulative": 301653304.0,
+          "inflation": 33517139.0
         },
         "solstice": {
-          "cumulative": 388294.0,
-          "inflation": 33008.0
+          "cumulative": 839158.0,
+          "inflation": 117208.0
         },
         "whirlpool": {
-          "cumulative": 635486268.0,
-          "inflation": 70612874.0
+          "cumulative": 635773603.0,
+          "inflation": 70644785.0
         },
         "yield_vault": {
-          "cumulative": 929476.0,
-          "inflation": 108759.0
+          "cumulative": 944181.0,
+          "inflation": 116658.0
         }
       }
     },
     {
       "date": "2026-04-22",
-      "cumulative": 6705063304.0,
-      "inflation": 667238502.0,
+      "cumulative": 6753923772.0,
+      "inflation": 672205901.0,
       "by_partner": {
         "exponent": {
-          "cumulative": 4736053603.0,
-          "inflation": 470099251.0
+          "cumulative": 4755244478.0,
+          "inflation": 472044574.0
         },
         "kamino": {
-          "cumulative": 869235907.0,
-          "inflation": 86923591.0
+          "cumulative": 897068197.0,
+          "inflation": 89706820.0
         },
         "loopscale": {
-          "cumulative": 57999907.0,
-          "inflation": 6041757.0
+          "cumulative": 57986538.0,
+          "inflation": 6040195.0
         },
         "raydium": {
-          "cumulative": 334217820.0,
-          "inflation": 33421874.0
+          "cumulative": 335170441.0,
+          "inflation": 33517137.0
         },
         "solstice": {
-          "cumulative": 420213.0,
-          "inflation": 31919.0
+          "cumulative": 963740.0,
+          "inflation": 124582.0
         },
         "whirlpool": {
-          "cumulative": 706099225.0,
-          "inflation": 70612957.0
+          "cumulative": 706418471.0,
+          "inflation": 70644868.0
         },
         "yield_vault": {
-          "cumulative": 1036629.0,
-          "inflation": 107153.0
+          "cumulative": 1071907.0,
+          "inflation": 127726.0
         }
       }
     },
     {
       "date": "2026-04-23",
-      "cumulative": 7373788292.0,
-      "inflation": 668724988.0,
+      "cumulative": 7427580843.0,
+      "inflation": 673657071.0,
       "by_partner": {
         "exponent": {
-          "cumulative": 5207582271.0,
-          "inflation": 471528668.0
+          "cumulative": 5228715841.0,
+          "inflation": 473471364.0
         },
         "kamino": {
-          "cumulative": 956159497.0,
-          "inflation": 86923591.0
+          "cumulative": 986775017.0,
+          "inflation": 89706820.0
         },
         "loopscale": {
-          "cumulative": 64093559.0,
-          "inflation": 6093651.0
+          "cumulative": 64078572.0,
+          "inflation": 6092034.0
         },
         "raydium": {
-          "cumulative": 367639694.0,
-          "inflation": 33421874.0
+          "cumulative": 368687578.0,
+          "inflation": 33517137.0
         },
         "solstice": {
-          "cumulative": 451682.0,
-          "inflation": 31469.0
+          "cumulative": 1064408.0,
+          "inflation": 100668.0
         },
         "whirlpool": {
-          "cumulative": 776713006.0,
-          "inflation": 70613781.0
+          "cumulative": 777064162.0,
+          "inflation": 70645691.0
         },
         "yield_vault": {
-          "cumulative": 1148583.0,
-          "inflation": 111955.0
+          "cumulative": 1195265.0,
+          "inflation": 123358.0
         }
       }
     },
     {
       "date": "2026-04-24",
-      "cumulative": 8055868606.0,
-      "inflation": 682080314.0,
+      "cumulative": 8114539216.0,
+      "inflation": 686958373.0,
       "by_partner": {
         "exponent": {
-          "cumulative": 5692339994.0,
-          "inflation": 484757723.0
+          "cumulative": 5715409052.0,
+          "inflation": 486693210.0
         },
         "kamino": {
-          "cumulative": 1043083088.0,
-          "inflation": 86923591.0
+          "cumulative": 1076481837.0,
+          "inflation": 89706820.0
         },
         "loopscale": {
-          "cumulative": 70315451.0,
-          "inflation": 6221893.0
+          "cumulative": 70298711.0,
+          "inflation": 6220139.0
         },
         "raydium": {
-          "cumulative": 401061515.0,
-          "inflation": 33421821.0
+          "cumulative": 402204662.0,
+          "inflation": 33517083.0
         },
         "solstice": {
-          "cumulative": 481126.0,
-          "inflation": 29444.0
+          "cumulative": 1127083.0,
+          "inflation": 62676.0
         },
         "whirlpool": {
-          "cumulative": 847326819.0,
-          "inflation": 70613813.0
+          "cumulative": 847709885.0,
+          "inflation": 70645723.0
         },
         "yield_vault": {
-          "cumulative": 1260614.0,
-          "inflation": 112030.0
+          "cumulative": 1307987.0,
+          "inflation": 112722.0
         }
       }
     },
     {
       "date": "2026-04-25",
-      "cumulative": 8752329575.0,
-      "inflation": 696460969.0,
+      "cumulative": 8815872076.0,
+      "inflation": 701332859.0,
       "by_partner": {
         "exponent": {
-          "cumulative": 6191475048.0,
-          "inflation": 499135054.0
+          "cumulative": 6216471669.0,
+          "inflation": 501062617.0
         },
         "kamino": {
-          "cumulative": 1130006679.0,
-          "inflation": 86923591.0
+          "cumulative": 1166188656.0,
+          "inflation": 89706820.0
         },
         "loopscale": {
-          "cumulative": 76540723.0,
-          "inflation": 6225272.0
+          "cumulative": 76522224.0,
+          "inflation": 6223514.0
         },
         "raydium": {
-          "cumulative": 434483639.0,
-          "inflation": 33422124.0
+          "cumulative": 435722048.0,
+          "inflation": 33517387.0
         },
         "solstice": {
-          "cumulative": 509967.0,
-          "inflation": 28841.0
+          "cumulative": 1190919.0,
+          "inflation": 63835.0
         },
         "whirlpool": {
-          "cumulative": 917940838.0,
-          "inflation": 70614019.0
+          "cumulative": 918355814.0,
+          "inflation": 70645929.0
         },
         "yield_vault": {
-          "cumulative": 1372682.0,
-          "inflation": 112068.0
+          "cumulative": 1420745.0,
+          "inflation": 112758.0
         }
       }
     },
     {
       "date": "2026-04-26",
-      "cumulative": 9452821928.0,
-      "inflation": 700492353.0,
+      "cumulative": 9521227431.0,
+      "inflation": 705355355.0,
       "by_partner": {
         "exponent": {
-          "cumulative": 6694636380.0,
-          "inflation": 503161333.0
+          "cumulative": 6721551608.0,
+          "inflation": 505079939.0
         },
         "kamino": {
-          "cumulative": 1216930269.0,
-          "inflation": 86923591.0
+          "cumulative": 1255895476.0,
+          "inflation": 89706820.0
         },
         "loopscale": {
-          "cumulative": 82782743.0,
-          "inflation": 6242020.0
+          "cumulative": 82762466.0,
+          "inflation": 6240242.0
         },
         "raydium": {
-          "cumulative": 467905770.0,
-          "inflation": 33422131.0
+          "cumulative": 469239442.0,
+          "inflation": 33517393.0
         },
         "solstice": {
-          "cumulative": 527662.0,
-          "inflation": 17695.0
+          "cumulative": 1243697.0,
+          "inflation": 52779.0
         },
         "whirlpool": {
-          "cumulative": 988554857.0,
-          "inflation": 70614019.0
+          "cumulative": 989001743.0,
+          "inflation": 70645929.0
         },
         "yield_vault": {
-          "cumulative": 1484247.0,
-          "inflation": 111565.0
+          "cumulative": 1533000.0,
+          "inflation": 112255.0
         }
       }
     },
     {
       "date": "2026-04-27",
-      "cumulative": 10189359663.0,
-      "inflation": 736537736.0,
+      "cumulative": 10262577625.0,
+      "inflation": 741350194.0,
       "by_partner": {
         "exponent": {
-          "cumulative": 7233838216.0,
-          "inflation": 539201835.0
+          "cumulative": 7262621544.0,
+          "inflation": 541069936.0
         },
         "kamino": {
-          "cumulative": 1303853860.0,
-          "inflation": 86923591.0
+          "cumulative": 1345602296.0,
+          "inflation": 89706820.0
         },
         "loopscale": {
-          "cumulative": 89032693.0,
-          "inflation": 6249949.0
+          "cumulative": 89010627.0,
+          "inflation": 6248161.0
         },
         "raydium": {
-          "cumulative": 501327910.0,
-          "inflation": 33422140.0
+          "cumulative": 502756844.0,
+          "inflation": 33517402.0
         },
         "solstice": {
-          "cumulative": 543358.0,
-          "inflation": 15696.0
+          "cumulative": 1294447.0,
+          "inflation": 50750.0
         },
         "whirlpool": {
-          "cumulative": 1059168876.0,
-          "inflation": 70614019.0
+          "cumulative": 1059647672.0,
+          "inflation": 70645929.0
         },
         "yield_vault": {
-          "cumulative": 1594751.0,
-          "inflation": 110504.0
+          "cumulative": 1644195.0,
+          "inflation": 111196.0
         }
       }
     },
     {
       "date": "2026-04-28",
-      "cumulative": 10949362392.0,
-      "inflation": 760002729.0,
+      "cumulative": 11027362670.0,
+      "inflation": 764785045.0,
       "by_partner": {
         "exponent": {
-          "cumulative": 7796307193.0,
-          "inflation": 562468978.0
+          "cumulative": 7826928437.0,
+          "inflation": 564306894.0
         },
         "kamino": {
-          "cumulative": 1390777451.0,
-          "inflation": 86923591.0
+          "cumulative": 1435309115.0,
+          "inflation": 89706820.0
         },
         "loopscale": {
-          "cumulative": 95480808.0,
-          "inflation": 6448115.0
+          "cumulative": 95456596.0,
+          "inflation": 6445968.0
         },
         "raydium": {
-          "cumulative": 534750072.0,
-          "inflation": 33422162.0
+          "cumulative": 536274269.0,
+          "inflation": 33517425.0
         },
         "solstice": {
-          "cumulative": 558969.0,
-          "inflation": 15611.0
+          "cumulative": 1345510.0,
+          "inflation": 51063.0
         },
         "whirlpool": {
-          "cumulative": 1129783178.0,
-          "inflation": 70614302.0
+          "cumulative": 1130293882.0,
+          "inflation": 70646210.0
         },
         "yield_vault": {
-          "cumulative": 1704722.0,
-          "inflation": 109970.0
+          "cumulative": 1754861.0,
+          "inflation": 110665.0
         }
       }
     },
     {
       "date": "2026-04-29",
-      "cumulative": 11714116416.0,
-      "inflation": 764754024.0,
+      "cumulative": 11796894211.0,
+      "inflation": 769531541.0,
       "by_partner": {
         "exponent": {
-          "cumulative": 8363202116.0,
-          "inflation": 566894923.0
+          "cumulative": 8395658301.0,
+          "inflation": 568729863.0
         },
         "kamino": {
-          "cumulative": 1477701041.0,
-          "inflation": 86923591.0
+          "cumulative": 1525015935.0,
+          "inflation": 89706820.0
         },
         "loopscale": {
-          "cumulative": 102245966.0,
-          "inflation": 6765158.0
+          "cumulative": 102219218.0,
+          "inflation": 6762622.0
         },
         "raydium": {
-          "cumulative": 568180187.0,
-          "inflation": 33430115.0
+          "cumulative": 569799618.0,
+          "inflation": 33525349.0
         },
         "solstice": {
-          "cumulative": 574580.0,
-          "inflation": 15611.0
+          "cumulative": 1395166.0,
+          "inflation": 49656.0
         },
         "whirlpool": {
-          "cumulative": 1200397925.0,
-          "inflation": 70614748.0
+          "cumulative": 1200940537.0,
+          "inflation": 70646655.0
         },
         "yield_vault": {
-          "cumulative": 1814602.0,
-          "inflation": 109880.0
+          "cumulative": 1865436.0,
+          "inflation": 110575.0
         }
       }
     },
     {
       "date": "2026-04-30",
-      "cumulative": 12474032251.0,
-      "inflation": 759915835.0,
+      "cumulative": 12561581049.0,
+      "inflation": 764686838.0,
       "by_partner": {
         "exponent": {
-          "cumulative": 8925225946.0,
-          "inflation": 562023830.0
+          "cumulative": 8959518039.0,
+          "inflation": 563859738.0
         },
         "kamino": {
-          "cumulative": 1564624632.0,
-          "inflation": 86923591.0
+          "cumulative": 1614722755.0,
+          "inflation": 89706820.0
         },
         "loopscale": {
-          "cumulative": 109040354.0,
-          "inflation": 6794389.0
+          "cumulative": 109011046.0,
+          "inflation": 6791828.0
         },
         "raydium": {
-          "cumulative": 601614242.0,
-          "inflation": 33434055.0
+          "cumulative": 603328896.0,
+          "inflation": 33529278.0
         },
         "solstice": {
-          "cumulative": 590228.0,
-          "inflation": 15648.0
+          "cumulative": 1437417.0,
+          "inflation": 42251.0
         },
         "whirlpool": {
-          "cumulative": 1271012766.0,
-          "inflation": 70614840.0
+          "cumulative": 1271587285.0,
+          "inflation": 70646748.0
         },
         "yield_vault": {
-          "cumulative": 1924084.0,
-          "inflation": 109482.0
+          "cumulative": 1975611.0,
+          "inflation": 110175.0
         }
       }
     },
     {
       "date": "2026-05-01",
-      "cumulative": 13232497842.0,
-      "inflation": 758465591.0,
+      "cumulative": 13324828397.0,
+      "inflation": 763247348.0,
       "by_partner": {
         "exponent": {
-          "cumulative": 9485788660.0,
-          "inflation": 560562715.0
+          "cumulative": 9521927433.0,
+          "inflation": 562409394.0
         },
         "kamino": {
-          "cumulative": 1651548222.0,
-          "inflation": 86923591.0
+          "cumulative": 1704429575.0,
+          "inflation": 89706820.0
         },
         "loopscale": {
-          "cumulative": 115844988.0,
-          "inflation": 6804634.0
+          "cumulative": 115813111.0,
+          "inflation": 6802065.0
         },
         "raydium": {
-          "cumulative": 635048297.0,
-          "inflation": 33434055.0
+          "cumulative": 636858174.0,
+          "inflation": 33529278.0
         },
         "solstice": {
-          "cumulative": 606230.0,
-          "inflation": 16002.0
+          "cumulative": 1480013.0,
+          "inflation": 42597.0
         },
         "whirlpool": {
-          "cumulative": 1341627774.0,
-          "inflation": 70615008.0
+          "cumulative": 1342234201.0,
+          "inflation": 70646916.0
         },
         "yield_vault": {
-          "cumulative": 2033670.0,
-          "inflation": 109586.0
+          "cumulative": 2085890.0,
+          "inflation": 110279.0
         }
       }
     },
     {
       "date": "2026-05-02",
-      "cumulative": 14001296409.0,
-      "inflation": 768798567.0,
+      "cumulative": 14098404387.0,
+      "inflation": 773575990.0,
       "by_partner": {
         "exponent": {
-          "cumulative": 10056507425.0,
-          "inflation": 570718765.0
+          "cumulative": 10094488881.0,
+          "inflation": 572561449.0
         },
         "kamino": {
-          "cumulative": 1738471813.0,
-          "inflation": 86923591.0
+          "cumulative": 1794136394.0,
+          "inflation": 89706820.0
         },
         "loopscale": {
-          "cumulative": 122826461.0,
-          "inflation": 6981473.0
+          "cumulative": 122791557.0,
+          "inflation": 6978446.0
         },
         "raydium": {
-          "cumulative": 668482347.0,
-          "inflation": 33434050.0
+          "cumulative": 670387446.0,
+          "inflation": 33529273.0
         },
         "solstice": {
-          "cumulative": 622411.0,
-          "inflation": 16181.0
+          "cumulative": 1522905.0,
+          "inflation": 42892.0
         },
         "whirlpool": {
-          "cumulative": 1412242782.0,
-          "inflation": 70615008.0
+          "cumulative": 1412881117.0,
+          "inflation": 70646916.0
         },
         "yield_vault": {
-          "cumulative": 2143169.0,
-          "inflation": 109500.0
+          "cumulative": 2196086.0,
+          "inflation": 110196.0
         }
       }
     },
     {
       "date": "2026-05-03",
-      "cumulative": 14770961724.0,
-      "inflation": 769665315.0,
+      "cumulative": 14872836076.0,
+      "inflation": 774431689.0,
       "by_partner": {
         "exponent": {
-          "cumulative": 10628050408.0,
-          "inflation": 571542983.0
+          "cumulative": 10667867599.0,
+          "inflation": 573378717.0
         },
         "kamino": {
-          "cumulative": 1825395404.0,
-          "inflation": 86923591.0
+          "cumulative": 1883843214.0,
+          "inflation": 89706820.0
         },
         "loopscale": {
-          "cumulative": 129850971.0,
-          "inflation": 7024510.0
+          "cumulative": 129812962.0,
+          "inflation": 7021405.0
         },
         "raydium": {
-          "cumulative": 701916393.0,
-          "inflation": 33434046.0
+          "cumulative": 703916715.0,
+          "inflation": 33529268.0
         },
         "solstice": {
-          "cumulative": 637962.0,
-          "inflation": 15551.0
+          "cumulative": 1561150.0,
+          "inflation": 38245.0
         },
         "whirlpool": {
-          "cumulative": 1482857835.0,
-          "inflation": 70615052.0
+          "cumulative": 1483528076.0,
+          "inflation": 70646960.0
         },
         "yield_vault": {
-          "cumulative": 2252752.0,
-          "inflation": 109583.0
+          "cumulative": 2306360.0,
+          "inflation": 110274.0
         }
       }
     },
     {
       "date": "2026-05-04",
-      "cumulative": 15543805265.0,
-      "inflation": 772843541.0,
+      "cumulative": 15650442436.0,
+      "inflation": 777606360.0,
       "by_partner": {
         "exponent": {
-          "cumulative": 11202769308.0,
-          "inflation": 574718901.0
+          "cumulative": 11244418889.0,
+          "inflation": 576551290.0
         },
         "kamino": {
-          "cumulative": 1912318994.0,
-          "inflation": 86923591.0
+          "cumulative": 1973550034.0,
+          "inflation": 89706820.0
         },
         "loopscale": {
-          "cumulative": 136877171.0,
-          "inflation": 7026200.0
+          "cumulative": 136836073.0,
+          "inflation": 7023111.0
         },
         "raydium": {
-          "cumulative": 735350438.0,
-          "inflation": 33434045.0
+          "cumulative": 737445983.0,
+          "inflation": 33529268.0
         },
         "solstice": {
-          "cumulative": 654046.0,
-          "inflation": 16084.0
+          "cumulative": 1599706.0,
+          "inflation": 38555.0
         },
         "whirlpool": {
-          "cumulative": 1553472917.0,
-          "inflation": 70615083.0
+          "cumulative": 1554175066.0,
+          "inflation": 70646990.0
         },
         "yield_vault": {
-          "cumulative": 2362390.0,
-          "inflation": 109638.0
+          "cumulative": 2416685.0,
+          "inflation": 110325.0
         }
       }
     },
     {
       "date": "2026-05-05",
-      "cumulative": 16317014098.0,
-      "inflation": 773208832.0,
+      "cumulative": 16428414470.0,
+      "inflation": 777972034.0,
       "by_partner": {
         "exponent": {
-          "cumulative": 11777835624.0,
-          "inflation": 575066316.0
+          "cumulative": 11821317971.0,
+          "inflation": 576899082.0
         },
         "kamino": {
-          "cumulative": 1999242585.0,
-          "inflation": 86923591.0
+          "cumulative": 2063256853.0,
+          "inflation": 89706820.0
         },
         "loopscale": {
-          "cumulative": 143921490.0,
-          "inflation": 7044318.0
+          "cumulative": 143877308.0,
+          "inflation": 7041235.0
         },
         "raydium": {
-          "cumulative": 768784484.0,
-          "inflation": 33434045.0
+          "cumulative": 770975251.0,
+          "inflation": 33529268.0
         },
         "solstice": {
-          "cumulative": 669767.0,
-          "inflation": 15721.0
+          "cumulative": 1637900.0,
+          "inflation": 38194.0
         },
         "whirlpool": {
-          "cumulative": 1624088000.0,
-          "inflation": 70615083.0
+          "cumulative": 1624822056.0,
+          "inflation": 70646990.0
         },
         "yield_vault": {
-          "cumulative": 2472148.0,
-          "inflation": 109759.0
+          "cumulative": 2527131.0,
+          "inflation": 110445.0
         }
       }
     },
     {
       "date": "2026-05-06",
-      "cumulative": 17089059245.0,
-      "inflation": 772045148.0,
+      "cumulative": 17205224701.0,
+      "inflation": 776810231.0,
       "by_partner": {
         "exponent": {
-          "cumulative": 12351694549.0,
-          "inflation": 573858925.0
+          "cumulative": 12397011586.0,
+          "inflation": 575693616.0
         },
         "kamino": {
-          "cumulative": 2086166176.0,
-          "inflation": 86923591.0
+          "cumulative": 2152963673.0,
+          "inflation": 89706820.0
         },
         "loopscale": {
-          "cumulative": 151010011.0,
-          "inflation": 7088521.0
+          "cumulative": 150962678.0,
+          "inflation": 7085371.0
         },
         "raydium": {
-          "cumulative": 802218531.0,
-          "inflation": 33434048.0
+          "cumulative": 804504522.0,
+          "inflation": 33529270.0
         },
         "solstice": {
-          "cumulative": 684815.0,
-          "inflation": 15048.0
+          "cumulative": 1675446.0,
+          "inflation": 37545.0
         },
         "whirlpool": {
-          "cumulative": 1694703082.0,
-          "inflation": 70615083.0
+          "cumulative": 1695469046.0,
+          "inflation": 70646990.0
         },
         "yield_vault": {
-          "cumulative": 2582080.0,
-          "inflation": 109932.0
+          "cumulative": 2637751.0,
+          "inflation": 110620.0
         }
       }
     },
     {
       "date": "2026-05-07",
-      "cumulative": 17861481970.0,
-      "inflation": 772422725.0,
+      "cumulative": 17982431900.0,
+      "inflation": 777207199.0,
       "by_partner": {
         "exponent": {
-          "cumulative": 12925753208.0,
-          "inflation": 574058658.0
+          "cumulative": 12972924847.0,
+          "inflation": 575913261.0
         },
         "kamino": {
-          "cumulative": 2173089766.0,
-          "inflation": 86923591.0
+          "cumulative": 2242670493.0,
+          "inflation": 89706820.0
         },
         "loopscale": {
-          "cumulative": 158274151.0,
-          "inflation": 7264140.0
+          "cumulative": 158223389.0,
+          "inflation": 7260711.0
         },
         "raydium": {
-          "cumulative": 835654091.0,
-          "inflation": 33435560.0
+          "cumulative": 838035302.0,
+          "inflation": 33530780.0
         },
         "solstice": {
-          "cumulative": 700465.0,
-          "inflation": 15650.0
+          "cumulative": 1713351.0,
+          "inflation": 37905.0
         },
         "whirlpool": {
-          "cumulative": 1765318165.0,
-          "inflation": 70615083.0
+          "cumulative": 1766116035.0,
+          "inflation": 70646990.0
         },
         "yield_vault": {
-          "cumulative": 2692125.0,
-          "inflation": 110044.0
+          "cumulative": 2748483.0,
+          "inflation": 110732.0
         }
       }
     },
     {
       "date": "2026-05-08",
-      "cumulative": 18636126878.0,
-      "inflation": 774644907.0,
+      "cumulative": 18761895034.0,
+      "inflation": 779463134.0,
       "by_partner": {
         "exponent": {
-          "cumulative": 13502025287.0,
-          "inflation": 576272079.0
+          "cumulative": 13551085586.0,
+          "inflation": 578160738.0
         },
         "kamino": {
-          "cumulative": 2260013357.0,
-          "inflation": 86923591.0
+          "cumulative": 2332377313.0,
+          "inflation": 89706820.0
         },
         "loopscale": {
-          "cumulative": 165546793.0,
-          "inflation": 7272642.0
+          "cumulative": 165492588.0,
+          "inflation": 7269199.0
         },
         "raydium": {
-          "cumulative": 869090552.0,
-          "inflation": 33436461.0
+          "cumulative": 871566981.0,
+          "inflation": 33531680.0
         },
         "solstice": {
-          "cumulative": 715312.0,
-          "inflation": 14847.0
+          "cumulative": 1750168.0,
+          "inflation": 36818.0
         },
         "whirlpool": {
-          "cumulative": 1835933380.0,
-          "inflation": 70615215.0
+          "cumulative": 1836763157.0,
+          "inflation": 70647122.0
         },
         "yield_vault": {
-          "cumulative": 2802197.0,
-          "inflation": 110072.0
+          "cumulative": 2859241.0,
+          "inflation": 110758.0
         }
       }
     },
     {
       "date": "2026-05-09",
-      "cumulative": 19422090772.0,
-      "inflation": 785963894.0,
+      "cumulative": 19552642439.0,
+      "inflation": 790747406.0,
       "by_partner": {
         "exponent": {
-          "cumulative": 14089587401.0,
-          "inflation": 587562114.0
+          "cumulative": 14140501409.0,
+          "inflation": 589415824.0
         },
         "kamino": {
-          "cumulative": 2346936948.0,
-          "inflation": 86923591.0
+          "cumulative": 2422084132.0,
+          "inflation": 89706820.0
         },
         "loopscale": {
-          "cumulative": 172847310.0,
-          "inflation": 7300517.0
+          "cumulative": 172789615.0,
+          "inflation": 7297027.0
         },
         "raydium": {
-          "cumulative": 902527394.0,
-          "inflation": 33436842.0
+          "cumulative": 905099042.0,
+          "inflation": 33532060.0
         },
         "solstice": {
-          "cumulative": 729561.0,
-          "inflation": 14249.0
+          "cumulative": 1786623.0,
+          "inflation": 36455.0
         },
         "whirlpool": {
-          "cumulative": 1906550162.0,
-          "inflation": 70616783.0
+          "cumulative": 1907411844.0,
+          "inflation": 70648687.0
         },
         "yield_vault": {
-          "cumulative": 2911995.0,
-          "inflation": 109798.0
+          "cumulative": 2969774.0,
+          "inflation": 110533.0
         }
       }
     },
     {
       "date": "2026-05-10",
-      "cumulative": 20204101744.0,
-      "inflation": 782010973.0,
+      "cumulative": 20339467228.0,
+      "inflation": 786824788.0,
       "by_partner": {
         "exponent": {
-          "cumulative": 14673191866.0,
-          "inflation": 583604465.0
+          "cumulative": 14725989599.0,
+          "inflation": 585488190.0
         },
         "kamino": {
-          "cumulative": 2433860538.0,
-          "inflation": 86923591.0
+          "cumulative": 2511790952.0,
+          "inflation": 89706820.0
         },
         "loopscale": {
-          "cumulative": 180155433.0,
-          "inflation": 7308123.0
+          "cumulative": 180094234.0,
+          "inflation": 7304619.0
         },
         "raydium": {
-          "cumulative": 935963967.0,
-          "inflation": 33436573.0
+          "cumulative": 938630834.0,
+          "inflation": 33531792.0
         },
         "solstice": {
-          "cumulative": 741082.0,
-          "inflation": 11521.0
+          "cumulative": 1820650.0,
+          "inflation": 34027.0
         },
         "whirlpool": {
-          "cumulative": 1977167026.0,
-          "inflation": 70616864.0
+          "cumulative": 1978060612.0,
+          "inflation": 70648768.0
         },
         "yield_vault": {
-          "cumulative": 3021831.0,
-          "inflation": 109836.0
+          "cumulative": 3080346.0,
+          "inflation": 110573.0
         }
       }
     },
     {
       "date": "2026-05-11",
-      "cumulative": 20997613389.0,
-      "inflation": 793511645.0,
+      "cumulative": 21137785871.0,
+      "inflation": 798318643.0,
       "by_partner": {
         "exponent": {
-          "cumulative": 15268228356.0,
-          "inflation": 595036490.0
+          "cumulative": 15322903327.0,
+          "inflation": 596913728.0
         },
         "kamino": {
-          "cumulative": 2520784129.0,
-          "inflation": 86923591.0
+          "cumulative": 2601497772.0,
+          "inflation": 89706820.0
         },
         "loopscale": {
-          "cumulative": 187487862.0,
-          "inflation": 7332429.0
+          "cumulative": 187423163.0,
+          "inflation": 7328928.0
         },
         "raydium": {
-          "cumulative": 969397884.0,
-          "inflation": 33433917.0
+          "cumulative": 972159971.0,
+          "inflation": 33529138.0
         },
         "solstice": {
-          "cumulative": 754284.0,
-          "inflation": 13202.0
+          "cumulative": 1856129.0,
+          "inflation": 35478.0
         },
         "whirlpool": {
-          "cumulative": 2047829173.0,
-          "inflation": 70662147.0
+          "cumulative": 2048754557.0,
+          "inflation": 70693945.0
         },
         "yield_vault": {
-          "cumulative": 3131701.0,
-          "inflation": 109869.0
+          "cumulative": 3190951.0,
+          "inflation": 110605.0
         }
       }
     },
     {
       "date": "2026-05-12",
-      "cumulative": 21796696849.0,
-      "inflation": 799083460.0,
+      "cumulative": 21941682718.0,
+      "inflation": 803896848.0,
       "by_partner": {
         "exponent": {
-          "cumulative": 15868753231.0,
-          "inflation": 600524876.0
+          "cumulative": 15925309362.0,
+          "inflation": 602406035.0
         },
         "kamino": {
-          "cumulative": 2607707720.0,
-          "inflation": 86923591.0
+          "cumulative": 2691204591.0,
+          "inflation": 89706820.0
         },
         "loopscale": {
-          "cumulative": 194842143.0,
-          "inflation": 7354281.0
+          "cumulative": 194773940.0,
+          "inflation": 7350777.0
         },
         "raydium": {
-          "cumulative": 1002831802.0,
-          "inflation": 33433917.0
+          "cumulative": 1005689109.0,
+          "inflation": 33529138.0
         },
         "solstice": {
-          "cumulative": 782713.0,
-          "inflation": 28428.0
+          "cumulative": 1909421.0,
+          "inflation": 53292.0
         },
         "whirlpool": {
-          "cumulative": 2118537654.0,
-          "inflation": 70708481.0
+          "cumulative": 2119494722.0,
+          "inflation": 70740165.0
         },
         "yield_vault": {
-          "cumulative": 3241587.0,
-          "inflation": 109886.0
+          "cumulative": 3301573.0,
+          "inflation": 110622.0
         }
       }
     },
     {
       "date": "2026-05-13",
-      "cumulative": 22597508978.0,
-      "inflation": 800812129.0,
+      "cumulative": 22747336036.0,
+      "inflation": 805653317.0,
       "by_partner": {
         "exponent": {
-          "cumulative": 16470922464.0,
-          "inflation": 602169233.0
+          "cumulative": 16529383488.0,
+          "inflation": 604074126.0
         },
         "kamino": {
-          "cumulative": 2694631310.0,
-          "inflation": 86923591.0
+          "cumulative": 2780911411.0,
+          "inflation": 89706820.0
         },
         "loopscale": {
-          "cumulative": 202281001.0,
-          "inflation": 7438858.0
+          "cumulative": 202209095.0,
+          "inflation": 7435156.0
         },
         "raydium": {
-          "cumulative": 1036265719.0,
-          "inflation": 33433917.0
+          "cumulative": 1039218247.0,
+          "inflation": 33529138.0
         },
         "solstice": {
-          "cumulative": 810855.0,
-          "inflation": 28143.0
+          "cumulative": 1966735.0,
+          "inflation": 57314.0
         },
         "whirlpool": {
-          "cumulative": 2189246155.0,
-          "inflation": 70708501.0
+          "cumulative": 2190234908.0,
+          "inflation": 70740185.0
         },
         "yield_vault": {
-          "cumulative": 3351473.0,
-          "inflation": 109886.0
+          "cumulative": 3412153.0,
+          "inflation": 110580.0
         }
       }
     },
     {
       "date": "2026-05-14",
-      "cumulative": 23401557235.0,
-      "inflation": 804048257.0,
+      "cumulative": 23556237832.0,
+      "inflation": 808901796.0,
       "by_partner": {
         "exponent": {
-          "cumulative": 17076273140.0,
-          "inflation": 605350676.0
+          "cumulative": 17136644724.0,
+          "inflation": 607261236.0
         },
         "kamino": {
-          "cumulative": 2781554901.0,
-          "inflation": 86923591.0
+          "cumulative": 2870618231.0,
+          "inflation": 89706820.0
         },
         "loopscale": {
-          "cumulative": 209774292.0,
-          "inflation": 7493291.0
+          "cumulative": 209698575.0,
+          "inflation": 7489480.0
         },
         "raydium": {
-          "cumulative": 1069699636.0,
-          "inflation": 33433917.0
+          "cumulative": 1072747384.0,
+          "inflation": 33529138.0
         },
         "solstice": {
-          "cumulative": 839057.0,
-          "inflation": 28201.0
+          "cumulative": 2030903.0,
+          "inflation": 64168.0
         },
         "whirlpool": {
-          "cumulative": 2259954656.0,
-          "inflation": 70708501.0
+          "cumulative": 2260975093.0,
+          "inflation": 70740185.0
         },
         "yield_vault": {
-          "cumulative": 3461553.0,
-          "inflation": 110080.0
+          "cumulative": 3522922.0,
+          "inflation": 110769.0
         }
       }
     },
     {
       "date": "2026-05-15",
-      "cumulative": 24212738438.0,
-      "inflation": 811181204.0,
+      "cumulative": 24372317471.0,
+      "inflation": 816079640.0,
       "by_partner": {
         "exponent": {
-          "cumulative": 17688754641.0,
-          "inflation": 612481501.0
+          "cumulative": 17751056254.0,
+          "inflation": 614411530.0
         },
         "kamino": {
-          "cumulative": 2868478492.0,
-          "inflation": 86923591.0
+          "cumulative": 2960325051.0,
+          "inflation": 89706820.0
         },
         "loopscale": {
-          "cumulative": 217269478.0,
-          "inflation": 7495186.0
+          "cumulative": 217189946.0,
+          "inflation": 7491371.0
         },
         "raydium": {
-          "cumulative": 1103133553.0,
-          "inflation": 33433917.0
+          "cumulative": 1106276522.0,
+          "inflation": 33529138.0
         },
         "solstice": {
-          "cumulative": 867384.0,
-          "inflation": 28327.0
+          "cumulative": 2120628.0,
+          "inflation": 89725.0
         },
         "whirlpool": {
-          "cumulative": 2330663157.0,
-          "inflation": 70708501.0
+          "cumulative": 2331715278.0,
+          "inflation": 70740185.0
         },
         "yield_vault": {
-          "cumulative": 3571734.0,
-          "inflation": 110181.0
+          "cumulative": 3633793.0,
+          "inflation": 110871.0
         }
       }
     },
     {
       "date": "2026-05-16",
-      "cumulative": 25035430315.0,
-      "inflation": 822691877.0,
+      "cumulative": 25199920107.0,
+      "inflation": 827602635.0,
       "by_partner": {
         "exponent": {
-          "cumulative": 18312746587.0,
-          "inflation": 623991946.0
+          "cumulative": 18377009444.0,
+          "inflation": 625953190.0
         },
         "kamino": {
-          "cumulative": 2955402082.0,
-          "inflation": 86923591.0
+          "cumulative": 3050031870.0,
+          "inflation": 89706820.0
         },
         "loopscale": {
-          "cumulative": 224764664.0,
-          "inflation": 7495186.0
+          "cumulative": 224681317.0,
+          "inflation": 7491371.0
         },
         "raydium": {
-          "cumulative": 1136567471.0,
-          "inflation": 33433917.0
+          "cumulative": 1139805660.0,
+          "inflation": 33529138.0
         },
         "solstice": {
-          "cumulative": 895711.0,
-          "inflation": 28327.0
+          "cumulative": 2191461.0,
+          "inflation": 70833.0
         },
         "whirlpool": {
-          "cumulative": 2401371658.0,
-          "inflation": 70708501.0
+          "cumulative": 2402455464.0,
+          "inflation": 70740185.0
         },
         "yield_vault": {
-          "cumulative": 3682143.0,
-          "inflation": 110409.0
+          "cumulative": 3744891.0,
+          "inflation": 111099.0
         }
       }
     },
     {
       "date": "2026-05-17",
-      "cumulative": 25867754510.0,
-      "inflation": 832324195.0,
+      "cumulative": 26037162074.0,
+      "inflation": 837241967.0,
       "by_partner": {
         "exponent": {
-          "cumulative": 18946370453.0,
-          "inflation": 633623867.0
+          "cumulative": 19012634370.0,
+          "inflation": 635624926.0
         },
         "kamino": {
-          "cumulative": 3042325673.0,
-          "inflation": 86923591.0
+          "cumulative": 3139738690.0,
+          "inflation": 89706820.0
         },
         "loopscale": {
-          "cumulative": 232259850.0,
-          "inflation": 7495186.0
+          "cumulative": 232172688.0,
+          "inflation": 7491371.0
         },
         "raydium": {
-          "cumulative": 1170001388.0,
-          "inflation": 33433917.0
+          "cumulative": 1173334797.0,
+          "inflation": 33529138.0
         },
         "solstice": {
-          "cumulative": 924038.0,
-          "inflation": 28327.0
+          "cumulative": 2229490.0,
+          "inflation": 38029.0
         },
         "whirlpool": {
-          "cumulative": 2472080159.0,
-          "inflation": 70708501.0
+          "cumulative": 2473195649.0,
+          "inflation": 70740185.0
         },
         "yield_vault": {
-          "cumulative": 3792949.0,
-          "inflation": 110806.0
+          "cumulative": 3856389.0,
+          "inflation": 111498.0
         }
       }
     },
     {
       "date": "2026-05-18",
-      "cumulative": 26705307115.0,
-      "inflation": 837552605.0,
+      "cumulative": 26879681959.0,
+      "inflation": 842519886.0,
       "by_partner": {
         "exponent": {
-          "cumulative": 19585222780.0,
-          "inflation": 638852326.0
+          "cumulative": 19653539711.0,
+          "inflation": 640905340.0
         },
         "kamino": {
-          "cumulative": 3129249264.0,
-          "inflation": 86923591.0
+          "cumulative": 3229445510.0,
+          "inflation": 89706820.0
         },
         "loopscale": {
-          "cumulative": 239755036.0,
-          "inflation": 7495186.0
+          "cumulative": 239664059.0,
+          "inflation": 7491371.0
         },
         "raydium": {
-          "cumulative": 1203435305.0,
-          "inflation": 33433917.0
+          "cumulative": 1206863935.0,
+          "inflation": 33529138.0
         },
         "solstice": {
-          "cumulative": 952365.0,
-          "inflation": 28327.0
+          "cumulative": 2265068.0,
+          "inflation": 35578.0
         },
         "whirlpool": {
-          "cumulative": 2542788660.0,
-          "inflation": 70708501.0
+          "cumulative": 2543935834.0,
+          "inflation": 70740185.0
         },
         "yield_vault": {
-          "cumulative": 3903705.0,
-          "inflation": 110757.0
+          "cumulative": 3967843.0,
+          "inflation": 111454.0
         }
       }
     },
     {
       "date": "2026-05-19",
-      "cumulative": 27552845857.0,
-      "inflation": 847538741.0,
+      "cumulative": 27732212998.0,
+      "inflation": 852531038.0,
       "by_partner": {
         "exponent": {
-          "cumulative": 20234061161.0,
-          "inflation": 648838382.0
+          "cumulative": 20304456068.0,
+          "inflation": 650916358.0
         },
         "kamino": {
-          "cumulative": 3216172854.0,
-          "inflation": 86923591.0
+          "cumulative": 3319152329.0,
+          "inflation": 89706820.0
         },
         "loopscale": {
-          "cumulative": 247250222.0,
-          "inflation": 7495186.0
+          "cumulative": 247155430.0,
+          "inflation": 7491371.0
         },
         "raydium": {
-          "cumulative": 1236869222.0,
-          "inflation": 33433917.0
+          "cumulative": 1240393073.0,
+          "inflation": 33529138.0
         },
         "solstice": {
-          "cumulative": 980692.0,
-          "inflation": 28327.0
+          "cumulative": 2300694.0,
+          "inflation": 35626.0
         },
         "whirlpool": {
-          "cumulative": 2613497161.0,
-          "inflation": 70708501.0
+          "cumulative": 2614676020.0,
+          "inflation": 70740185.0
         },
         "yield_vault": {
-          "cumulative": 4014543.0,
-          "inflation": 110838.0
+          "cumulative": 4079384.0,
+          "inflation": 111541.0
         }
       }
     },
     {
       "date": "2026-05-20",
-      "cumulative": 28394004418.0,
-      "inflation": 841158561.0,
+      "cumulative": 28578305243.0,
+      "inflation": 846092246.0,
       "by_partner": {
         "exponent": {
-          "cumulative": 20876519137.0,
-          "inflation": 642457975.0
+          "cumulative": 20948913712.0,
+          "inflation": 644457644.0
         },
         "kamino": {
-          "cumulative": 3303096445.0,
-          "inflation": 86923591.0
+          "cumulative": 3408859149.0,
+          "inflation": 89706820.0
         },
         "loopscale": {
-          "cumulative": 254745409.0,
-          "inflation": 7495186.0
+          "cumulative": 254646801.0,
+          "inflation": 7491371.0
         },
         "raydium": {
-          "cumulative": 1270303140.0,
-          "inflation": 33433917.0
+          "cumulative": 1273922210.0,
+          "inflation": 33529138.0
         },
         "solstice": {
-          "cumulative": 1009078.0,
-          "inflation": 28386.0
+          "cumulative": 2356068.0,
+          "inflation": 55374.0
         },
         "whirlpool": {
-          "cumulative": 2684205662.0,
-          "inflation": 70708501.0
+          "cumulative": 2685416205.0,
+          "inflation": 70740185.0
         },
         "yield_vault": {
-          "cumulative": 4125548.0,
-          "inflation": 111005.0
+          "cumulative": 4191098.0,
+          "inflation": 111714.0
         }
       }
     },
     {
       "date": "2026-05-21",
-      "cumulative": 29238829775.0,
-      "inflation": 844825358.0,
+      "cumulative": 29428119009.0,
+      "inflation": 849813765.0,
       "by_partner": {
         "exponent": {
-          "cumulative": 21522636276.0,
-          "inflation": 646117139.0
+          "cumulative": 21597098849.0,
+          "inflation": 648185137.0
         },
         "kamino": {
-          "cumulative": 3390020036.0,
-          "inflation": 86923591.0
+          "cumulative": 3498565969.0,
+          "inflation": 89706820.0
         },
         "loopscale": {
-          "cumulative": 262240595.0,
-          "inflation": 7495186.0
+          "cumulative": 262138172.0,
+          "inflation": 7491371.0
         },
         "raydium": {
-          "cumulative": 1303737057.0,
-          "inflation": 33433917.0
+          "cumulative": 1307451348.0,
+          "inflation": 33529138.0
         },
         "solstice": {
-          "cumulative": 1045194.0,
-          "inflation": 36116.0
+          "cumulative": 2405563.0,
+          "inflation": 49495.0
         },
         "whirlpool": {
-          "cumulative": 2754914163.0,
-          "inflation": 70708501.0
+          "cumulative": 2756156390.0,
+          "inflation": 70740185.0
         },
         "yield_vault": {
-          "cumulative": 4236455.0,
-          "inflation": 110908.0
+          "cumulative": 4302718.0,
+          "inflation": 111620.0
         }
       }
     },
     {
       "date": "2026-05-22",
-      "cumulative": 30084677406.0,
-      "inflation": 845847630.0,
+      "cumulative": 30279053675.0,
+      "inflation": 850934666.0,
       "by_partner": {
         "exponent": {
-          "cumulative": 22169772312.0,
-          "inflation": 647136036.0
+          "cumulative": 22246408014.0,
+          "inflation": 649309165.0
         },
         "kamino": {
-          "cumulative": 3476943626.0,
-          "inflation": 86923591.0
+          "cumulative": 3588272789.0,
+          "inflation": 89706820.0
         },
         "loopscale": {
-          "cumulative": 269735781.0,
-          "inflation": 7495186.0
+          "cumulative": 269629543.0,
+          "inflation": 7491371.0
         },
         "raydium": {
-          "cumulative": 1337170974.0,
-          "inflation": 33433917.0
+          "cumulative": 1340980486.0,
+          "inflation": 33529138.0
         },
         "solstice": {
-          "cumulative": 1084748.0,
-          "inflation": 39555.0
+          "cumulative": 2451996.0,
+          "inflation": 46433.0
         },
         "whirlpool": {
-          "cumulative": 2825622664.0,
-          "inflation": 70708501.0
+          "cumulative": 2826896576.0,
+          "inflation": 70740185.0
         },
         "yield_vault": {
-          "cumulative": 4347300.0,
-          "inflation": 110845.0
+          "cumulative": 4414273.0,
+          "inflation": 111555.0
         }
       }
     },
     {
       "date": "2026-05-23",
-      "cumulative": 30935076701.0,
-      "inflation": 850399295.0,
+      "cumulative": 31134640276.0,
+      "inflation": 855586601.0,
       "by_partner": {
         "exponent": {
-          "cumulative": 22821459940.0,
-          "inflation": 651687629.0
+          "cumulative": 22900369432.0,
+          "inflation": 653961419.0
         },
         "kamino": {
-          "cumulative": 3563867217.0,
-          "inflation": 86923591.0
+          "cumulative": 3677979608.0,
+          "inflation": 89706820.0
         },
         "loopscale": {
-          "cumulative": 277230967.0,
-          "inflation": 7495186.0
+          "cumulative": 277120914.0,
+          "inflation": 7491371.0
         },
         "raydium": {
-          "cumulative": 1370604891.0,
-          "inflation": 33433917.0
+          "cumulative": 1374509623.0,
+          "inflation": 33529138.0
         },
         "solstice": {
-          "cumulative": 1124375.0,
-          "inflation": 39627.0
+          "cumulative": 2498047.0,
+          "inflation": 46051.0
         },
         "whirlpool": {
-          "cumulative": 2896331165.0,
-          "inflation": 70708501.0
+          "cumulative": 2897636761.0,
+          "inflation": 70740185.0
         },
         "yield_vault": {
-          "cumulative": 4458145.0,
-          "inflation": 110845.0
+          "cumulative": 4525890.0,
+          "inflation": 111617.0
         }
       }
     },
     {
       "date": "2026-05-24",
-      "cumulative": 31790768490.0,
-      "inflation": 855691789.0,
+      "cumulative": 31995586491.0,
+      "inflation": 860946215.0,
       "by_partner": {
         "exponent": {
-          "cumulative": 23478440020.0,
-          "inflation": 656980080.0
+          "cumulative": 23559657458.0,
+          "inflation": 659288026.0
         },
         "kamino": {
-          "cumulative": 3650790808.0,
-          "inflation": 86923591.0
+          "cumulative": 3767686428.0,
+          "inflation": 89706820.0
         },
         "loopscale": {
-          "cumulative": 284726153.0,
-          "inflation": 7495186.0
+          "cumulative": 284612285.0,
+          "inflation": 7491371.0
         },
         "raydium": {
-          "cumulative": 1404038809.0,
-          "inflation": 33433917.0
+          "cumulative": 1408038761.0,
+          "inflation": 33529138.0
         },
         "solstice": {
-          "cumulative": 1164002.0,
-          "inflation": 39627.0
+          "cumulative": 2576912.0,
+          "inflation": 78865.0
         },
         "whirlpool": {
-          "cumulative": 2967039666.0,
-          "inflation": 70708501.0
+          "cumulative": 2968376946.0,
+          "inflation": 70740185.0
         },
         "yield_vault": {
-          "cumulative": 4569032.0,
-          "inflation": 110887.0
+          "cumulative": 4637700.0,
+          "inflation": 111810.0
         }
       }
     },
     {
       "date": "2026-05-25",
-      "cumulative": 32649519723.0,
-      "inflation": 858751233.0,
+      "cumulative": 32860318146.0,
+      "inflation": 864731655.0,
       "by_partner": {
         "exponent": {
-          "cumulative": 24138479321.0,
-          "inflation": 660039300.0
+          "cumulative": 24222566051.0,
+          "inflation": 662908593.0
         },
         "kamino": {
-          "cumulative": 3737714398.0,
-          "inflation": 86923591.0
+          "cumulative": 3857393248.0,
+          "inflation": 89706820.0
         },
         "loopscale": {
-          "cumulative": 292221339.0,
-          "inflation": 7495186.0
+          "cumulative": 292103656.0,
+          "inflation": 7491371.0
         },
         "raydium": {
-          "cumulative": 1437472726.0,
-          "inflation": 33433917.0
+          "cumulative": 1441567899.0,
+          "inflation": 33529138.0
         },
         "solstice": {
-          "cumulative": 1203656.0,
-          "inflation": 39655.0
+          "cumulative": 2818493.0,
+          "inflation": 241581.0
         },
         "whirlpool": {
-          "cumulative": 3037748167.0,
-          "inflation": 70708501.0
+          "cumulative": 3039117132.0,
+          "inflation": 70740185.0
         },
         "yield_vault": {
-          "cumulative": 4680116.0,
-          "inflation": 111083.0
+          "cumulative": 4751668.0,
+          "inflation": 113968.0
         }
       }
     },
     {
       "date": "2026-05-26",
-      "cumulative": 33510878847.0,
-      "inflation": 861359124.0,
+      "cumulative": 33729063817.0,
+      "inflation": 868745671.0,
       "by_partner": {
         "exponent": {
-          "cumulative": 24801126181.0,
-          "inflation": 662646861.0
+          "cumulative": 24889051522.0,
+          "inflation": 666485470.0
         },
         "kamino": {
-          "cumulative": 3824637989.0,
-          "inflation": 86923591.0
+          "cumulative": 3947100067.0,
+          "inflation": 89706820.0
         },
         "loopscale": {
-          "cumulative": 299716525.0,
-          "inflation": 7495186.0
+          "cumulative": 299595027.0,
+          "inflation": 7491371.0
         },
         "raydium": {
-          "cumulative": 1470906643.0,
-          "inflation": 33433917.0
+          "cumulative": 1475097036.0,
+          "inflation": 33529138.0
         },
         "solstice": {
-          "cumulative": 1243414.0,
-          "inflation": 39758.0
+          "cumulative": 3495096.0,
+          "inflation": 676603.0
         },
         "whirlpool": {
-          "cumulative": 3108456668.0,
-          "inflation": 70708501.0
+          "cumulative": 3109857317.0,
+          "inflation": 70740185.0
         },
         "yield_vault": {
-          "cumulative": 4791426.0,
-          "inflation": 111310.0
+          "cumulative": 4867752.0,
+          "inflation": 116084.0
+        }
+      }
+    },
+    {
+      "date": "2026-05-27",
+      "cumulative": 34606550919.0,
+      "inflation": 877487102.0,
+      "by_partner": {
+        "exponent": {
+          "cumulative": 25564036530.0,
+          "inflation": 674985009.0
+        },
+        "kamino": {
+          "cumulative": 4036806887.0,
+          "inflation": 89706820.0
+        },
+        "loopscale": {
+          "cumulative": 307086398.0,
+          "inflation": 7491371.0
+        },
+        "raydium": {
+          "cumulative": 1508626174.0,
+          "inflation": 33529138.0
+        },
+        "solstice": {
+          "cumulative": 4402469.0,
+          "inflation": 907373.0
+        },
+        "whirlpool": {
+          "cumulative": 3180597502.0,
+          "inflation": 70740185.0
+        },
+        "yield_vault": {
+          "cumulative": 4994958.0,
+          "inflation": 127206.0
         }
       }
     }
   ],
   "sources": {
-    "reconstructed_through_last_midnight": 33510878847.0,
-    "wallet_quests_grand_total_now": 56093477132.0,
-    "wallet_quests_grand_total_non_pda": 33618655777.0,
+    "reconstructed_through_last_midnight": 34606550919.0,
+    "wallet_quests_grand_total_now": 58002181830.0,
+    "wallet_quests_grand_total_non_pda": 34751769589.0,
     "pda_excluded_count": 441,
-    "pda_excluded_flares": 22474821355.0,
+    "pda_excluded_flares": 23250412241.0,
     "note": "Bars represent flares as of each day's 00:00 UTC. Today is in-progress and is omitted until tomorrow's 00:00 UTC. Protocol-PDA wallets are excluded to match Solstice's leaderboard."
   }
 }
