@@ -452,16 +452,40 @@ def main():
     # Official Solstice daily series — pull all flares_snapshots and compute
     # day-over-day deltas. This is the OFFICIAL "Daily emission" view that
     # users can reference against (and the calculator uses for projection).
+    # If a daily snapshot was missed (gap > 1 day), interpolate linearly
+    # across the missing days so the chart doesn't have an artificially tall
+    # bar on the first day after the gap.
+    from datetime import timedelta
     cur_sol = con.execute(
         "SELECT date_utc, grand_total FROM flares_snapshots "
         "WHERE source='solstice_dashboard' ORDER BY ts ASC")
     sol_rows = cur_sol.fetchall()
     sol_series = []
+    prev_date = None
     prev_total = None
     for d, t in sol_rows:
-        delta = (t - prev_total) if prev_total else 0
+        cur_d = datetime.strptime(d, '%Y-%m-%d').date()
+        if prev_date is not None:
+            gap_days = (cur_d - prev_date).days
+            if gap_days > 1:
+                # Snapshot(s) missed — split the delta linearly across the gap
+                per_day = (t - prev_total) / gap_days
+                for i in range(1, gap_days):
+                    fill_date = prev_date + timedelta(days=i)
+                    sol_series.append({
+                        'date': fill_date.strftime('%Y-%m-%d'),
+                        'cumulative': round(prev_total + per_day * i, 0),
+                        'inflation': round(per_day, 0),
+                        'interpolated': True,
+                    })
+                delta = per_day
+            else:
+                delta = t - prev_total
+        else:
+            delta = 0
         sol_series.append({'date': d, 'cumulative': round(t, 0), 'inflation': round(delta, 0)})
         prev_total = t
+        prev_date = cur_d
 
     payload = {
         'generated_at_utc': datetime.now(timezone.utc).isoformat(),
