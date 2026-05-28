@@ -449,6 +449,20 @@ def main():
     ).fetchone()[0] or 0
     grand_non_pda = grand_db - pda_excl
 
+    # Official Solstice daily series — pull all flares_snapshots and compute
+    # day-over-day deltas. This is the OFFICIAL "Daily emission" view that
+    # users can reference against (and the calculator uses for projection).
+    cur_sol = con.execute(
+        "SELECT date_utc, grand_total FROM flares_snapshots "
+        "WHERE source='solstice_dashboard' ORDER BY ts ASC")
+    sol_rows = cur_sol.fetchall()
+    sol_series = []
+    prev_total = None
+    for d, t in sol_rows:
+        delta = (t - prev_total) if prev_total else 0
+        sol_series.append({'date': d, 'cumulative': round(t, 0), 'inflation': round(delta, 0)})
+        prev_total = t
+
     payload = {
         'generated_at_utc': datetime.now(timezone.utc).isoformat(),
         's2_start_ts': S2_START_TS,
@@ -456,6 +470,7 @@ def main():
         'partners': partners,
         'partner_totals': partner_grand_totals,
         'days': out_days,
+        'solstice_series': sol_series,
         'sources': {
             'reconstructed_through_last_midnight': round(final_cum, 0),
             'wallet_quests_grand_total_now': round(grand_db, 0),

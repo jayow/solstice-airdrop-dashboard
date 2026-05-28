@@ -167,6 +167,30 @@ footer { text-align: center; color: var(--ink-500); font-size: 11px; margin-top:
         </div>
       </div>
 
+      <div class="input-row" style="display:grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px;">
+        <div>
+          <label class="field-label" for="calc-your-mult">Your loyalty multiplier</label>
+          <select id="calc-your-mult" onchange="onAnyInput()" style="width:100%; padding:8px 12px; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.1); border-radius:8px; color:var(--ink-100); font-size:14px;">
+            <option value="1.4">1.4x — Full Loyalty (TVL ≥ 100% of TWA)</option>
+            <option value="1.3">1.3x — Reduced (50-99% of TWA)</option>
+            <option value="1.2">1.2x — Minimum (20-49% of TWA)</option>
+            <option value="1.0">1.0x — No multiplier (below 20%)</option>
+          </select>
+          <div class="source" style="margin-top:6px;">Applied to your S2 flares at end of season.</div>
+        </div>
+        <div>
+          <label class="field-label" for="calc-avg-mult">Assumed average loyalty across all participants</label>
+          <select id="calc-avg-mult" onchange="onAnyInput()" style="width:100%; padding:8px 12px; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.1); border-radius:8px; color:var(--ink-100); font-size:14px;">
+            <option value="1.4">1.4x — Everyone Full Loyalty (neutral, no change to share)</option>
+            <option value="1.3" selected>1.3x — Mostly retaining</option>
+            <option value="1.2">1.2x — Mixed</option>
+            <option value="1.1">1.1x — Many dropped</option>
+            <option value="1.0">1.0x — Few retained TVL</option>
+          </select>
+          <div class="source" style="margin-top:6px;">If others have lower mult than you, your share grows by (your_mult / avg).</div>
+        </div>
+      </div>
+
       <div class="result-grid" style="margin-top: 24px; grid-template-columns: repeat(4, 1fr);">
         <div><div class="lbl">Days ahead</div><div class="v tabular" id="calc-days">—</div></div>
         <div><div class="lbl">You at end</div><div class="v tabular" id="calc-you">—</div></div>
@@ -183,9 +207,14 @@ footer { text-align: center; color: var(--ink-500); font-size: 11px; margin-top:
       </table>
 
       <div class="note">
-        System total at end date is pre-projected from current chain state + the last 3 days' average daily emission, but you can override it to model your own scenario (e.g. more wallets joining → higher dilution).
+        System total at end date is pre-projected from <strong>Solstice's officially published daily delta</strong> (7-day average) — same source the dashboard's "Solstice (official)" chart uses.
         Changing the end date refreshes the projection.
         3% of 1B SLX (30M) is allocated to S2 flares.
+        <br><br>
+        <strong>S2 loyalty multiplier (1.4x):</strong> Solstice applies a final multiplier once at end of S2 based on your retained TVL vs your S1 TWA baseline.
+        Full Loyalty (TVL ≥ 100% of TWA) = 1.4x · Reduced (50-99%) = 1.3x · Minimum (20-49%) = 1.2x · Below 20% = 1.0x.
+        <em>If everyone receives the same multiplier, it cancels in the share ratio (your_flares ÷ total_flares), so SLX projection is unchanged.</em>
+        If you maintain 1.4x but average loyalty across all participants is lower (say 1.2x), your relative share — and SLX — would be roughly 1.4 ÷ 1.2 ≈ 17% higher than shown.
       </div>
     </div>
   </section>
@@ -320,7 +349,24 @@ function computeSystemDailyRates() {
 }
 
 function computeSystemTotalAtEnd(daysAhead) {
-  // System current = last cumulative point in daily_totals (real users only)
+  // Prefer Solstice's OFFICIAL published total + their 7-day avg daily delta.
+  // Falls back to our framework's per-quest emission rates if Solstice series
+  // isn't available.
+  if (DAILY && DAILY.solstice_series && DAILY.solstice_series.length >= 2) {
+    const ss = DAILY.solstice_series;
+    const sysNow = ss[ss.length - 1].cumulative || 0;
+    // Average of last 7 days (ex. any anomalous spike — clamp deltas to <2.5B/d
+    // to ignore the snapshot-gap artifact like 2026-05-27)
+    const recent = ss.slice(-8);
+    const deltas = [];
+    for (let i = 1; i < recent.length; i++) {
+      const d = recent[i].inflation;
+      if (d > 0 && d < 2.5e9) deltas.push(d);
+    }
+    const avgDaily = deltas.length ? deltas.reduce((a, b) => a + b, 0) / deltas.length : 1.18e9;
+    return sysNow + avgDaily * daysAhead;
+  }
+  // Fallback: framework-based projection
   let sysNow = 0;
   if (DAILY && DAILY.days && DAILY.days.length) {
     sysNow = DAILY.days[DAILY.days.length - 1].cumulative || 0;
@@ -342,12 +388,26 @@ function refreshSysProjection() {
   const days = Math.max(0, Math.round((end - today) / 86400000));
   const projected = computeSystemTotalAtEnd(days);
   document.getElementById('calc-sys-total').value = formatAmount(projected);
-  const { sysYtDaily, sysNonytDaily } = computeSystemDailyRates();
-  const todayTs = Math.floor(today.getTime() / 1000);
-  const daysToMaturity = Math.max(0, (YT_MATURITY_TS - todayTs) / 86400);
-  const note = sysYtDaily > 0
-    ? `Auto-projected: ${formatAmount(sysYtDaily)} YT/d (cap ${daysToMaturity.toFixed(1)}d) + ${formatAmount(sysNonytDaily)} non-YT/d × ${days}d`
-    : 'Auto-projected from current state + last-3d avg inflation';
+  let note;
+  if (DAILY && DAILY.solstice_series && DAILY.solstice_series.length >= 2) {
+    const ss = DAILY.solstice_series;
+    const sysNow = ss[ss.length - 1].cumulative || 0;
+    const recent = ss.slice(-8);
+    const deltas = [];
+    for (let i = 1; i < recent.length; i++) {
+      const d = recent[i].inflation;
+      if (d > 0 && d < 2.5e9) deltas.push(d);
+    }
+    const avgDaily = deltas.length ? deltas.reduce((a, b) => a + b, 0) / deltas.length : 1.18e9;
+    note = `Solstice official: ${formatAmount(sysNow)} now + ${formatAmount(avgDaily)}/d × ${days}d (avg of last ${deltas.length}d)`;
+  } else {
+    const { sysYtDaily, sysNonytDaily } = computeSystemDailyRates();
+    const todayTs = Math.floor(today.getTime() / 1000);
+    const daysToMaturity = Math.max(0, (YT_MATURITY_TS - todayTs) / 86400);
+    note = sysYtDaily > 0
+      ? `Auto-projected (framework): ${formatAmount(sysYtDaily)} YT/d (cap ${daysToMaturity.toFixed(1)}d) + ${formatAmount(sysNonytDaily)} non-YT/d × ${days}d`
+      : 'Auto-projected from current state + last-3d avg inflation';
+  }
   document.getElementById('calc-sys-hint').textContent = note;
 }
 
@@ -358,11 +418,18 @@ function renderResults() {
   const today = new Date(); today.setUTCHours(0, 0, 0, 0);
   const end = new Date(endIso + 'T00:00:00Z');
   const days = Math.max(0, Math.round((end - today) / 86400000));
-  const share = sysTotal > 0 ? userTotal / sysTotal : 0;
+  // S2 loyalty multiplier: scales BOTH numerator and denominator by their
+  // respective multipliers. Net effect on share = (your_mult / avg_mult).
+  const yourMult = parseFloat(document.getElementById('calc-your-mult').value) || 1.0;
+  const avgMult  = parseFloat(document.getElementById('calc-avg-mult').value) || 1.0;
+  const multRatio = avgMult > 0 ? (yourMult / avgMult) : 1.0;
+  const rawShare = sysTotal > 0 ? userTotal / sysTotal : 0;
+  const share = rawShare * multRatio;
   const slx = share * SLX_TOTAL_SUPPLY * S2_AIRDROP_PCT;
 
   document.getElementById('calc-days').textContent = days.toLocaleString('en-US');
-  document.getElementById('calc-you').textContent = formatAmount(userTotal) + ' flares';
+  const yourBoostNote = yourMult !== avgMult ? ` × ${yourMult}/${avgMult}` : '';
+  document.getElementById('calc-you').textContent = formatAmount(userTotal) + ' flares' + yourBoostNote;
   document.getElementById('calc-share').textContent = (share * 100).toFixed(4) + '%';
   document.getElementById('calc-slx').textContent = formatAmount(slx) + ' SLX';
 

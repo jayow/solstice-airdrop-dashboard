@@ -1208,9 +1208,16 @@ async function load() {
   applyFilters();
 }
 
+const CHART_MODE_LABELS = {
+  cumulative: 'Cumulative ▼',
+  inflation:  'Daily emission ▼',
+  solstice:   'Solstice (official) ▼',
+};
+const CHART_MODE_CYCLE = ['cumulative', 'inflation', 'solstice'];
 function toggleChartMode() {
-  CHART_MODE = CHART_MODE === 'cumulative' ? 'inflation' : 'cumulative';
-  document.getElementById('chart-mode').textContent = CHART_MODE === 'cumulative' ? 'Cumulative ▼' : 'Daily emission ▼';
+  const idx = CHART_MODE_CYCLE.indexOf(CHART_MODE);
+  CHART_MODE = CHART_MODE_CYCLE[(idx + 1) % CHART_MODE_CYCLE.length];
+  document.getElementById('chart-mode').textContent = CHART_MODE_LABELS[CHART_MODE];
   renderChart();
 }
 
@@ -1219,6 +1226,13 @@ function renderChart() {
     const sec = document.getElementById('chart-section');
     if (sec) sec.style.display = 'none';
     return;
+  }
+  // Solstice (official) mode draws a single-series bar chart from the
+  // flares_snapshots-derived solstice_series; partner stacking does not apply.
+  if (CHART_MODE === 'solstice') {
+    const ss = (DAILY.solstice_series || []).filter(d => d.cumulative > 0);
+    if (!ss.length) { CHART_MODE = 'cumulative'; document.getElementById('chart-mode').textContent = CHART_MODE_LABELS[CHART_MODE]; return renderChart(); }
+    renderSolsticeChart(ss); return;
   }
   const days = DAILY.days;
   const partners = DAILY.partners || [];
@@ -1288,6 +1302,40 @@ function renderChart() {
     .filter(p => (DAILY.partner_totals?.[p] || 0) > 0)
     .map(p => `<span style="display:inline-flex; align-items:center; gap:6px;"><span style="width:8px; height:8px; border-radius:2px; background:${PARTNER_COLORS[p] || '#888'};"></span>${PARTNER_LABELS[p] || p}</span>`)
     .join('');
+}
+
+function renderSolsticeChart(ss) {
+  // Single-series view of Solstice's officially published total flares.
+  // Shows daily delta (inflation) — what the user can reference against.
+  const chart = document.getElementById('chart');
+  const xax = document.getElementById('chart-x-axis');
+  const yax = document.getElementById('chart-y-axis');
+  const fmtAxis = v => v >= 1e9 ? (v/1e9).toFixed(1)+'B' : v >= 1e6 ? (v/1e6).toFixed(0)+'M' : v >= 1e3 ? (v/1e3).toFixed(0)+'K' : Math.round(v).toLocaleString();
+  const values = ss.map(d => d.inflation);
+  const max = Math.max(...values, 1);
+  if (yax) {
+    let yhtml = '';
+    for (let k = 0; k <= 4; k++) {
+      const lvl = max * (1 - k/4);
+      yhtml += `<div style="position:absolute; left:0; right:0; top:${k*60}px; border-top:1px dashed rgba(255,255,255,.06);"><span style="position:absolute; left:0; top:-7px; font-size:10px; color:var(--ink-500); font-variant-numeric:tabular-nums;">${fmtAxis(lvl)}</span></div>`;
+    }
+    yax.innerHTML = yhtml;
+  }
+  chart.innerHTML = ss.map(d => {
+    const v = d.inflation;
+    const h = Math.max(0.5, Math.round(v / max * 240));
+    const tip = `${d.date}\nSolstice cumulative: ${fmtAxis(d.cumulative)}\nDaily delta: ${fmtAxis(v)}`;
+    return `<div class="has-hover-tip" data-tip="${tip.replace(/"/g,'&quot;')}" style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; min-width:0; gap:3px;">
+      <div style="font-size:9px; color:var(--ink-300); font-variant-numeric:tabular-nums; line-height:1; white-space:nowrap;">${fmtAxis(v)}</div>
+      <div style="width:100%; max-width:18px; height:${h}px; background:#10b981; border-radius:2px 2px 0 0;"></div>
+    </div>`;
+  }).join('');
+  xax.innerHTML = ss.map((d, i) => {
+    const show = (i % 3 === 0) || i === ss.length - 1;
+    return `<div style="flex:1; text-align:center; min-width:0; overflow:hidden;">${show ? d.date.slice(5) : ''}</div>`;
+  }).join('');
+  const legendEl = document.getElementById('chart-partner-legend');
+  if (legendEl) legendEl.innerHTML = '<span style="display:inline-flex; align-items:center; gap:6px;"><span style="width:8px; height:8px; border-radius:2px; background:#10b981;"></span>Solstice published total — daily delta</span>';
 }
 
 function togglePDAs() {
