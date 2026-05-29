@@ -297,6 +297,17 @@ def main():
     # Fold artifacts into the same suppression set used downstream.
     nonexistent_set |= walker_artifact_set
 
+    # Exclusion reasons (descriptive category + human reason per wallet) from
+    # the wallet_exclusion_reasons table. Surfaced in per-wallet payload.meta
+    # so the drawer can show why a wallet is filtered from the retail view.
+    exclusion_reasons = {}
+    try:
+        for r in con.execute('SELECT wallet, category, reason FROM wallet_exclusion_reasons'):
+            exclusion_reasons[r['wallet']] = (r['category'], r['reason'])
+        print(f'Exclusion reasons: {len(exclusion_reasons):,} wallets')
+    except sqlite3.OperationalError:
+        print('wallet_exclusion_reasons table missing — skipping exclusion context')
+
     # CEX hot wallets: confirmed exchange custody fronts. Excluded from system
     # aggregates and tagged as PDAs in data.json (is_protocol_pda=true,
     # pda_label='(CEX hot wallet)').
@@ -418,6 +429,7 @@ def main():
             pda_source = None
             pda_label  = None
             pda_proto  = None
+        excl = exclusion_reasons.get(w)
         payload = {
             'wallet': w,
             'meta': {
@@ -431,6 +443,8 @@ def main():
                 'pda_source': pda_source,
                 'pda_label':  pda_label,
                 'pda_protocol_hint': pda_proto,
+                'exclusion_category': excl[0] if excl else None,
+                'exclusion_reason':   excl[1] if excl else None,
             },
             'total_flares': total,
             'by_quest': quest_rows,
@@ -487,6 +501,13 @@ def main():
                 rec['is_protocol_pda'] = True
                 rec['pda_label'] = '(CEX hot wallet)'
                 n_rec_cex_flagged += 1
+            # Ensure exclusion fields are populated even for records that
+            # build_data.py emitted before the reasons table existed.
+            if not rec.get('exclusion_category'):
+                excl_r = exclusion_reasons.get(w_)
+                if excl_r:
+                    rec['exclusion_category'] = excl_r[0]
+                    rec['exclusion_reason']   = excl_r[1]
             kept_recs.append(rec)
         data['records'] = kept_recs
         with open(data_json_path, 'w') as f: json.dump(data, f, separators=(',', ':'))

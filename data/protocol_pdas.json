@@ -6,11 +6,6 @@
       "protocol": "loopscale",
       "source": "manual"
     },
-    "CWGGhiezrFdQg7b8gBERUJz6w9MceyShnV2ZY4YnnWJq": {
-      "label": "Institutional vault (Squads multisig + Clique L2T compliance, $7.68M USX/eUSX-Jun26 LP)",
-      "protocol": "exponent",
-      "source": "manual"
-    },
     "12zdcLsRyQxvPwrxzKaFxjQhbRi7x7x89heaUTBR8rXv": {
       "label": "(auto) on-chain owner: eUSXyKoZ6aGejYVbnp3wtWQ1E8zuokLAJPecPxxtgG3",
       "protocol": "solstice",
@@ -10396,6 +10391,13 @@
       "protocol": "native",
       "source": "auto_onchain_audit",
       "kind": "program"
+    },
+    "CWGGhiezrFdQg7b8gBERUJz6w9MceyShnV2ZY4YnnWJq": {
+      "label": "Institutional vault (Squads multisig + Clique L2T compliance, $7.68M USX/eUSX-Jun26 LP)",
+      "protocol": "institutional",
+      "source": "manual",
+      "kind": "institutional"
     }
-  }
+  },
+  "_audit_note": "\n2026-05-29: Removed 1 entries \u2014 on-chain audit confirmed they are EOA (owner=SystemProgram), not PDAs. Presumption-of-innocence rule applies."
 }

@@ -60,6 +60,15 @@ def main():
                           (addr, 'pda_protocol'))
                 wallets_meta.setdefault(addr, {})['classification'] = 'pda_protocol'
 
+    # Load exclusion reasons (descriptive category + human reason per wallet)
+    exclusion_reasons = {}
+    try:
+        for r in c.execute('SELECT wallet, category, reason FROM wallet_exclusion_reasons'):
+            exclusion_reasons[r['wallet']] = (r['category'], r['reason'])
+        print(f'  {len(exclusion_reasons):,} exclusion reasons loaded')
+    except Exception as e:
+        print(f'  WARN: wallet_exclusion_reasons load failed: {e}')
+
     # 4. Build records (uninit PDAs are excluded — see filter_pdas_db.py).
     # Protocol PDAs (auto- or manually-labelled) are kept but tagged so the
     # frontend can show a warning chip + banner.
@@ -84,6 +93,7 @@ def main():
 
         m = wallets_meta.get(wallet) or {}
         tvl_tier = legacy_tvl_tier.get(wallet, {})
+        excl = exclusion_reasons.get(wallet)
         records.append({
             'wallet': wallet,
             'total': total,
@@ -103,6 +113,8 @@ def main():
             'pda_label':  (manual_pda_labels.get(wallet, {}).get('label')
                            if wallet in manual_pda_labels
                            else ('Institutional wallet' if cls == 'institution' else None)),
+            'exclusion_category': excl[0] if excl else None,
+            'exclusion_reason':   excl[1] if excl else None,
         })
 
     # 5. Sort + ranks
