@@ -159,7 +159,11 @@ footer { text-align: center; color: var(--ink-500); font-size: 11px; margin-top:
     <div class="section-head">
       <h2 class="display">Flares by partner</h2>
       <span class="section-sub">
-        <button id="chart-mode" onclick="toggleChartMode()" style="background:transparent; border:1px solid rgba(255,255,255,.1); color:var(--ink-300); padding:4px 10px; border-radius:6px; cursor:pointer; font-size:11px;">Cumulative ▼</button>
+        <select id="chart-mode" onchange="onChartModeChange(this.value)" style="background:transparent; border:1px solid rgba(255,255,255,.1); color:var(--ink-300); padding:4px 24px 4px 10px; border-radius:6px; cursor:pointer; font-size:11px; appearance:none; -webkit-appearance:none; background-image: linear-gradient(45deg, transparent 50%, var(--ink-400) 50%), linear-gradient(135deg, var(--ink-400) 50%, transparent 50%); background-position: calc(100% - 12px) 50%, calc(100% - 7px) 50%; background-size: 5px 5px, 5px 5px; background-repeat: no-repeat;">
+          <option value="solstice">Solstice (official)</option>
+          <option value="cumulative">Cumulative</option>
+          <option value="inflation">Daily emission</option>
+        </select>
       </span>
     </div>
     <div class="surface" style="padding:24px;">
@@ -1227,7 +1231,11 @@ const fmtUsdShort = n => {
 };
 
 let DAILY = null;
-let CHART_MODE = 'cumulative';   // default; toggle flips to 'inflation' (daily emission)
+// Default to Solstice (official) — the headline series most users want to see.
+// Persisted per browser via localStorage.
+let CHART_MODE = (localStorage.getItem('chartMode') &&
+                  ['cumulative','inflation','solstice'].includes(localStorage.getItem('chartMode')))
+                ? localStorage.getItem('chartMode') : 'solstice';
 
 async function load() {
   const r = await fetch("data.json");
@@ -1259,16 +1267,10 @@ async function load() {
   applyFilters();
 }
 
-const CHART_MODE_LABELS = {
-  cumulative: 'Cumulative ▼',
-  inflation:  'Daily emission ▼',
-  solstice:   'Solstice (official) ▼',
-};
-const CHART_MODE_CYCLE = ['cumulative', 'inflation', 'solstice'];
-function toggleChartMode() {
-  const idx = CHART_MODE_CYCLE.indexOf(CHART_MODE);
-  CHART_MODE = CHART_MODE_CYCLE[(idx + 1) % CHART_MODE_CYCLE.length];
-  document.getElementById('chart-mode').textContent = CHART_MODE_LABELS[CHART_MODE];
+function onChartModeChange(v) {
+  if (!['cumulative','inflation','solstice'].includes(v)) return;
+  CHART_MODE = v;
+  localStorage.setItem('chartMode', v);
   renderChart();
 }
 
@@ -1280,9 +1282,13 @@ function renderChart() {
   }
   // Solstice (official) mode draws a single-series bar chart from the
   // flares_snapshots-derived solstice_series; partner stacking does not apply.
+  // Sync the dropdown selection — handles both the page-load init and any
+  // mode flip that came from elsewhere.
+  const sel = document.getElementById('chart-mode');
+  if (sel && sel.value !== CHART_MODE) sel.value = CHART_MODE;
   if (CHART_MODE === 'solstice') {
     const ss = (DAILY.solstice_series || []).filter(d => d.cumulative > 0);
-    if (!ss.length) { CHART_MODE = 'cumulative'; document.getElementById('chart-mode').textContent = CHART_MODE_LABELS[CHART_MODE]; return renderChart(); }
+    if (!ss.length) { CHART_MODE = 'cumulative'; if (sel) sel.value = CHART_MODE; return renderChart(); }
     renderSolsticeChart(ss); return;
   }
   const days = DAILY.days;
@@ -1524,20 +1530,36 @@ function renderPartnerStats() {
   if (!rows.length) {
     document.getElementById('partner-stats').innerHTML = ''; return;
   }
-  const size = 200, stroke = 28, radius = (size - stroke) / 2, circ = 2 * Math.PI * radius;
-  let offset = 0;
+  const size = 200, stroke = 28, radius = (size - stroke) / 2;
+  const cx = size / 2, cy = size / 2;
+  // Render arcs as explicit SVG paths instead of <circle> + stroke-dasharray.
+  // The dasharray trick rendered as a "bowtie" on some data shapes due to
+  // browser-specific dash-pattern wrapping; explicit arc commands always
+  // render cleanly. We rotate the start point to 12 o'clock (angle 0 = top).
+  const polar = (a) => [cx + radius * Math.sin(a), cy - radius * Math.cos(a)];
+  let acc = 0;   // cumulative angle (radians)
+  const TAU = 2 * Math.PI;
   const arcs = rows.map(r => {
     const frac = r.tot / grand;
-    const dash = circ * frac;
+    const a0 = acc;
+    const a1 = acc + frac * TAU;
+    acc = a1;
     const tip = `${PARTNER_LABELS[r.p] || r.p}\n${fmt(r.tot)} flares\n${(frac*100).toFixed(1)}% · +${fmt(r.rate)}/day`;
-    const seg = `<circle r="${radius}" cx="${size/2}" cy="${size/2}"
-                         fill="none" stroke="${PARTNER_COLORS[r.p] || '#888'}" stroke-width="${stroke}"
-                         stroke-dasharray="${dash} ${circ - dash}" stroke-dashoffset="${-offset}"
-                         transform="rotate(-90 ${size/2} ${size/2})"
-                         class="has-hover-tip"
-                         data-tip="${tip.replace(/"/g,'&quot;')}"></circle>`;
-    offset += dash;
-    return seg;
+    // Single-arc edge case: a full-circle path with M/A/A back to start.
+    if (frac >= 0.9999) {
+      // Draw two half-arcs since SVG `arc` can't represent a 360° single arc.
+      const [x0, y0] = polar(0);
+      const [x1, y1] = polar(Math.PI);
+      return `<path d="M ${x0} ${y0} A ${radius} ${radius} 0 0 1 ${x1} ${y1} A ${radius} ${radius} 0 0 1 ${x0} ${y0}"
+                    fill="none" stroke="${PARTNER_COLORS[r.p] || '#888'}" stroke-width="${stroke}"
+                    class="has-hover-tip" data-tip="${tip.replace(/"/g,'&quot;')}"></path>`;
+    }
+    const [x0, y0] = polar(a0);
+    const [x1, y1] = polar(a1);
+    const largeArc = (a1 - a0) > Math.PI ? 1 : 0;
+    return `<path d="M ${x0} ${y0} A ${radius} ${radius} 0 ${largeArc} 1 ${x1} ${y1}"
+                  fill="none" stroke="${PARTNER_COLORS[r.p] || '#888'}" stroke-width="${stroke}"
+                  class="has-hover-tip" data-tip="${tip.replace(/"/g,'&quot;')}"></path>`;
   }).join('');
   // Compact legend — color chip + name only, no numbers (tooltip on donut handles those).
   const legend = rows.map(r => `
