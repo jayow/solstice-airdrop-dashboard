@@ -1,17 +1,22 @@
-# TWA framework — S1 vs S2 vs current snapshot TVL
+# TVL framework — S1 TWA vs S2 current snapshot
 
-**Critical**: these are three SEPARATE metrics with different formulas, windows, and walker coverage.
-Do not mix the code between them. Each metric has its own module.
+**Critical**: S1 and S2 use DIFFERENT metrics. Do not mix the code between them.
+
+- **S1** = TWA (time-weighted average) over a closed window. Historical, frozen.
+- **S2** = CURRENT TVL snapshot from S2 start onward. **No S2 TWA exists** — Solstice does not publish one and we do not compute one.
 
 ---
 
-## Three metrics
+## Two metrics — and only two
 
 | Metric | What it answers | File | Status |
 |---|---|---|---|
 | **S1 TWA TVL** | "What was your time-weighted average TVL during Season 1?" | `tools/transform_twa.py` | ✓ ±0.2% accuracy (3 cal wallets) |
-| **S2 TVL (snapshot)** | "What's your TVL right now?" | `server/build_wallet_details.py:compute_tvl_by_quest` | ✓ Live in dashboard |
-| **S2 TWA TVL** | "What's your time-weighted average TVL during Season 2?" | **NOT BUILT YET** | Pending |
+| **S2 current TVL** | "What's your TVL right now?" (live snapshot from S2 start onward) | `server/build_wallet_details.py:compute_tvl_by_quest` | ✓ Live in dashboard |
+
+There is **NO** S2 TWA. Do not create `transform_twa_s2.py`. S2 scoring is driven by
+cumulative flares earned across the season (a separate pipeline). TVL on the S2
+dashboard is always a **current snapshot**, never time-weighted.
 
 ---
 
@@ -75,10 +80,32 @@ T_w(d) = sum of all 6 columns at cutoff c(d) = (d+1) 00:00 UTC.
 
 ---
 
-## S2 TVL (snapshot) — current dashboard
+## S2 current TVL — dashboard snapshot
 
 ### What it is
-**Current** USD-equivalent of each wallet's positions across all flare-earning quests. NOT a TWA.
+**Current** USD-equivalent of each wallet's positions across all flare-earning
+quests, computed live from the most recent walker outputs.
+
+There is no time-weighted version. The TVL column on the S2 dashboard is always a
+live snapshot.
+
+### ⚠️ Key asymmetry vs Solstice's "Current TVL"
+
+| | Solstice's "Current TVL" | Our S2 TVL |
+|---|---|---|
+| Pre-S2 deposit still held today | **counted in full** (whole notional position) | **counted only for the S2 portion** |
+| Position opened during S2 | counted in full | counted in full |
+| Window basis | walks current on-chain balance, no time gating | walks events from `S2_START_TS` onward; pre-S2 deposits don't appear |
+
+Solstice's "Current TVL" is purely "what's your wallet worth right now in flare-eligible positions" — they don't care when you deposited.
+
+Our number deliberately attributes only S2-era exposure because every other S2
+metric in our pipeline (flares, emissions, multiplier inversion) is bounded to
+the S2 window. Reading them together stays internally consistent.
+
+**Consequence**: for wallets with large pre-S2 positions still parked, our S2 TVL
+will read LOWER than Solstice's Current TVL. That gap is expected and is NOT a
+walker bug — do not "fix" it by walking pre-S2 history.
 
 ### File
 `server/build_wallet_details.py:compute_tvl_by_quest()`
@@ -90,14 +117,16 @@ tvl_by_quest[q] = daily_emission_rate_of_q / multiplier_of_q
 Inverts the flare formula `flares_per_day = TVL × multiplier`.
 
 ### Special case: Exponent YT
-For YT quests, we don't use the inversion (it would produce YT-count instead of USD). Instead:
+For YT quests, inversion would yield YT-count, not USD. Instead:
 ```
 tvl_by_quest[YT_quest] = cost_basis.usd_basis
 ```
 Per Solstice docs: *"Exponent YT TVL is tracked at the amount you originally deposited."*
 
-### Sources included
-All 29 official S2 quest codes via `walker_outputs` table. **Includes Loopscale + KVault** (unlike S1).
+### Sources included (S2 spec — extends S1's 6 columns with Loopscale + KVault)
+All 29 official S2 quest codes via `walker_outputs` table. Includes **Loopscale**
+and **Kamino Strategy / KVault** (both became Solstice partners in S2 — neither
+was integrated during S1, which is why S1's column spec doesn't list them).
 
 ### What this is NOT
 - ❌ NOT a time-weighted average
@@ -106,72 +135,18 @@ All 29 official S2 quest codes via `walker_outputs` table. **Includes Loopscale 
 
 ---
 
-## S2 TWA TVL — NOT BUILT YET (future work)
-
-### What it would answer
-"What's your time-weighted average TVL during Season 2 (Apr 13 → Aug 1)?"
-
-This metric would be needed for:
-- S2 loyalty multiplier reverse-engineering (if Solstice publishes per-wallet TWAs)
-- Predicting end-of-S2 SLX allocation per wallet
-
-### Window (S2 official)
-- Start: `2026-04-13 00:00 UTC` (S2_START_TS = 1776038400)
-- End: `2026-08-01 00:00 UTC` (S2_END_TS ≈ 1785024000, exclusive)
-- D_total ≈ 110 days
-
-### Formula
-Same as S1 in shape (`TWA = S_w / n_w`), but with S2 window.
-
-### Sources required for S2 TWA — Solstice's S2 column spec (extends S1)
-
-S1's 6 columns + Loopscale + Kamino Strategy. Loopscale is the major net-new
-partner: it became a Solstice integration partner during S2 (it wasn't yet
-integrated in S1, which is why the S1 spec table doesn't include it).
-
-| Source | S1 spec | S2 spec | Decoder status |
-|---|---|---|---|
-| Kamino lending (`kamino_usx`) | ✓ | ✓ | reuse `decode_kamino` |
-| Exponent LP + YT (`exponent_usx`) | ✓ | ✓ | reuse `decode_lp` + `decode_yt` (active markets shift to Jun26 + Sep26) |
-| Raydium CLMM (`raydium_usx`) | ✓ | ✓ | reuse `decode_clmm` |
-| Orca CLMM (`whirlpool_usx`) | ✓ | ✓ | reuse `decode_clmm` |
-| USX hold (`usx_holding`) | ✓ | ✓ | reuse `extract_balance_events` |
-| eUSX hold (`eusx_holding`) | ✓ | ✓ | reuse `extract_balance_events` + `peg_at()` |
-| **Loopscale (`loopscale_usx`)** | ❌ not yet integrated | ✓ NEW for S2 | **MUST BUILD `decode_loopscale()`** |
-| **Kamino Strategy / KVault** | ❌ not active | ✓ NEW for S2 | **MUST BUILD `decode_kamino_strategy()`** |
-
-### S2-specific rule differences vs S1
-- **Legacy markets**: definition shifts. For S2, "legacy" = matured during S2 window (Apr 13 → Aug 1). Currently that's USX-Feb26, eUSX-Mar26 (already expired pre-S2, so not relevant) AND any Jun26 markets (mature 2026-06-01, mid-S2). **Need to verify if Solstice excludes Jun26 from S2 TWA after its maturity.**
-- **eUSX peg**: snapshots are richer post-S1 (we sample more frequently). Use `peg_at()` directly.
-- **SY exchange rate**: by S2, the rate has grown noticeably from S1 start. Calibration factor `0.948` may not transfer cleanly.
-- **YT cost basis carry-in**: pre-S2 YT buys decay per the YT cost-basis algorithm (already in code, but timing is S2-relative not S1-relative).
-
-### What would need to be done
-1. New file: `tools/transform_twa_s2.py` (mirror of `transform_twa.py` with S2 constants and S2-specific rules).
-2. Add decoders: `decode_kamino_strategy()`, `decode_loopscale()`.
-3. Re-index legacy + active markets through end of S2 window for historical sy/lp.
-4. Batch run across all S2-active wallets (~7,000 in current `data.json` records).
-5. Calibrate against 3+ wallets where Solstice publishes S2 TWA (currently not public — would need to ask Solstice or wait for post-TGE disclosure).
-6. Parallelize: estimated ~30s per wallet → ~60 hours serial → need ThreadPool with checkpointing.
-
-### Why not just adapt `transform_twa.py`?
-Bad idea — would mix the S1 and S2 rule sets. The constants differ, the LP rules differ, the YT cost-basis carry-in window differs. Forking keeps the S1 implementation frozen and verified.
-
----
-
 ## Naming conventions to keep them separate
 
-- `S1_*` constants → only in `transform_twa.py`
-- `S2_*` constants → only in `transform_twa_s2.py` (future) and `server/build_wallet_details.py`
-- Never share a function that uses both. Decoders (`decode_lp`, etc.) are window-agnostic and can be shared; integrators MUST be per-season.
+- `S1_*` constants → only in `transform_twa.py` (frozen)
+- S2 dashboard logic → `server/build_wallet_details.py` (snapshot only)
+- Never introduce an `S2_TWA_*` constant or a `transform_twa_s2.py` file. There is no S2 TWA.
 
 ## Quick recipe: which file do I edit?
 
 | Goal | File |
 |---|---|
 | Improve S1 TWA accuracy | `tools/transform_twa.py` |
-| Improve dashboard TVL column | `server/build_wallet_details.py` + `server/index.html` |
-| Build S2 TWA | NEW: `tools/transform_twa_s2.py` |
-| Add a new walker | `src/flares_estimator/walk_s2_*.py` + decoder in BOTH transforms |
-| Reindex Exponent market state | `tools/index_market_state.py <market_pk>` |
+| Improve dashboard TVL column (S2 current snapshot) | `server/build_wallet_details.py` + `server/index.html` |
+| Add a new S2 walker | `src/flares_estimator/walk_s2_*.py` |
+| Reindex Exponent market state (S1 only) | `tools/index_market_state.py <market_pk>` |
 | Refresh eUSX peg | `python -c "from src.flares_estimator.quests.eusx_peg import record_snapshot; record_snapshot()"` |
