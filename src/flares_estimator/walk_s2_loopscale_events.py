@@ -91,23 +91,40 @@ def main():
     db.init()
     now_ts = last_snapshot_ts()   # midnight-UTC cutoff (Solstice snapshot cadence)
 
+    # Retry-on-empty helper. Returns the result list; aborts the whole walker
+    # if either enumeration is empty after 4 retries (preserves existing cache).
+    import time as _t
+    def _gpa_retry(filters, timeout, label):
+        for attempt in range(4):
+            r = rpc('getProgramAccounts', [LOOPSCALE_PROG, {'encoding':'base64', 'filters': filters}],
+                    timeout=timeout, force_refresh=(attempt > 0))
+            accs = r.get('result') or []
+            if accs: return accs
+            print(f'  {label}: retry {attempt+1}: 0 accounts — retry in {2*(attempt+1)}s', flush=True)
+            _t.sleep(2 * (attempt + 1))
+        return []
+
     print('=== Enumerating Loopscale Loan accounts (USX principal) ===')
     filters = [
         {'memcmp': {'offset': 0,  'bytes': base58.b58encode(bytes.fromhex(LOAN_DISC)).decode()}},
         {'memcmp': {'offset': 92, 'bytes': USX_MINT}},
     ]
-    r = rpc('getProgramAccounts', [LOOPSCALE_PROG, {'encoding':'base64', 'filters': filters}], timeout=180)
-    loans = r.get('result') or []
+    loans = _gpa_retry(filters, 180, 'Loan')
     print(f'  {len(loans)} USX Loan accounts')
+    if not loans:
+        print('  ⚠️  walk_s2_loopscale_events aborting: empty Loan enumeration after retries.', flush=True)
+        return
 
     print('\n=== Enumerating VaultStake accounts (USX-ONE vault) ===')
     filters = [
         {'memcmp': {'offset': 0, 'bytes': base58.b58encode(bytes.fromhex(VAULTSTAKE_DISC)).decode()}},
         {'memcmp': {'offset': 8, 'bytes': USX_ONE_VAULT}},
     ]
-    r = rpc('getProgramAccounts', [LOOPSCALE_PROG, {'encoding':'base64', 'filters': filters}], timeout=120)
-    stakes = r.get('result') or []
+    stakes = _gpa_retry(filters, 120, 'VaultStake')
     print(f'  {len(stakes)} VaultStake accounts')
+    if not stakes:
+        print('  ⚠️  walk_s2_loopscale_events aborting: empty VaultStake enumeration after retries.', flush=True)
+        return
 
     # Decode owners and snapshot principal values
     # Loan: borrower=off 11, principal_remaining=off 155 (units 1e9), status=off 10

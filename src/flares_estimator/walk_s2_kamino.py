@@ -76,13 +76,27 @@ def main():
     # tell us obligation addresses (which omits closed/zero-balance obligations).
     KLEND = 'KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD'
     print(f'Enumerating Kamino obligations on Solstice market via getProgramAccounts...', flush=True)
-    r = rpc('getProgramAccounts', [KLEND, {
-        'encoding': 'base64',
-        'dataSlice': {'offset': 64, 'length': 32},   # owner pubkey only
-        'filters': [{'memcmp': {'offset': 32, 'bytes': SOLSTICE_MARKET}}]
-    }], timeout=60)
+    # Retry-on-empty: known-active market should never return 0 obligations.
+    # An empty result is an RPC flake — write would zero out cached positions.
+    # Mirror walk_s2_orca.py:148-167 pattern.
+    import time as _t
+    accs = []
+    for attempt in range(4):
+        r = rpc('getProgramAccounts', [KLEND, {
+            'encoding': 'base64',
+            'dataSlice': {'offset': 64, 'length': 32},   # owner pubkey only
+            'filters': [{'memcmp': {'offset': 32, 'bytes': SOLSTICE_MARKET}}]
+        }], timeout=60, force_refresh=(attempt > 0))
+        accs = r.get('result') or []
+        if accs: break
+        print(f'  retry {attempt+1}: 0 obligations — retry in {2*(attempt+1)}s', flush=True)
+        _t.sleep(2 * (attempt + 1))
+    if not accs:
+        print(f'  ⚠️  walk_s2_kamino aborting: getProgramAccounts returned 0 obligations '
+              f'after 4 retries. Skipping run to preserve existing cache.', flush=True)
+        return
     obl_to_owner = {}  # obligation_pubkey -> owner_pubkey
-    for a in (r.get('result') or []):
+    for a in accs:
         try:
             d = base64.b64decode(a['account']['data'][0])
             obl_to_owner[a['pubkey']] = base58.b58encode(d[:32]).decode()

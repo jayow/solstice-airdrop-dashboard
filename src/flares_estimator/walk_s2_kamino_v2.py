@@ -83,16 +83,28 @@ def enumerate_obligations() -> dict:
     `lendingMarket` at offset 32, so a memcmp-only filter picks up reserves too.
     Kamino obligation size = 3344 bytes; reserve size = 8624 bytes.
     """
-    r = rpc('getProgramAccounts', [KLEND, {
-        'encoding': 'base64',
-        'dataSlice': {'offset': 64, 'length': 32},
-        'filters': [
-            {'memcmp': {'offset': 32, 'bytes': SOLSTICE_MARKET}},
-            {'dataSize': 3344},   # obligation only — excludes reserves
-        ]
-    }], timeout=60)
+    # Retry-on-empty: known-active market should never return 0 obligations.
+    import time as _t
+    accs = []
+    for attempt in range(4):
+        r = rpc('getProgramAccounts', [KLEND, {
+            'encoding': 'base64',
+            'dataSlice': {'offset': 64, 'length': 32},
+            'filters': [
+                {'memcmp': {'offset': 32, 'bytes': SOLSTICE_MARKET}},
+                {'dataSize': 3344},   # obligation only — excludes reserves
+            ]
+        }], timeout=60, force_refresh=(attempt > 0))
+        accs = r.get('result') or []
+        if accs: break
+        print(f'  retry {attempt+1}: 0 obligations — retry in {2*(attempt+1)}s', flush=True)
+        _t.sleep(2 * (attempt + 1))
+    if not accs:
+        print(f'  ⚠️  walk_s2_kamino_v2: getProgramAccounts returned empty after 4 retries; '
+              f'returning empty owner map to preserve existing data.', flush=True)
+        return {}
     out = {}
-    for a in (r.get('result') or []):
+    for a in accs:
         try:
             d = base64.b64decode(a['account']['data'][0])
             out[a['pubkey']] = base58.b58encode(d[:32]).decode()

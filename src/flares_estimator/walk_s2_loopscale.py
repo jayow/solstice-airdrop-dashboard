@@ -171,16 +171,24 @@ def walk_supply(now_ts: int, share_value: float,
     LOOPSCALE_PROGRAM = '1oopBoJG58DgkUVKkEzKgyG9dvRmpgeEm1AVjoHkF78'
     VAULT_STAKE_DISC = 'e1228035a7efb66b'
 
+    # Retry-on-empty across BOTH token programs: known-active LP mints should
+    # never return 0 holders. Empty after 4 retries → skip + return empty list
+    # so caller preserves existing cache rather than zeroing wallets.
+    import time as _t
     holders = []
     for prog in ['TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
                  'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb']:
-        r = rpc('getProgramAccounts', [prog, {
-            'encoding': 'jsonParsed',
-            'filters': [
-                {'memcmp': {'offset': 0, 'bytes': lp_mint}}
-            ]
-        }], timeout=120)
-        accs = r.get('result', []) or []
+        accs = []
+        for attempt in range(4):
+            r = rpc('getProgramAccounts', [prog, {
+                'encoding': 'jsonParsed',
+                'filters': [
+                    {'memcmp': {'offset': 0, 'bytes': lp_mint}}
+                ]
+            }], timeout=120, force_refresh=(attempt > 0))
+            accs = r.get('result', []) or []
+            if accs: break
+            _t.sleep(2 * (attempt + 1))
         for a in accs:
             info = a['account']['data']['parsed']['info']
             owner = info.get('owner')
