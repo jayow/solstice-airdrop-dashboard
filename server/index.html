@@ -189,13 +189,14 @@ footer { text-align: center; color: var(--ink-500); font-size: 11px; margin-top:
           <option value="loopscale">Has Loopscale</option>
         </select>
         <button id="toggle-pdas" onclick="togglePDAs()" title="Show or hide protocol-internal PDA addresses (vault contracts, strategy aggregators, etc.). Totals and ranks update accordingly.">Hide PDAs</button>
+        <button id="toggle-view" onclick="toggleView()" title="Switch the headline stat, table column, and per-wallet drawer between cumulative S2 Flares and current-snapshot TVL (USD).">Show TVL</button>
       </div>
       <table id="t">
         <thead>
           <tr>
             <th data-key="rank" class="left">#</th>
             <th data-key="wallet" class="left">Wallet</th>
-            <th data-key="total" class="desc">Total</th>
+            <th data-key="total" class="desc" id="th-total">Total</th>
             <th data-key="solstice">Hold USX</th>
             <th data-key="yield_vault">Hold eUSX</th>
             <th data-key="exponent">Exponent</th>
@@ -573,24 +574,36 @@ async function openDrawer(addr) {
   } else {
     banner.style.display = 'none';
   }
-  const earning = p.by_quest.filter(q => q.flares > 0).length;
-  document.getElementById('dr-total').innerHTML = `
-    <div class="label">Total flares</div>
-    <div style="font-size:28px; font-weight:600; color:var(--accent-300); font-variant-numeric:tabular-nums; margin-top:4px;">${p.total_flares.toLocaleString(undefined,{maximumFractionDigits:0})}</div>
-    <div style="font-size:11px; color:var(--ink-400); margin-top:4px;">${earning} of ${p.by_quest.length} quests earning · <a href="https://solscan.io/account/${p.wallet}" target="_blank" style="color:inherit;text-decoration:underline dotted;">solscan ↗</a></div>`;
   DRAWER_PAYLOAD = p;
+  _updateDrawerHeadline(p);
   renderDrawerBody(p);
 }
 
 // (SLX projection calculator moved to /s2-calculator.html — see that page for logic.)
 
 function renderDrawerBody(p) {
-  const earningQs = p.by_quest.filter(q => q.flares > 0).sort((a,b) => b.flares - a.flares);
-  const summaryRows = earningQs.map(q => {
-    const m = QUEST_META[q.quest] || {};
-    return `<div class="qsum"><span>${m.label || q.quest}</span><span class="qsum-v">${q.flares.toLocaleString(undefined,{maximumFractionDigits:0})}</span></div>`;
-  }).join('');
-  const summary = earningQs.length ? `<div class="qsum-box"><div class="qsum-head">Earning quests</div>${summaryRows}</div>` : '';
+  let summary = '';
+  if (VIEW_MODE === 'tvl') {
+    // Render the per-quest current TVL (USD) instead of cumulative flares.
+    const tvlMap = p.tvl_by_quest || {};
+    const tvlRows = Object.entries(tvlMap)
+      .filter(([, v]) => v > 0)
+      .sort((a, b) => b[1] - a[1])
+      .map(([q, v]) => {
+        const m = QUEST_META[q] || {};
+        return `<div class="qsum"><span>${m.label || q}</span><span class="qsum-v">$${Math.round(v).toLocaleString()}</span></div>`;
+      }).join('');
+    summary = tvlRows
+      ? `<div class="qsum-box"><div class="qsum-head">Current TVL by quest (USD)</div>${tvlRows}</div>`
+      : '';
+  } else {
+    const earningQs = p.by_quest.filter(q => q.flares > 0).sort((a,b) => b.flares - a.flares);
+    const summaryRows = earningQs.map(q => {
+      const m = QUEST_META[q.quest] || {};
+      return `<div class="qsum"><span>${m.label || q.quest}</span><span class="qsum-v">${q.flares.toLocaleString(undefined,{maximumFractionDigits:0})}</span></div>`;
+    }).join('');
+    summary = earningQs.length ? `<div class="qsum-box"><div class="qsum-head">Earning quests</div>${summaryRows}</div>` : '';
+  }
 
   const dir = DRAWER_SORT === 'asc' ? 1 : -1;
   const activity = (p.activity || []).slice().sort((a,b) => dir * (a.ts - b.ts));
@@ -1178,6 +1191,19 @@ const fmtUsd = n => n ? "$" + Math.round(n).toLocaleString() : `<span class="zer
 const short = w => w.slice(0,6) + "…" + w.slice(-4);
 
 let HIDE_PDAS = localStorage.getItem('hidePDAs') !== '0';  // default: hide
+// VIEW_MODE flips the headline stat, the table's Total column, and the
+// drawer's by-quest breakdown between cumulative S2 Flares and current TVL (USD).
+let VIEW_MODE = localStorage.getItem('viewMode') === 'tvl' ? 'tvl' : 'flares';
+
+// Compact $ formatter — mirrors fmt() but with leading $ and no decimals on big numbers.
+const fmtUsdShort = n => {
+  if (n == null) return "";
+  if (n === 0) return `<span class="zero">$0</span>`;
+  if (Math.abs(n) >= 1e9) return "$" + (n/1e9).toFixed(2) + "B";
+  if (Math.abs(n) >= 1e6) return "$" + (n/1e6).toFixed(2) + "M";
+  if (Math.abs(n) >= 1e3) return "$" + Math.round(n).toLocaleString();
+  return "$" + n.toFixed(2);
+};
 
 let DAILY = null;
 let CHART_MODE = 'cumulative';   // default; toggle flips to 'inflation' (daily emission)
@@ -1204,6 +1230,10 @@ async function load() {
   // Sync toggle button state
   const btn = document.getElementById('toggle-pdas');
   if (btn) btn.textContent = HIDE_PDAS ? 'Show PDAs' : 'Hide PDAs';
+  const vbtn = document.getElementById('toggle-view');
+  if (vbtn) vbtn.textContent = VIEW_MODE === 'tvl' ? 'Show Flares' : 'Show TVL';
+  const th = document.getElementById('th-total');
+  if (th) th.textContent = VIEW_MODE === 'tvl' ? 'TVL' : 'Total';
   renderStats();
   applyFilters();
 }
@@ -1346,6 +1376,37 @@ function togglePDAs() {
   applyFilters();
 }
 
+function toggleView() {
+  VIEW_MODE = VIEW_MODE === 'flares' ? 'tvl' : 'flares';
+  localStorage.setItem('viewMode', VIEW_MODE);
+  const btn = document.getElementById('toggle-view');
+  if (btn) btn.textContent = VIEW_MODE === 'tvl' ? 'Show Flares' : 'Show TVL';
+  const th = document.getElementById('th-total');
+  if (th) th.textContent = VIEW_MODE === 'tvl' ? 'TVL' : 'Total';
+  renderStats();
+  applyFilters();
+  // If the drawer is open, re-render its body so the per-quest list flips too.
+  if (DRAWER_PAYLOAD && document.getElementById('drawer').style.display === 'block') {
+    renderDrawerBody(DRAWER_PAYLOAD);
+    _updateDrawerHeadline(DRAWER_PAYLOAD);
+  }
+}
+
+function _updateDrawerHeadline(p) {
+  const earning = (p.by_quest || []).filter(q => q.flares > 0).length;
+  const tvlMap = p.tvl_by_quest || {};
+  const totalTvl = p.total_tvl_usd || Object.values(tvlMap).reduce((a, b) => a + (b || 0), 0);
+  const headline = VIEW_MODE === 'tvl'
+    ? { label: 'Total TVL', value: '$' + Math.round(totalTvl).toLocaleString() }
+    : { label: 'Total flares', value: (p.total_flares || 0).toLocaleString(undefined, {maximumFractionDigits:0}) };
+  const el = document.getElementById('dr-total');
+  if (!el) return;
+  el.innerHTML = `
+    <div class="label">${headline.label}</div>
+    <div style="font-size:28px; font-weight:600; color:var(--accent-300); font-variant-numeric:tabular-nums; margin-top:4px;">${headline.value}</div>
+    <div style="font-size:11px; color:var(--ink-400); margin-top:4px;">${earning} of ${p.by_quest.length} quests earning · <a href="https://solscan.io/account/${p.wallet}" target="_blank" style="color:inherit;text-decoration:underline dotted;">solscan ↗</a></div>`;
+}
+
 function renderStats() {
   const all = HIDE_PDAS ? RAW.records.filter(r => !r.is_protocol_pda) : RAW.records;
   const realUsersFlares = all.reduce((a, r) => a + r.total, 0);
@@ -1358,9 +1419,18 @@ function renderStats() {
     solsticeDate = last.date || '';
   }
   const headlineFlares = solsticeTotal > 0 ? solsticeTotal : realUsersFlares;
-  const headlineSub = solsticeTotal > 0
+  const flaresSub = solsticeTotal > 0
     ? `Solstice published · ${solsticeDate}`
     : (HIDE_PDAS ? '(excl. protocol PDAs)' : '(incl. protocol PDAs)');
+  // TVL aggregate over the currently-visible row set.
+  const totalTvl = all.reduce((a, r) => a + (r.tvl || 0), 0);
+  const isTvl = VIEW_MODE === 'tvl';
+  const headlineLabel = isTvl ? 'Total TVL' : 'Total flares';
+  const headlineValue = isTvl ? fmtUsdShort(totalTvl) : fmt(headlineFlares);
+  const headlineSub   = isTvl ? 'current snapshot · USD' : flaresSub;
+  const headlineTip   = isTvl
+    ? `Sum of current per-quest TVL across ${all.length.toLocaleString()} visible wallets.`
+    : `Solstice's officially published total flares (from their /api/flares/analytics). Real-user subset: ${fmt(realUsersFlares)}.`;
   const s1 = all.filter(r => r.is_s1).length;
   const newS2 = all.length - s1;
   const subSuffix = HIDE_PDAS ? '(excl. protocol PDAs)' : '(incl. protocol PDAs)';
@@ -1371,9 +1441,9 @@ function renderStats() {
       <div class="v tabular">${all.length.toLocaleString()}</div>
       <div class="sub">${subSuffix}</div>
     </div>
-    <div class="stat" title="Solstice's officially published total flares (from their /api/flares/analytics). Real-user subset: ${fmt(realUsersFlares)}.">
-      <div class="label">Total flares</div>
-      <div class="v tabular accent">${fmt(headlineFlares)}</div>
+    <div class="stat" title="${headlineTip}">
+      <div class="label">${headlineLabel}</div>
+      <div class="v tabular accent">${headlineValue}</div>
       <div class="sub">${headlineSub}</div>
     </div>
     <div class="stat" title="Earners that registered for the Season 1 airdrop.">
@@ -1505,10 +1575,12 @@ function applyFilters() {
   if (q) rs = rs.filter(r => r.wallet.toLowerCase().includes(q));
   const dir = sortDir === "asc" ? 1 : -1;
   const rankField = HIDE_PDAS ? '_realRank' : '_globalRank';
+  // In TVL mode the "Total" column is backed by r.tvl, not r.total.
+  const effectiveSortKey = (sortKey === 'total' && VIEW_MODE === 'tvl') ? 'tvl' : sortKey;
   rs.sort((a, b) => {
     if (sortKey === "wallet") return dir * a.wallet.localeCompare(b.wallet);
     if (sortKey === "rank") return dir * ((a[rankField] || 0) - (b[rankField] || 0));
-    return dir * ((a[sortKey] || 0) - (b[sortKey] || 0));
+    return dir * ((a[effectiveSortKey] || 0) - (b[effectiveSortKey] || 0));
   });
   filtered = rs;
   page = 0;
@@ -1532,10 +1604,11 @@ function render() {
         : `Auto-detected protocol PDA — uninit account or program-owned, not a real wallet`;
       tags.push(`<span class="tag pda" title="${tip}">${r.pda_source === 'manual' ? 'PDA ✓' : 'PDA'}</span>`);
     }
+    const totalCell = VIEW_MODE === 'tvl' ? fmtUsdShort(r.tvl || 0) : fmt(r.total);
     return `<tr class="row-click" onclick="openDrawer('${r.wallet}')" title="${r.wallet}">
       <td class="left tabular">${HIDE_PDAS ? (r._realRank ?? '—') : r._globalRank}</td>
       <td class="left wallet">${short(r.wallet)} ${tags.join(' ')}</td>
-      <td><span style="color: var(--accent-300); font-weight: 500;">${fmt(r.total)}</span></td>
+      <td><span style="color: var(--accent-300); font-weight: 500;">${totalCell}</span></td>
       <td>${fmt(r.solstice)}</td>
       <td>${fmt(r.yield_vault)}</td>
       <td>${fmt(r.exponent)}</td>

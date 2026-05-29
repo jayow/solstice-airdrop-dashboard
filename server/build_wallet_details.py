@@ -230,6 +230,32 @@ def _safe_daily_emission(evidence: dict, wallet: str) -> dict:
         return {}
 
 
+def compute_tvl_by_quest(evidence: dict) -> dict:
+    """Derive current per-quest TVL (USD) by inverting compute_daily_emission.
+    For each daily-emitting quest, flares/day = TVL_usd * multiplier, so
+    TVL_usd = flares/day / multiplier. Bonus tiers (_1MO, _3MO) are NOT daily
+    emitting — they are one-shot qualification bonuses — and are excluded.
+    Returns {quest_code: usd_amount}."""
+    rates = compute_daily_emission(evidence)
+    tvl = {}
+    for qcode, rate in rates.items():
+        # Skip bonus tiers — they're not daily TVL-proportional.
+        if qcode.endswith('_1MO') or qcode.endswith('_3MO'):
+            continue
+        mult = QUEST_MULT.get(qcode)
+        if not mult or mult <= 0: continue
+        tvl[qcode] = rate / mult
+    return tvl
+
+
+def _safe_tvl_by_quest(evidence: dict, wallet: str) -> dict:
+    try:
+        return compute_tvl_by_quest(evidence)
+    except Exception as e:
+        print(f'  WARN tvl_by_quest failed for {wallet[:10]}: {e}', flush=True)
+        return {}
+
+
 def main():
     os.makedirs(OUT_DIR, exist_ok=True)
     con = sqlite3.connect(DB)
@@ -266,6 +292,8 @@ def main():
     t0 = time.time()
     written = 0
     system_daily_by_quest = {}   # aggregated from real-user wallets only
+    system_tvl_by_quest = {}     # aggregated TVL (USD) from real-user wallets only
+    total_tvl_by_wallet = {}     # wallet -> total_tvl_usd (used to inject into data.json)
     SERVER = os.path.dirname(os.path.abspath(__file__))
     for w in all_wallets:
         meta = meta_by_w.get(w, {})
@@ -315,6 +343,8 @@ def main():
 
         manual = manual_pda_labels.get(w)
         is_pda = (meta.get('classification') == 'pda_protocol') or (manual is not None)
+        tvl_by_quest = _safe_tvl_by_quest(evidence, w)
+        total_tvl_usd = sum(v for v in tvl_by_quest.values() if v and v > 0)
         payload = {
             'wallet': w,
             'meta': {
@@ -336,6 +366,10 @@ def main():
             # Daily emission rate per quest at CURRENT position sizes — used
             # by the drawer's projection calculator to extrapolate forward.
             'daily_emission_by_quest': _safe_daily_emission(evidence, w),
+            # Current per-quest TVL (USD) — daily-emitting quests only.
+            # Powers the Flares ↔ TVL toggle in the dashboard.
+            'tvl_by_quest': tvl_by_quest,
+            'total_tvl_usd': total_tvl_usd,
         }
         with open(os.path.join(OUT_DIR, f'{w}.json'), 'w') as f:
             json.dump(payload, f, separators=(',', ':'))
@@ -346,16 +380,31 @@ def main():
         if not is_pda:
             for q, v in payload['daily_emission_by_quest'].items():
                 system_daily_by_quest[q] = system_daily_by_quest.get(q, 0) + (v or 0)
+            for q, v in tvl_by_quest.items():
+                system_tvl_by_quest[q] = system_tvl_by_quest.get(q, 0) + (v or 0)
+        # Stash total_tvl_usd for every wallet (PDAs included) so the
+        # data.json injection can populate r.tvl on the table records.
+        if total_tvl_usd > 0:
+            total_tvl_by_wallet[w] = total_tvl_usd
 
-    # Inject system_daily_emission_by_quest into data.json so the calculator
-    # can compute YT-decay-aware system projections without scanning 28k files.
+    # Inject system_daily_emission_by_quest + system_tvl_by_quest into data.json
+    # so the calculator can compute YT-decay-aware system projections AND the
+    # dashboard's Flares↔TVL toggle can sum r.tvl across visible rows without
+    # scanning 28k files.
     data_json_path = os.path.join(SERVER, 'data.json')
     try:
         with open(data_json_path) as f: data = json.load(f)
         data['system_daily_emission_by_quest'] = {q: round(v, 4) for q, v in system_daily_by_quest.items() if v > 0}
+        data['system_tvl_by_quest'] = {q: round(v, 4) for q, v in system_tvl_by_quest.items() if v > 0}
+        # Attach per-record tvl so the table can render the TVL column without
+        # fetching every per-wallet detail JSON.
+        for rec in data.get('records', []):
+            rec['tvl'] = round(total_tvl_by_wallet.get(rec.get('wallet'), 0), 4)
         with open(data_json_path, 'w') as f: json.dump(data, f, separators=(',', ':'))
         total_daily = sum(system_daily_by_quest.values())
+        total_tvl   = sum(system_tvl_by_quest.values())
         print(f'\nInjected system_daily_emission_by_quest into data.json: {total_daily:,.0f} flares/day across {sum(1 for v in system_daily_by_quest.values() if v > 0)} quests')
+        print(f'Injected system_tvl_by_quest into data.json: ${total_tvl:,.0f} TVL across {sum(1 for v in system_tvl_by_quest.values() if v > 0)} quests')
     except Exception as e:
         print(f'WARN: failed to inject system daily into data.json: {e}')
 
