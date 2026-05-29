@@ -121,13 +121,23 @@ def decode_lp(wallet_bytes, tx_json):
         n_u64 = len(u64_section) // 8
         if n_u64 <= lp_field_idx: continue
         lp_amount = struct.unpack('<Q', u64_section[lp_field_idx*8:(lp_field_idx+1)*8])[0]
+        # base_amount is ALWAYS at u64 idx 0 across all 5 LP event types:
+        #   provide:          base_in,  lp_out, yt_out, lp_price
+        #   provide_base:     base_in,  pt_out, sy_in,  lp_out, lp_price
+        #   provide_classic:  base_in,  pt_in,  lp_out, lp_price
+        #   withdraw:         base_out, lp_in,  lp_price
+        #   withdraw_classic: base_out, lp_in,  pt_out, lp_price
+        # We need it for cost-basis math (Solstice values LP at "amount
+        # originally deposited", not lp_balance × current lp_price).
+        base_amount = struct.unpack('<Q', u64_section[0:8])[0]
         # Asset detection (USX vs eUSX) from token transfers
         asset = '?'
         for t in tx_json.get('tokenTransfers',[]) or []:
             if t.get('mint') == USX_MINT: asset = 'USX'; break
             if t.get('mint') == EUSX_MINT: asset = 'eUSX'; break
         out.append({'event':ev_type,'sign':sign,'market':market_pk,
-                    'lp_amount':lp_amount/1e6,'lp_price':lp_price,'asset':asset})
+                    'lp_amount':lp_amount/1e6,'lp_price':lp_price,'asset':asset,
+                    'base_amount': base_amount/1e6})
     return out
 
 def decode_yt(wallet, tx_json):
@@ -370,8 +380,23 @@ def main():
             if wallet_bal[label] < 0: wallet_bal[label] = 0  # numerical guard
         elif kind == 'lp':
             e = payload
-            s = lp_state.setdefault(e['market'], {'bal':0,'price':0,'asset':e['asset']})
-            s['bal'] += e['lp_amount'] * e['sign']; s['price'] = e['lp_price']; s['asset'] = e['asset']
+            s = lp_state.setdefault(e['market'], {'bal':0,'price':0,'asset':e['asset'],'cost_basis_base':0})
+            s['asset'] = e['asset']
+            s['price'] = e['lp_price']   # kept for diagnostic only; no longer used by usd_now
+            lp_before = s['bal']
+            lp_delta = e['lp_amount'] * e['sign']
+            if e['sign'] > 0:
+                # Deposit: add base_amount paid (in underlying token units) to cost basis
+                s['cost_basis_base'] += e['base_amount']
+            else:
+                # Withdraw: reduce cost basis proportionally to LP removed
+                # (per "amount originally deposited" rule — Solstice's accounting).
+                if lp_before > 0:
+                    frac = min(1.0, abs(lp_delta) / lp_before)
+                    s['cost_basis_base'] -= s['cost_basis_base'] * frac
+                if s['cost_basis_base'] < 0: s['cost_basis_base'] = 0
+            s['bal'] = max(0.0, lp_before + lp_delta)
+            if s['bal'] == 0: s['cost_basis_base'] = 0    # fully withdrawn → no residual basis
         elif kind == 'yt':
             e = payload
             if e['sign'] > 0:
@@ -407,11 +432,15 @@ def main():
     def usd_now(ts):
         p = peg(ts, ts_start, ts_end)
         w_usd = wallet_bal['USX'] + (wallet_bal['eUSX'] + wallet_bal['weUSX']) * p
+        # LP TVL = running cost basis (amount originally deposited, less
+        # proportional withdrawals). Solstice values LP this way per their
+        # docs — using `bal × lp_price` over-counts because lp_price drifts
+        # up as fees accrue (the user's claim to those fees isn't a deposit).
         lp_usd = 0
         for mkt, s in lp_state.items():
-            if s['bal'] <= 0: continue
+            if s['bal'] <= 0 or s['cost_basis_base'] <= 0: continue
             ap = p if s['asset']=='eUSX' else 1.0
-            lp_usd += s['bal'] * s['price'] * ap
+            lp_usd += s['cost_basis_base'] * ap
         clmm_usd = 0
         for pos_pk, L in pos_liq.items():
             if L <= 0 or pos_pk not in pos_info: continue
