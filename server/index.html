@@ -194,6 +194,9 @@ footer { text-align: center; color: var(--ink-500); font-size: 11px; margin-top:
         </select>
         <button id="toggle-pdas" onclick="togglePDAs()" title="Show or hide protocol-internal PDA addresses (vault contracts, strategy aggregators, etc.). Totals and ranks update accordingly.">Hide PDAs</button>
         <button id="toggle-view" onclick="toggleView()" title="Switch the headline stat, table column, and per-wallet drawer between cumulative S2 Flares and current-snapshot TVL (USD).">Show TVL</button>
+        <span style="flex:1;"></span>
+        <button id="prev-top" title="Previous page">‹ Prev</button>
+        <button id="next-top" title="Next page">Next ›</button>
       </div>
       <table id="t">
         <thead>
@@ -1666,14 +1669,22 @@ function render() {
   }).join("");
   document.getElementById("pageinfo").textContent =
     `${start+1}–${end} of ${filtered.length.toLocaleString()}`;
-  document.getElementById("prev").disabled = page === 0;
-  document.getElementById("next").disabled = end >= filtered.length;
+  const atFirst = page === 0;
+  const atLast  = end >= filtered.length;
+  for (const id of ['prev', 'prev-top']) document.getElementById(id).disabled = atFirst;
+  for (const id of ['next', 'next-top']) document.getElementById(id).disabled = atLast;
 }
 
 document.getElementById("search").addEventListener("input", applyFilters);
 document.getElementById("protocol-filter").addEventListener("change", applyFilters);
-document.getElementById("prev").addEventListener("click", () => { if (page>0) { page--; render(); window.scrollTo(0,0); }});
-document.getElementById("next").addEventListener("click", () => { page++; render(); window.scrollTo(0,0); });
+// Pagination: keep current scroll position when paging — clicking Next from
+// the bottom of the page used to fling the user back to the top of the chart.
+function _goPrev() { if (page > 0) { page--; render(); } }
+function _goNext() { page++; render(); }
+document.getElementById("prev").addEventListener("click", _goPrev);
+document.getElementById("next").addEventListener("click", _goNext);
+document.getElementById("prev-top").addEventListener("click", _goPrev);
+document.getElementById("next-top").addEventListener("click", _goNext);
 document.querySelectorAll("th[data-key]").forEach(th => {
   th.addEventListener("click", () => {
     const key = th.dataset.key;
