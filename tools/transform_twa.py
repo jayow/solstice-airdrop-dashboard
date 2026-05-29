@@ -1,17 +1,31 @@
-"""Transform indexed wallet_txs into S1 TWA TVL via docs formula.
+"""S1 TWA TVL — Season 1 only. DO NOT REUSE FOR S2.
 
-Reads from data/solstice.db (populated by tools/index_wallet_txs.py).
-Applies Solstice docs formula:
-    TWA = sum(daily TVL at 00:00 UTC) / days since first eligible day
+This module is FROZEN to the Season 1 window (2025-09-30 → 2026-04-13) and
+its specific rule set. S2 TWA must be a separate module (tools/transform_twa_s2.py,
+not yet built). See docs/twa_framework.md for the full S1 vs S2 vs current-snapshot
+distinction and why we keep them apart.
 
-Components decoded (from Helius enhanced JSON):
-  HOLD USX/eUSX/weUSX  → accountData.tokenBalanceChanges where owner=wallet
-  Exponent LP          → innerInstructions emit_cpi events
-  Exponent YT          → cost-basis: buy adds, sell subtracts (running)
-  Orca/Raydium CLMM    → increase/decrease_liquidity ix with wallet as signer
+Verified against 3 calibration wallets (uen3Ei/Jay/7m8s) at ±0.2% accuracy.
+
+Walkers covered in S1 (intentional — S1 quest set):
+  HOLD USX/eUSX/weUSX  → extract_balance_events (Helius tokenBalanceChanges)
+  Exponent LP          → decode_lp (5 event types, all variants)
+  Exponent YT          → decode_yt (BuyYt/SellYt with pre-S1 cost-basis carry-in)
+  Kamino lending       → decode_kamino (USX/eUSX/USDG reserves)
+  Orca CLMM            → decode_clmm (increase/decrease_liquidity)
+  Raydium CLMM         → decode_clmm
+
+Walkers NOT covered in S1 (deliberate — minimal S1 exposure on calibration wallets):
+  ❌ Loopscale supply / borrow
+  ❌ Kamino Strategy / KVault
+For S2 these MUST be added — see docs/twa_framework.md "S2 TWA TVL" section.
+
+Reads from: data/solstice.db.wallet_txs (populated by tools/index_wallet_txs.py)
+            data/solstice.db.market_state_history (populated by tools/index_market_state.py)
+            data/solstice.db.eusx_peg_snapshots (populated by eusx_peg.record_snapshot)
 
 Usage:
-  python tools/transform_twa.py <WALLET> [--target <DASHBOARD_TWA>]
+  python tools/transform_twa.py <WALLET> [--target <SOLSTICE_PUBLISHED_TWA>] [--dump-days]
 """
 import os, sys, sqlite3, json, base58, base64, struct, hashlib, argparse
 from datetime import datetime, UTC
