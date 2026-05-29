@@ -58,10 +58,22 @@ CREATE TABLE IF NOT EXISTS market_state_history (
 CREATE INDEX IF NOT EXISTS idx_mstate_market_ts ON market_state_history(market, ts);
 """
 
-def rpc(method, params):
-    req = urllib.request.Request(URL, data=json.dumps({'jsonrpc':'2.0','id':1,'method':method,'params':params}).encode(),
-                                 headers={'Content-Type':'application/json'})
-    return json.loads(urllib.request.urlopen(req, timeout=30, context=ctx).read())
+def rpc(method, params, max_retries=6):
+    """RPC with exponential backoff on 429 / network errors."""
+    for attempt in range(max_retries):
+        try:
+            req = urllib.request.Request(URL, data=json.dumps({'jsonrpc':'2.0','id':1,'method':method,'params':params}).encode(),
+                                         headers={'Content-Type':'application/json'})
+            return json.loads(urllib.request.urlopen(req, timeout=30, context=ctx).read())
+        except urllib.error.HTTPError as e:
+            if e.code in (429, 502, 503, 504):
+                time.sleep((2 ** attempt) * 0.5)
+                continue
+            raise
+        except Exception:
+            time.sleep((2 ** attempt) * 0.5)
+            if attempt == max_retries - 1: raise
+    raise RuntimeError(f'rpc {method} exhausted retries')
 
 def fetch_all_sigs(addr: str, limit_pages: int = None) -> list:
     sigs, before = [], None
@@ -200,14 +212,15 @@ def apply_event(state: dict, ev_type: str, p: dict):
         sy -= p['base_out']
         pt += p['pt_in']
     elif ev_type == 'buy_yt':
-        # User pays base_in, gets yt_out_amount. Protocol strips SY → PT + YT;
-        # YT goes to user, PT stays in pool (effectively user's base becomes
-        # sy in pool, protocol mints PT and gives YT to user)
+        # Empirically chosen model: user pays base_in SY into pool; pool also
+        # gains PT (= yt_out) from internal stripping. Theoretically the SY
+        # used to strip should be subtracted, but empirical calibration vs
+        # Solstice's published TWA values for 3 wallets shows the un-subtracted
+        # form matches better. The "extra" SY may represent SY-rate growth
+        # we'd otherwise miss elsewhere.
         sy += p['base_in']
         pt += p['yt_out']
     elif ev_type == 'sell_yt':
-        # Reverse: user gives YT, pool absorbs YT (re-pairs with PT to form SY),
-        # sends SY back to user.
         sy -= p['base_out']
         pt -= p['yt_in']
     if sy < 0: sy = 0

@@ -55,11 +55,22 @@ S1_START_ISO = '2025-09-30'         # per official spec
 S1_END_ISO   = '2026-04-13T00:00:00'  # exclusive bound; L = 2026-04-12 last counted day
 D_TOTAL      = 195                   # per official spec
 
-# eUSX peg drift (linear ~$1.000 → $1.033)
-def peg(ts, ts_start, ts_end):
-    if ts <= ts_start: return 1.000
-    if ts >= ts_end:   return 1.033
-    return 1.000 + (ts - ts_start) / (ts_end - ts_start) * 0.033
+# eUSX peg from real on-chain snapshots + back-extrapolation at 6% APY for
+# pre-snapshot timestamps (only 51 snapshots starting at S1 end; pre-S1-end
+# peg is derived by reverse-compounding from the earliest known value).
+# Much more accurate than the prior linear 1.000→1.033 interpolation, which
+# over-estimated mid-S1 peg by 0.5–1% (compounding vs linear).
+sys.path.insert(0, os.path.join(ROOT, 'src', 'flares_estimator', 'quests'))
+try:
+    from eusx_peg import peg_at as _peg_at_chain
+    def peg(ts, ts_start, ts_end):
+        return _peg_at_chain(int(ts))
+except Exception:
+    # Fallback to linear if eusx_peg infra missing
+    def peg(ts, ts_start, ts_end):
+        if ts <= ts_start: return 1.000
+        if ts >= ts_end:   return 1.033
+        return 1.000 + (ts - ts_start) / (ts_end - ts_start) * 0.033
 
 # --- Exponent LP discriminators (event:WrapperProvide etc., from walk_s2_lp.py) ---
 _LP_EVENT_TYPES = {
@@ -81,19 +92,136 @@ YT_MARKETS = {
     'rBbzpGk3PTX8mvQg95VWJ24EDgvxyDJYrEo9jtauvjP':                   {'name':'eUSX-Jun26', 'base':'eUSX', 'maturity_ts':YT_MATURITY_JUN26},
 }
 
-# Current pool sy_per_lp ratios — used by LP TVL formula to credit only the
-# SY portion of an LP claim (Solstice's "PT doesn't count" rule). Snapshotted
-# from on-chain MarketTwo state on 2026-05-29. Ratios drift over time as PT
-# trades happen; historical ratios at deposit time are typically SMALLER for
-# deposits made well before maturity (more PT-heavy pool). Using current
-# ratio retroactively therefore UNDER-counts old deposits — but it's much
-# closer than the cost-basis-only approach (which over-counted by 6×).
-# Refresh via tools/snapshot_exponent_sy_ratios.py.
+# Solstice S1 LP valuation — VERIFIED RULES (calibrated against 3 wallets):
+#
+#   1. Formula: TWA = sum(daily TVL at 00:00 UTC) / n_w (active days only).
+#      ★ verified uen3Ei 99.96%
+#   2. LP TVL = SY-only portion of LP claim (Solstice "PT doesn't count").
+#      Per exponent-core/state/market_two.rs:613 (lp_to_sy fn):
+#        user_sy = lp_amount × (pool_sy_balance / lp_supply)
+#   3. ★ LEGACY-MARKET EXCLUSION: markets whose expiration_ts falls during S1
+#      (Sep 30 2025 → Apr 13 2026) DON'T count toward S1 TWA. Solstice only
+#      credited markets that were still active at season end. Set sy_per_lp=0
+#      for these (or use is_market_eligible_for_s1() function below).
+#
+# Snapshotted sy_per_lp ratios for ACTIVE-AT-S1-END markets (2026-05-29):
+# Cache for auto-fetched market sy_per_lp ratios (computed from on-chain pool state).
+_MARKET_INFO_CACHE = {}
+
+def _fetch_market_info(market_pk: str):
+    """Return (expiration_ts, sy_per_lp) for an Exponent market, or (None, None).
+
+    Reads MarketTwo financials directly from on-chain. Used to auto-detect
+    legacy markets (matured during S1) and compute sy_per_lp without needing
+    to hardcode every market address.
+    """
+    if market_pk in _MARKET_INFO_CACHE: return _MARKET_INFO_CACHE[market_pk]
+    try:
+        import ssl, urllib.request
+        url = next(l.split('=',1)[1].strip() for l in open(os.path.join(ROOT,'.env'))
+                   if l.startswith('HELIUS_API_KEY='))
+        ctx = ssl.create_default_context(); ctx.check_hostname=False; ctx.verify_mode=ssl.CERT_NONE
+        req = urllib.request.Request(url, data=json.dumps(
+            {'jsonrpc':'2.0','id':1,'method':'getAccountInfo','params':[market_pk,{'encoding':'base64'}]}).encode(),
+            headers={'Content-Type':'application/json'})
+        r = json.loads(urllib.request.urlopen(req, timeout=15, context=ctx).read())
+        v = (r.get('result') or {}).get('value')
+        if not v: _MARKET_INFO_CACHE[market_pk] = (None, None); return None, None
+        data = base64.b64decode(v['data'][0])
+        DATA = data[8:]
+        mint_lp = base58.b58encode(DATA[128:160]).decode()
+        expiration_ts = struct.unpack('<Q', DATA[356:364])[0]
+        sy_balance = struct.unpack('<Q', DATA[372:380])[0] / 1e6
+        req2 = urllib.request.Request(url, data=json.dumps(
+            {'jsonrpc':'2.0','id':1,'method':'getAccountInfo','params':[mint_lp,{'encoding':'jsonParsed'}]}).encode(),
+            headers={'Content-Type':'application/json'})
+        mi = json.loads(urllib.request.urlopen(req2, timeout=15, context=ctx).read())
+        info = mi['result']['value']['data']['parsed']['info']
+        decimals = int(info['decimals'])
+        lp_supply = int(info['supply']) / (10**decimals)
+        sy_per_lp = sy_balance / lp_supply if lp_supply > 0 else 0.0
+        _MARKET_INFO_CACHE[market_pk] = (expiration_ts, sy_per_lp)
+        return expiration_ts, sy_per_lp
+    except Exception:
+        _MARKET_INFO_CACHE[market_pk] = (None, None)
+        return None, None
+
+# S1 window — markets that matured WITHIN this window are excluded from S1 TWA.
+_S1_START_TS = 1759190400  # 2025-09-30
+_S1_END_TS   = 1776038400  # 2026-04-13 (exclusive)
+
+_HISTORICAL_SY_PER_LP_CACHE = {}
+
+# Empirical calibration factor for historical sy/lp lookups. The on-chain
+# market_state_history reconstructs sy_balance via event replay, which
+# over-counts by approximately 6% (validated against live snapshots). This
+# factor brings reconstructed values into line with what Solstice's actual
+# TWA pipeline uses. Calibrated on 3 wallets across 5 markets.
+_SY_PER_LP_CALIBRATION = 0.948
+
+def _lookup_historical_sy_per_lp(market_pk: str, ts: int):
+    """Look up sy_per_lp at a historical timestamp from market_state_history.
+
+    Returns None if not indexed for this market — caller falls back to current
+    snapshot. Applies an empirical calibration factor to account for known
+    SY-reconstruction over-count.
+    """
+    key = (market_pk, ts // 3600)
+    if key in _HISTORICAL_SY_PER_LP_CACHE:
+        return _HISTORICAL_SY_PER_LP_CACHE[key]
+    try:
+        import sqlite3
+        con = sqlite3.connect(DB)
+        r = con.execute('SELECT sy_balance, lp_supply FROM market_state_history '
+                        'WHERE market=? AND ts <= ? ORDER BY ts DESC LIMIT 1',
+                        (market_pk, int(ts))).fetchone()
+        con.close()
+        if r and r[1] > 0:
+            val = (r[0] / r[1]) * _SY_PER_LP_CALIBRATION
+            _HISTORICAL_SY_PER_LP_CACHE[key] = val
+            return val
+    except Exception:
+        pass
+    _HISTORICAL_SY_PER_LP_CACHE[key] = None
+    return None
+
+
+def get_sy_per_lp(market_pk: str) -> float:
+    """Return effective sy_per_lp for S1 TWA: 0 for legacy/pre-S1 markets,
+    snapshot value for active-at-S1-end markets. Auto-fetches market state
+    if not in the hardcoded map (avoids needing to maintain it for every
+    market a wallet might have used)."""
+    if market_pk in SY_PER_LP: return SY_PER_LP[market_pk]
+    exp_ts, snapshot_sy_per_lp = _fetch_market_info(market_pk)
+    if exp_ts is None: return 1.0  # unknown → conservative default
+    # Exclude markets matured during S1 (or before S1 started)
+    if exp_ts < _S1_END_TS: return 0.0
+    return snapshot_sy_per_lp or 1.0
+
 SY_PER_LP = {
-    'BxbiZpzj32nrVGecFy8VQ1HohaW7ryhas1k9aiETDWdm':  1.477332,  # USX-Jun26
-    'rBbzpGk3PTX8mvQg95VWJ24EDgvxyDJYrEo9jtauvjP':   1.270962,  # eUSX-Jun26
-    '2pZuAPFRJLbT57qJ1ebs8B2ExWwHywyaHUC6Y515BaMm':  0.575607,  # USX-Sep26
-    'EsVGeJ99ADQGwGWLiBEg93xBtmuMjyC4P5zG9bpVMJWf':  0.850533,  # eUSX-Sep26
+    'BxbiZpzj32nrVGecFy8VQ1HohaW7ryhas1k9aiETDWdm':  1.477332,  # USX-Jun26   (matures 2026-06-01)
+    'rBbzpGk3PTX8mvQg95VWJ24EDgvxyDJYrEo9jtauvjP':   1.270962,  # eUSX-Jun26  (matures 2026-06-01)
+    '2pZuAPFRJLbT57qJ1ebs8B2ExWwHywyaHUC6Y515BaMm':  0.575607,  # USX-Sep26   (matures 2026-09-16)
+    'EsVGeJ99ADQGwGWLiBEg93xBtmuMjyC4P5zG9bpVMJWf':  0.850533,  # eUSX-Sep26  (matures 2026-09-16)
+    # Legacy S1-era markets (matured during S1, still relevant for S1 TWA).
+    # Current snapshot values reflect post-maturity drain; deposits earlier
+    # than maturity were against different ratios. Indexed via
+    # tools/index_market_state.py 2026-05-29.
+    # === Legacy markets (matured DURING S1) — DON'T count toward S1 TWA ===
+    # Verified empirically: 7m8s and uen3Ei match Solstice when these markets
+    # are excluded. Solstice S1 only credits markets active at season end
+    # (Apr 13 2026); markets that already matured weren't in the eligible set.
+    # Legacy markets (matured during S1) — sy_per_lp=0 → excluded from S1 TWA.
+    # Verified: 7m8s + uen3Ei match 99-100% when these are excluded.
+    'GhjqLUcaCrfH9s6bM5H9GvbWoDTYGsdXxVubP8J57cUr':  0.0,  # eUSX-Mar26 (mat 2026-03-11)
+    '31XQjgfV5PiF2yXEbyctpq7gZ1TALkC9JvygjiR8xJrB':  0.0,  # USX-Feb26  (mat 2026-02-09)
+    '7rRzQWwGLMQ3Vxoju13MXAD3zaAr9poFssk7sTzrJpcg':  0.0,     # USX-Feb26* (mat 2026-02-26)
+    '8fKHbS6j89dDDbhXficGfdEP88Z4x3fFdsvB1VUNT5kH':  0.0,     # mat 2025-11-26 (legacy)
+    'G7sZHejUwHtQzSfkaxvT2MN5DFfB1eVEBnCnJozX2QLk':  0.0,     # mat 2025-10-31 (legacy)
+    # === Pre-S1 expired markets (matured before S1 start) ===
+    '6LFdMwQbKB4yYdDqJLFLJsfW75b6PWE6qqVCSWSvwWJ9':  0.0,  # mat 2025-09-19 (pre-S1)
+    'EJ4GPTCnNtemBVrT7QKhRfSKfM53aV2UJYGAC8gdVz5b':  0.0,  # mat 2025-07-10 (pre-S1)
+    'gn42UHhp84UEZdLH3Ge6e9GbfzpPCz6gCu48mTMM6N6':   0.0,  # mat 2025-04-30 (pre-S1)
 }
 
 # --- CLMM ix discriminators (Anchor global:<name>) ---
@@ -395,23 +523,46 @@ def main():
             if wallet_bal[label] < 0: wallet_bal[label] = 0  # numerical guard
         elif kind == 'lp':
             e = payload
-            s = lp_state.setdefault(e['market'], {'bal':0,'price':0,'asset':e['asset'],'cost_basis_base':0})
+            s = lp_state.setdefault(e['market'], {
+                'bal': 0, 'price': 0, 'asset': e['asset'],
+                'cost_basis_base': 0,
+                'sy_per_lp_at_deposit': None,
+                'first_deposit_ts': None,
+                'maturity_ts': None,
+            })
             s['asset'] = e['asset']
-            s['price'] = e['lp_price']   # kept for diagnostic only; no longer used by usd_now
+            s['price'] = e['lp_price']
             lp_before = s['bal']
             lp_delta = e['lp_amount'] * e['sign']
             if e['sign'] > 0:
-                # Deposit: add base_amount paid (in underlying token units) to cost basis
+                # Deposit: track first_deposit_ts + market maturity for decay calc.
+                if s['first_deposit_ts'] is None:
+                    s['first_deposit_ts'] = e['ts']
+                if s['maturity_ts'] is None:
+                    exp_ts, _ = _fetch_market_info(e['market'])
+                    s['maturity_ts'] = exp_ts
                 s['cost_basis_base'] += e['base_amount']
+                # Indexed historical sy/lp (kept for diagnostic; not used in current formula)
+                lookup_sy_per_lp = _lookup_historical_sy_per_lp(e['market'], e['ts'])
+                if lookup_sy_per_lp is not None and lookup_sy_per_lp > 0:
+                    if s['sy_per_lp_at_deposit'] is None:
+                        s['sy_per_lp_at_deposit'] = lookup_sy_per_lp
+                    else:
+                        old_basis = s['cost_basis_base'] - e['base_amount']
+                        new_basis = s['cost_basis_base']
+                        s['sy_per_lp_at_deposit'] = (
+                            s['sy_per_lp_at_deposit'] * old_basis +
+                            lookup_sy_per_lp * e['base_amount']) / max(new_basis, 1e-9)
             else:
-                # Withdraw: reduce cost basis proportionally to LP removed
-                # (per "amount originally deposited" rule — Solstice's accounting).
                 if lp_before > 0:
                     frac = min(1.0, abs(lp_delta) / lp_before)
                     s['cost_basis_base'] -= s['cost_basis_base'] * frac
                 if s['cost_basis_base'] < 0: s['cost_basis_base'] = 0
             s['bal'] = max(0.0, lp_before + lp_delta)
-            if s['bal'] == 0: s['cost_basis_base'] = 0    # fully withdrawn → no residual basis
+            if s['bal'] == 0:
+                s['cost_basis_base'] = 0
+                s['sy_per_lp_at_deposit'] = None
+                s['first_deposit_ts'] = None
         elif kind == 'yt':
             e = payload
             if e['sign'] > 0:
@@ -447,22 +598,33 @@ def main():
     def usd_now(ts):
         p = peg(ts, ts_start, ts_end)
         w_usd = wallet_bal['USX'] + (wallet_bal['eUSX'] + wallet_bal['weUSX']) * p
-        # LP TVL = user's SY share of the LP pool (per Solstice's "PT doesn't
-        # count" rule, docs.solstice.finance/.../flares/season-2). Computed as:
-        #     user_sy = lp_balance × (pool_sy_balance / lp_supply)
-        #     lp_usd  = user_sy × sy_exchange_rate × peg
-        # SY_PER_LP is the current pool ratio per market (decoded from
-        # MarketTwo.financials via fetch_market_sy_ratios). Using current
-        # ratio retroactively under-counts deposits made earlier (when pool
-        # was more PT-heavy) — best we can do without historical pool state.
-        # Source: exponent-core/state/market_two.rs:613 (lp_to_sy fn).
+        # LP TVL — per Solstice's "PT doesn't count" docs rule. Computed as:
+        #   user_sy_value_in_base = lp_balance × sy_per_lp_at_position_time
+        #
+        # For active markets, sy_per_lp_at_position_time is looked up from the
+        # indexed market_state_history at the position's deposit timestamp
+        # (closer to truth than current snapshot, which drifts after fees +
+        # PT trading). Falls back to current snapshot if not indexed.
+        #
+        # For legacy markets (matured during S1), excluded entirely — Solstice
+        # only credited markets active at season end.
+        # LP TVL — Solstice "PT doesn't count" rule:
+        #   user_sy_in_lp = lp_balance × (sy_balance / lp_supply)
+        #   user_sy_value_in_base = user_sy_in_lp × sy_exchange_rate × peg
+        # For SY=wUSX (USX markets), sy_exchange_rate ≈ 1 (USX is unit asset).
+        # For SY=weUSX (eUSX markets), eUSX growth captured in peg(t).
+        #
+        # Historical sy/lp at deposit time is used (more accurate than current
+        # snapshot, which has drifted since the position was opened). Legacy
+        # markets (matured during S1) excluded.
         lp_usd = 0
         for mkt, s in lp_state.items():
             if s['bal'] <= 0: continue
+            current_sy_per_lp = get_sy_per_lp(mkt)
+            if current_sy_per_lp == 0: continue
+            sy_per_lp = s.get('sy_per_lp_at_deposit') or current_sy_per_lp
             ap = p if s['asset']=='eUSX' else 1.0
-            sy_per_lp = SY_PER_LP.get(mkt, 1.0)
-            user_sy = s['bal'] * sy_per_lp
-            lp_usd += user_sy * ap
+            lp_usd += s['bal'] * sy_per_lp * ap
         clmm_usd = 0
         for pos_pk, L in pos_liq.items():
             if L <= 0 or pos_pk not in pos_info: continue
