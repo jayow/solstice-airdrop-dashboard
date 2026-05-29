@@ -173,28 +173,45 @@ def integrate_qualified_bonus(timeline: list, min_bal: float, qualify_days: int,
 def discover_universe_for_mint(mint: str) -> list:
     """Enumerate every owner of an SPL token account for `mint` across BOTH token
     programs. Ground truth: every wallet that has ever received this token has
-    a token account."""
-    import base64, base58
+    a token account.
+
+    Retry-on-empty: known-active stablecoin mints (USX/eUSX) should never return
+    0 holders. An empty result is an RPC flake — proceeding would zero out the
+    entire HOLD universe in the downstream walker. Mirrors the protection in
+    walk_s2_orca.py / walk_s2_kamino*.py.
+    """
+    import base64, base58, time as _t
     TOKEN_LEGACY = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'
     TOKEN_2022   = 'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb'
     owners = set()
     for prog, size in [(TOKEN_LEGACY, 165), (TOKEN_2022, None)]:
         filters = [{'memcmp': {'offset': 0, 'bytes': mint}}]
         if size: filters.insert(0, {'dataSize': size})
-        try:
-            r = rpc('getProgramAccounts', [prog, {
-                'encoding': 'base64',
-                'dataSlice': {'offset': 32, 'length': 40},
-                'filters': filters,
-            }], timeout=180)
-            for a in (r.get('result') or []):
-                d = base64.b64decode(a['account']['data'][0])
-                if len(d) < 40: continue
-                owner = base58.b58encode(d[:32]).decode()
-                amount = int.from_bytes(d[32:40], 'little')
-                if amount > 0: owners.add(owner)
-        except Exception as e:
-            print(f'  WARN discover {prog[:8]}.. {mint[:8]}..: {e}', flush=True)
+        accs = []
+        for attempt in range(4):
+            try:
+                r = rpc('getProgramAccounts', [prog, {
+                    'encoding': 'base64',
+                    'dataSlice': {'offset': 32, 'length': 40},
+                    'filters': filters,
+                }], timeout=180, force_refresh=(attempt > 0))
+                accs = r.get('result') or []
+                if accs: break
+            except Exception as e:
+                print(f'  WARN discover {prog[:8]}.. {mint[:8]}.. attempt {attempt+1}: {e}', flush=True)
+            _t.sleep(2 * (attempt + 1))
+        if not accs:
+            # Empty after 4 retries — token-2022 program legitimately empty for
+            # mints not deployed there yet, so don't abort if the OTHER program
+            # returned data. Only the per-program retry warning fires here.
+            print(f'  WARN: {prog[:8]}.. {mint[:8]}.. empty after 4 retries', flush=True)
+            continue
+        for a in accs:
+            d = base64.b64decode(a['account']['data'][0])
+            if len(d) < 40: continue
+            owner = base58.b58encode(d[:32]).decode()
+            amount = int.from_bytes(d[32:40], 'little')
+            if amount > 0: owners.add(owner)
     return sorted(owners)
 
 

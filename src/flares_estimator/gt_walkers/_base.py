@@ -32,9 +32,29 @@ def s2_window_days(now_ts: int = None) -> float:
 
 
 def write_walker_outputs(walker_name: str, quest: str, rows: dict):
-    """rows = {wallet: flares}. Prunes prior rows for this (walker, quest) and re-inserts."""
+    """rows = {wallet: flares}. Prunes prior rows for this (walker, quest) and re-inserts.
+
+    Empty-input guard: if rows has zero positive-flares entries, this is
+    almost certainly a discovery failure (RPC empty, walker crashed before
+    write, etc). Pruning + writing nothing would zero out the quest in the
+    dashboard. We refuse to overwrite when prior data exists so the previous
+    run stays authoritative. Mirrors the skip-on-empty pattern in
+    walk_s2_orca.py / walk_s2_kamino*.py.
+    """
     db.init()
     now = int(time.time())
+    positive = sum(1 for v in (rows or {}).values() if v and float(v or 0) > 0)
+    if positive == 0:
+        prior = db.conn().execute(
+            'SELECT COUNT(*) FROM walker_outputs WHERE walker=? AND quest=?',
+            (walker_name, quest)).fetchone()[0]
+        if prior > 0:
+            print(f'  ⚠️  write_walker_outputs({walker_name},{quest}): refusing to overwrite '
+                  f'{prior:,} prior rows with empty input (likely discovery failure). '
+                  f'Existing data preserved.', flush=True)
+            return
+        print(f'  write_walker_outputs({walker_name},{quest}): empty input, no prior data — nothing to do', flush=True)
+        return
     with db.txn() as c:
         c.execute('DELETE FROM walker_outputs WHERE walker = ? AND quest = ?', (walker_name, quest))
         for wallet, flares in rows.items():
