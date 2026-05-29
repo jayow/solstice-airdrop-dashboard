@@ -227,7 +227,7 @@ def main():
 
         n_users = len(events_by_wallet)
         n_events = sum(len(v) for v in events_by_wallet.values())
-        print(f'  {n_users} unique users, {n_events} buy/sell events', flush=True)
+        print(f'  {n_users} unique users, {n_events} buy/sell events (this run)', flush=True)
         if n_failed_fetches[0] > 0:
             # If we miss > 0.5% of sigs after retries, abort — partial walker
             # output silently corrupts wallet flares (see CWGGhiez-style drops
@@ -239,6 +239,56 @@ def main():
                                    f'failed after retries ({fail_pct:.2f}% of {len(sigs)} sigs). '
                                    f'Partial data would silently miss BUY events and zero out '
                                    f'wallet flares. Re-run when RPC is healthier.')
+
+        # ============================================================
+        # MONOTONIC EVENT STORE — persist every decoded event so a single
+        # run's RPC flakes can never overwrite past captures. Cache rebuilds
+        # below use the full DB history, not just this run's in-memory state.
+        # ============================================================
+        import db as _db_es
+        _db_es.init()
+        events_to_persist = []
+        for user, evs in events_by_wallet.items():
+            for ts, delta, base, sig in evs:
+                events_to_persist.append({
+                    'wallet': user, 'market': market_pk, 'sig': sig, 'ts': ts,
+                    'kind': 'buy' if delta > 0 else 'sell',
+                    'amount_delta': delta, 'base_amount': base,
+                })
+        n_new = _db_es.put_walker_events('walk_s2_yt', events_to_persist)
+        print(f'  walker_events: +{n_new:,} new rows (idempotent), {len(events_to_persist) - n_new:,} already present', flush=True)
+
+        # Replace this run's per-wallet events with the FULL persistent history.
+        # Any prior-run event that this run missed (RPC flake) is recovered here.
+        full_rows = _db_es.get_walker_events_by_market('walk_s2_yt', market_pk)
+        events_by_wallet = defaultdict(list)
+        for r in full_rows:
+            events_by_wallet[r['wallet']].append((r['ts'], r['amount_delta'], r['base_amount'], r['sig']))
+        print(f'  walker_events: {sum(len(v) for v in events_by_wallet.values()):,} total events across '
+              f'{len(events_by_wallet):,} wallets (full history)', flush=True)
+
+        # ============================================================
+        # GLOBAL SUPPLY AUDIT — informational. Compares sum of reconstructed
+        # YT (from BuyYt/SellYt events) vs on-chain YT mint supply. A gap
+        # is EXPECTED because YT can also be minted by LP operations (not
+        # walked by the YT decoder). Track the gap over time so a SUDDEN
+        # change suggests walker drift; LP-residue alone is stable.
+        # Primary safety is the monotonic walker_events store + per-tx retry.
+        # ============================================================
+        tracked_yt_sum = 0.0
+        for evs in events_by_wallet.values():
+            bal = sum(d for (_, d, _, _) in evs)
+            if bal > 0: tracked_yt_sum += bal
+        try:
+            sup_r = rpc('getTokenSupply', [cfg['yt_mint']], timeout=15)
+            onchain_yt_supply = float((sup_r.get('result') or {}).get('value', {}).get('uiAmount') or 0)
+        except Exception as e:
+            onchain_yt_supply = 0.0
+            print(f'  ⚠️  getTokenSupply failed ({e}) — skipping supply audit', flush=True)
+        if onchain_yt_supply > 0:
+            drift_pct = 100.0 * (onchain_yt_supply - tracked_yt_sum) / onchain_yt_supply
+            print(f'  supply audit: tracked={tracked_yt_sum:,.2f} vs onchain={onchain_yt_supply:,.2f} '
+                  f'(LP-residue {drift_pct:+.2f}% — expected stable)', flush=True)
 
         # Cost-basis math: how much USD a wallet has effectively invested in YT.
         # Pre-S2 buys time-decay linearly toward $0 at maturity (YT is a decaying

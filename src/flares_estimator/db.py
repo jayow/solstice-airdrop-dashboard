@@ -174,6 +174,33 @@ CREATE TABLE IF NOT EXISTS walker_coverage (
 );
 
 -- =====================================================================
+-- walker_events : monotonic per-event store for event-based walkers (YT, LP).
+--
+-- Each row is one decoded on-chain event (BuyYt, SellYt, AddLp, RemoveLp, ...).
+-- PRIMARY KEY (walker, wallet, market, sig) is content-addressed so a re-walk
+-- of the same tx is idempotent — INSERT OR IGNORE during ingestion guarantees
+-- events are never lost once captured. Cache rebuilds derive positions from
+-- this table (never from raw memory of a single run) so a flaky RPC during one
+-- refresh doesn't wipe events captured in earlier refreshes.
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS walker_events (
+    walker         TEXT NOT NULL,             -- 'walk_s2_yt' | 'walk_s2_lp' | ...
+    wallet         TEXT NOT NULL,             -- buyer / seller / LP-owner pubkey
+    market         TEXT NOT NULL,             -- market PDA / LP-vault address
+    sig            TEXT NOT NULL,             -- on-chain tx signature (content-addressed key)
+    ts             INTEGER NOT NULL,          -- event blockTime / payload ts
+    kind           TEXT NOT NULL,             -- 'buy' | 'sell' | 'add' | 'remove'
+    amount_delta   REAL NOT NULL,             -- signed: yt delta (+buy / -sell) or LP delta
+    base_amount    REAL NOT NULL,             -- underlying-asset amount (USX/eUSX token units, not USD)
+    discovered_at  INTEGER NOT NULL,          -- when this row was first written
+    PRIMARY KEY (walker, wallet, market, sig)
+);
+CREATE INDEX IF NOT EXISTS idx_walker_events_market
+    ON walker_events(walker, market, ts);
+CREATE INDEX IF NOT EXISTS idx_walker_events_wallet
+    ON walker_events(walker, wallet, market, ts);
+
+-- =====================================================================
 -- walker_saturation : sig-pagination saturation events
 --
 -- incremental_events.fetch_new_sigs() caps pagination at max_pages. If a
@@ -294,6 +321,36 @@ def put_cache(wallet: str, quest_key: str, raw: dict,
         (wallet, quest_key, json.dumps(raw, separators=(',', ':')),
          int(watermark_slot or 0), int(watermark_ts or 0))
     )
+
+
+def put_walker_events(walker: str, events: list):
+    """Idempotently insert decoded events. Events already present (same
+    walker+wallet+market+sig) are silently kept — never overwritten or lost.
+
+    Each event is a dict with keys: wallet, market, sig, ts, kind, amount_delta,
+    base_amount.
+    """
+    if not events: return 0
+    rows = [(walker, e['wallet'], e['market'], e['sig'], int(e['ts']),
+             e['kind'], float(e['amount_delta']), float(e['base_amount']))
+            for e in events]
+    cur = conn().executemany(
+        'INSERT OR IGNORE INTO walker_events '
+        '(walker, wallet, market, sig, ts, kind, amount_delta, base_amount, discovered_at) '
+        'VALUES (?,?,?,?,?,?,?,?,strftime("%s","now"))',
+        rows)
+    return cur.rowcount  # number of new rows
+
+
+def get_walker_events_by_market(walker: str, market: str) -> list:
+    """All events for a (walker, market) — used to rebuild positions from the
+    full event history rather than a single run's in-memory state."""
+    rows = conn().execute(
+        'SELECT wallet, sig, ts, kind, amount_delta, base_amount '
+        'FROM walker_events WHERE walker=? AND market=? ORDER BY ts',
+        (walker, market)
+    ).fetchall()
+    return [dict(r) for r in rows]
 
 
 def upsert_walker_output(walker: str, wallet: str, quest: str, flares: float):
