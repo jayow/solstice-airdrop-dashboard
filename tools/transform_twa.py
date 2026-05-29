@@ -81,6 +81,21 @@ YT_MARKETS = {
     'rBbzpGk3PTX8mvQg95VWJ24EDgvxyDJYrEo9jtauvjP':                   {'name':'eUSX-Jun26', 'base':'eUSX', 'maturity_ts':YT_MATURITY_JUN26},
 }
 
+# Current pool sy_per_lp ratios — used by LP TVL formula to credit only the
+# SY portion of an LP claim (Solstice's "PT doesn't count" rule). Snapshotted
+# from on-chain MarketTwo state on 2026-05-29. Ratios drift over time as PT
+# trades happen; historical ratios at deposit time are typically SMALLER for
+# deposits made well before maturity (more PT-heavy pool). Using current
+# ratio retroactively therefore UNDER-counts old deposits — but it's much
+# closer than the cost-basis-only approach (which over-counted by 6×).
+# Refresh via tools/snapshot_exponent_sy_ratios.py.
+SY_PER_LP = {
+    'BxbiZpzj32nrVGecFy8VQ1HohaW7ryhas1k9aiETDWdm':  1.477332,  # USX-Jun26
+    'rBbzpGk3PTX8mvQg95VWJ24EDgvxyDJYrEo9jtauvjP':   1.270962,  # eUSX-Jun26
+    '2pZuAPFRJLbT57qJ1ebs8B2ExWwHywyaHUC6Y515BaMm':  0.575607,  # USX-Sep26
+    'EsVGeJ99ADQGwGWLiBEg93xBtmuMjyC4P5zG9bpVMJWf':  0.850533,  # eUSX-Sep26
+}
+
 # --- CLMM ix discriminators (Anchor global:<name>) ---
 def _global(name): return hashlib.sha256(f'global:{name}'.encode()).digest()[:8]
 ORCA_INC   = _global('increase_liquidity')
@@ -432,15 +447,22 @@ def main():
     def usd_now(ts):
         p = peg(ts, ts_start, ts_end)
         w_usd = wallet_bal['USX'] + (wallet_bal['eUSX'] + wallet_bal['weUSX']) * p
-        # LP TVL = running cost basis (amount originally deposited, less
-        # proportional withdrawals). Solstice values LP this way per their
-        # docs — using `bal × lp_price` over-counts because lp_price drifts
-        # up as fees accrue (the user's claim to those fees isn't a deposit).
+        # LP TVL = user's SY share of the LP pool (per Solstice's "PT doesn't
+        # count" rule, docs.solstice.finance/.../flares/season-2). Computed as:
+        #     user_sy = lp_balance × (pool_sy_balance / lp_supply)
+        #     lp_usd  = user_sy × sy_exchange_rate × peg
+        # SY_PER_LP is the current pool ratio per market (decoded from
+        # MarketTwo.financials via fetch_market_sy_ratios). Using current
+        # ratio retroactively under-counts deposits made earlier (when pool
+        # was more PT-heavy) — best we can do without historical pool state.
+        # Source: exponent-core/state/market_two.rs:613 (lp_to_sy fn).
         lp_usd = 0
         for mkt, s in lp_state.items():
-            if s['bal'] <= 0 or s['cost_basis_base'] <= 0: continue
+            if s['bal'] <= 0: continue
             ap = p if s['asset']=='eUSX' else 1.0
-            lp_usd += s['cost_basis_base'] * ap
+            sy_per_lp = SY_PER_LP.get(mkt, 1.0)
+            user_sy = s['bal'] * sy_per_lp
+            lp_usd += user_sy * ap
         clmm_usd = 0
         for pos_pk, L in pos_liq.items():
             if L <= 0 or pos_pk not in pos_info: continue
