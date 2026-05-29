@@ -230,6 +230,10 @@ footer { text-align: center; color: var(--ink-500); font-size: 11px; margin-top:
 <!-- Wallet detail (full screen overlay) -->
 <div id="drawer" style="display:none; position:fixed; inset:0; background:var(--ink-950); z-index:51; overflow-y:auto;">
   <div style="max-width: 960px; margin: 0 auto; padding: 32px 24px;">
+    <button onclick="closeDrawer()" style="background:transparent; border:1px solid rgba(255,255,255,.1); color:var(--ink-200); padding:8px 14px; border-radius:8px; cursor:pointer; font-size:12px; display:inline-flex; align-items:center; gap:6px; margin-bottom:20px;">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+      Back
+    </button>
     <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:24px;">
       <div>
         <div class="label" style="margin-bottom:4px;">Wallet detail</div>
@@ -242,7 +246,6 @@ footer { text-align: center; color: var(--ink-500); font-size: 11px; margin-top:
           SLX Calculator
         </a>
         <button id="dr-sort" onclick="toggleDrawerSort()" style="background:transparent; border:1px solid rgba(255,255,255,.1); color:var(--ink-200); padding:8px 14px; border-radius:8px; cursor:pointer; font-size:12px;">newest first ▼</button>
-        <button onclick="closeDrawer()" style="background:transparent; border:1px solid rgba(255,255,255,.1); color:var(--ink-200); padding:8px 14px; border-radius:8px; cursor:pointer; font-size:12px;">Close ✕</button>
       </div>
     </div>
     <div id="dr-total" style="margin-bottom:24px;"></div>
