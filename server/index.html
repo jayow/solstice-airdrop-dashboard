@@ -1348,7 +1348,19 @@ function togglePDAs() {
 
 function renderStats() {
   const all = HIDE_PDAS ? RAW.records.filter(r => !r.is_protocol_pda) : RAW.records;
-  const totalFlares = all.reduce((a, r) => a + r.total, 0);
+  const realUsersFlares = all.reduce((a, r) => a + r.total, 0);
+  // Use Solstice's officially published total as the headline number when available.
+  let solsticeTotal = 0;
+  let solsticeDate = '';
+  if (DAILY && DAILY.solstice_series && DAILY.solstice_series.length) {
+    const last = DAILY.solstice_series[DAILY.solstice_series.length - 1];
+    solsticeTotal = last.cumulative || 0;
+    solsticeDate = last.date || '';
+  }
+  const headlineFlares = solsticeTotal > 0 ? solsticeTotal : realUsersFlares;
+  const headlineSub = solsticeTotal > 0
+    ? `Solstice published · ${solsticeDate}`
+    : (HIDE_PDAS ? '(excl. protocol PDAs)' : '(incl. protocol PDAs)');
   const s1 = all.filter(r => r.is_s1).length;
   const newS2 = all.length - s1;
   const subSuffix = HIDE_PDAS ? '(excl. protocol PDAs)' : '(incl. protocol PDAs)';
@@ -1359,10 +1371,10 @@ function renderStats() {
       <div class="v tabular">${all.length.toLocaleString()}</div>
       <div class="sub">${subSuffix}</div>
     </div>
-    <div class="stat" title="Total Flares ${HIDE_PDAS ? 'across real-user wallets only.' : 'incl. all addresses.'}">
+    <div class="stat" title="Solstice's officially published total flares (from their /api/flares/analytics). Real-user subset: ${fmt(realUsersFlares)}.">
       <div class="label">Total flares</div>
-      <div class="v tabular accent">${fmt(totalFlares)}</div>
-      <div class="sub">${subSuffix}</div>
+      <div class="v tabular accent">${fmt(headlineFlares)}</div>
+      <div class="sub">${headlineSub}</div>
     </div>
     <div class="stat" title="Earners that registered for the Season 1 airdrop.">
       <div class="label">S1 retained</div>
