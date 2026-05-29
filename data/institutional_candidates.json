@@ -1,0 +1,32 @@
+{
+  "generated_at": 1780039298,
+  "criteria": "kind=eoa AND n_sigs_seen<30 AND n_token_accts<10 AND total_tvl_usd>1_000_000",
+  "note": "Informational only. These are real EOAs (not PDAs) but exhibit low-activity, high-TVL patterns typical of institutional fronting wallets.",
+  "count": 3,
+  "wallets": [
+    {
+      "wallet": "6SnNkBnH9ifg6vRK25rZUcHdqj6CcWJd7yQwyjVNaarA",
+      "classification": "pda_protocol",
+      "n_sigs_seen": 25,
+      "n_token_accts": 6,
+      "total_tvl_usd": 35583141.93,
+      "flag": "institutional_eoa_candidate"
+    },
+    {
+      "wallet": "2SaYqwUj4cQiYtYkHAkLa7E25WS5dcLizBNZUUTWFa9p",
+      "classification": "unclassified",
+      "n_sigs_seen": 18,
+      "n_token_accts": 2,
+      "total_tvl_usd": 4519405.75,
+      "flag": "institutional_eoa_candidate"
+    },
+    {
+      "wallet": "45KiDVz4eud4zLk2nDvdF6SzCQiChF1AAPUKBCA35mVW",
+      "classification": "real_user",
+      "n_sigs_seen": 0,
+      "n_token_accts": 0,
+      "total_tvl_usd": 3584150.47,
+      "flag": "institutional_eoa_candidate"
+    }
+  ]
+}

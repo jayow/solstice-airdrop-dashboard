@@ -267,6 +267,20 @@ def main():
     if os.path.exists(p_pdas):
         manual_pda_labels = (json.load(open(p_pdas)).get('addresses') or {})
 
+    # On-chain audit set: wallets that don't exist on-chain are walker artifacts —
+    # we suppress them from per-wallet JSON, aggregates, and data.json records.
+    # See tools/audit_onchain_classification.py for how this table is populated.
+    nonexistent_set = set()
+    onchain_audit = {}  # wallet -> (kind, n_sigs_seen, n_token_accts)
+    try:
+        for r in con.execute("SELECT wallet, kind, n_sigs_seen, n_token_accts FROM wallet_onchain_audit"):
+            if r['kind'] == 'nonexistent':
+                nonexistent_set.add(r['wallet'])
+            onchain_audit[r['wallet']] = (r['kind'], r['n_sigs_seen'] or 0, r['n_token_accts'] or 0)
+        print(f'On-chain audit: {len(onchain_audit):,} wallets, {len(nonexistent_set):,} nonexistent (will be suppressed)')
+    except sqlite3.OperationalError:
+        print('On-chain audit table not present — skipping nonexistent-wallet suppression')
+
     # All wallets that have any signal: wallet_quests OR quest_cache OR wallets
     print('Collecting wallet set...')
     all_wallets = set()
@@ -295,7 +309,15 @@ def main():
     system_tvl_by_quest = {}     # aggregated TVL (USD) from real-user wallets only
     total_tvl_by_wallet = {}     # wallet -> total_tvl_usd (used to inject into data.json)
     SERVER = os.path.dirname(os.path.abspath(__file__))
+    n_nonexistent_skipped = 0
     for w in all_wallets:
+        # Skip wallets that don't exist on-chain — they're walker artifacts.
+        # Don't write per-wallet JSON, don't aggregate into system_tvl_by_quest,
+        # and don't inject into total_tvl_by_wallet (so data.json records are
+        # filtered downstream).
+        if w in nonexistent_set:
+            n_nonexistent_skipped += 1
+            continue
         meta = meta_by_w.get(w, {})
         # Quest breakdown — fill in zero for quests not present
         present = {q['quest']: q for q in quests_by_w.get(w, [])}
@@ -396,19 +418,66 @@ def main():
         with open(data_json_path) as f: data = json.load(f)
         data['system_daily_emission_by_quest'] = {q: round(v, 4) for q, v in system_daily_by_quest.items() if v > 0}
         data['system_tvl_by_quest'] = {q: round(v, 4) for q, v in system_tvl_by_quest.items() if v > 0}
-        # Attach per-record tvl so the table can render the TVL column without
+        # Filter out nonexistent wallets from records (walker artifacts) AND
+        # attach per-record tvl so the table can render the TVL column without
         # fetching every per-wallet detail JSON.
-        for rec in data.get('records', []):
+        orig_recs = data.get('records', [])
+        kept_recs = []
+        n_rec_dropped = 0
+        for rec in orig_recs:
+            if rec.get('wallet') in nonexistent_set:
+                n_rec_dropped += 1
+                continue
             rec['tvl'] = round(total_tvl_by_wallet.get(rec.get('wallet'), 0), 4)
+            kept_recs.append(rec)
+        data['records'] = kept_recs
         with open(data_json_path, 'w') as f: json.dump(data, f, separators=(',', ':'))
         total_daily = sum(system_daily_by_quest.values())
         total_tvl   = sum(system_tvl_by_quest.values())
         print(f'\nInjected system_daily_emission_by_quest into data.json: {total_daily:,.0f} flares/day across {sum(1 for v in system_daily_by_quest.values() if v > 0)} quests')
         print(f'Injected system_tvl_by_quest into data.json: ${total_tvl:,.0f} TVL across {sum(1 for v in system_tvl_by_quest.values() if v > 0)} quests')
+        print(f'Dropped {n_rec_dropped:,} nonexistent-wallet records from data.json (kept {len(kept_recs):,}/{len(orig_recs):,})')
     except Exception as e:
         print(f'WARN: failed to inject system daily into data.json: {e}')
 
-    print(f'\nDone. {written:,} files in {time.time()-t0:.1f}s')
+    # TASK 3: Flag institutional-EOA candidates (informational, doesn't reclassify).
+    # Real EOAs (exists, n_sigs_seen<30, n_token_accts<10) with TVL>$1M look like
+    # institutional fronting wallets — low organic activity + concentrated capital.
+    try:
+        candidates = []
+        for w, total_tvl_usd in total_tvl_by_wallet.items():
+            if total_tvl_usd <= 1_000_000:
+                continue
+            audit = onchain_audit.get(w)
+            if not audit:
+                continue
+            kind, n_sigs, n_tok = audit
+            if kind != 'eoa': continue
+            if n_sigs >= 30 or n_tok >= 10: continue
+            meta = meta_by_w.get(w, {})
+            candidates.append({
+                'wallet': w,
+                'classification': meta.get('classification'),
+                'n_sigs_seen': n_sigs,
+                'n_token_accts': n_tok,
+                'total_tvl_usd': round(total_tvl_usd, 2),
+                'flag': 'institutional_eoa_candidate',
+            })
+        candidates.sort(key=lambda x: -x['total_tvl_usd'])
+        out_path = os.path.join(ROOT, 'data', 'institutional_candidates.json')
+        with open(out_path, 'w') as f:
+            json.dump({
+                'generated_at': int(time.time()),
+                'criteria': 'kind=eoa AND n_sigs_seen<30 AND n_token_accts<10 AND total_tvl_usd>1_000_000',
+                'note': 'Informational only. These are real EOAs (not PDAs) but exhibit low-activity, high-TVL patterns typical of institutional fronting wallets.',
+                'count': len(candidates),
+                'wallets': candidates,
+            }, f, indent=2)
+        print(f'Wrote {len(candidates):,} institutional_eoa_candidate flags to {out_path}')
+    except Exception as e:
+        print(f'WARN: failed to write institutional_candidates.json: {e}')
+
+    print(f'\nDone. {written:,} files in {time.time()-t0:.1f}s (skipped {n_nonexistent_skipped:,} nonexistent wallets)')
 
 
 if __name__ == '__main__':
