@@ -387,7 +387,67 @@ def main():
                     'market_label': mname,
                     'underlying_mint': cfg['underlying'],
                 })
-        print(f'  unique LP-active wallets (all-time): {len(events_by_wallet):,}', flush=True)
+        print(f'  unique LP-active wallets (this run): {len(events_by_wallet):,}', flush=True)
+
+        # ============================================================
+        # MONOTONIC EVENT STORE — persist every decoded LP event so a
+        # single run's RPC flakes can never overwrite past captures. Cache
+        # rebuilds use the FULL DB history, not this run's in-memory state.
+        # See [[walk_s2_yt.py]] for the same pattern; LP differs because the
+        # event's canonical lp_price (per_lp_underlying) is critical for
+        # cost-basis math and CANNOT be reconstructed from amount_delta /
+        # base_amount alone (slippage + fees diverge them). Store lp_price
+        # in meta_json so re-reads recover the protocol-emitted value.
+        # ============================================================
+        import db as _db_es
+        _db_es.init()
+        events_to_persist = []
+        for user, evs in events_by_wallet.items():
+            for e in evs:
+                events_to_persist.append({
+                    'wallet': user, 'market': cfg['market'], 'sig': e['sig'], 'ts': e['t'],
+                    'kind': 'add' if e['lp_delta'] > 0 else 'remove',
+                    'amount_delta': e['lp_delta'],
+                    'base_amount': e.get('underlying_delta') or 0.0,
+                    'meta': {
+                        'lp_price':         e.get('rate'),
+                        'pt_delta':         e.get('pt_delta'),
+                        'event_type':       e.get('event_type'),
+                        'market_label':     mname,
+                        'underlying_mint':  cfg['underlying'],
+                    },
+                })
+        n_new = _db_es.put_walker_events('walk_s2_lp', events_to_persist)
+        print(f'  walker_events: +{n_new:,} new rows (idempotent), '
+              f'{len(events_to_persist)-n_new:,} already present', flush=True)
+
+        # Replace this run's per-wallet events with the FULL persistent history.
+        # Reconstruct using meta_json.lp_price (canonical, protocol-emitted) —
+        # do NOT recompute from underlying_delta/lp_delta (slippage drift).
+        full_rows = _db_es.get_walker_events_by_market('walk_s2_lp', cfg['market'])
+        events_by_wallet = defaultdict(list)
+        n_missing_meta = 0
+        for r in full_rows:
+            meta = r.get('meta') or {}
+            lp_price = meta.get('lp_price')
+            if lp_price is None:
+                # Legacy row without meta — best-effort fallback. Should be 0
+                # for fresh installs since we just populated above.
+                n_missing_meta += 1
+                lp_price = (r['base_amount'] / abs(r['amount_delta'])) if r['amount_delta'] else 0
+            events_by_wallet[r['wallet']].append({
+                't': r['ts'], 'lp_delta': r['amount_delta'], 'rate': lp_price,
+                'sig': r['sig'], 'underlying_delta': r['base_amount'],
+                'market': cfg['market'], 'market_label': mname,
+                'underlying_mint': cfg['underlying'],
+                'pt_delta': meta.get('pt_delta', 0.0),
+                'event_type': meta.get('event_type'),
+            })
+        if n_missing_meta:
+            print(f'  ⚠️  {n_missing_meta:,} legacy walker_events rows missing meta_json '
+                  f'(pre-meta-schema) — falling back to derived lp_price', flush=True)
+        print(f'  walker_events: {sum(len(v) for v in events_by_wallet.values()):,} total events across '
+              f'{len(events_by_wallet):,} wallets (full history)', flush=True)
 
         # Integrate LP × lp_price(t) × mult — no peg multiplication. Exponent's
         # lp_price_in_asset() is already denominated in the market's asset units

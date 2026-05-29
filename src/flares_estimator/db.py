@@ -193,6 +193,7 @@ CREATE TABLE IF NOT EXISTS walker_events (
     amount_delta   REAL NOT NULL,             -- signed: yt delta (+buy / -sell) or LP delta
     base_amount    REAL NOT NULL,             -- underlying-asset amount (USX/eUSX token units, not USD)
     discovered_at  INTEGER NOT NULL,          -- when this row was first written
+    meta_json      TEXT DEFAULT NULL,         -- walker-specific extras (e.g. LP: lp_price, pt_delta, event_type)
     PRIMARY KEY (walker, wallet, market, sig)
 );
 CREATE INDEX IF NOT EXISTS idx_walker_events_market
@@ -328,29 +329,40 @@ def put_walker_events(walker: str, events: list):
     walker+wallet+market+sig) are silently kept — never overwritten or lost.
 
     Each event is a dict with keys: wallet, market, sig, ts, kind, amount_delta,
-    base_amount.
+    base_amount. Optional: meta (dict, serialized to meta_json) for walker-
+    specific extras like LP's lp_price field.
     """
     if not events: return 0
     rows = [(walker, e['wallet'], e['market'], e['sig'], int(e['ts']),
-             e['kind'], float(e['amount_delta']), float(e['base_amount']))
+             e['kind'], float(e['amount_delta']), float(e['base_amount']),
+             (json.dumps(e['meta'], separators=(',', ':')) if e.get('meta') is not None else None))
             for e in events]
     cur = conn().executemany(
         'INSERT OR IGNORE INTO walker_events '
-        '(walker, wallet, market, sig, ts, kind, amount_delta, base_amount, discovered_at) '
-        'VALUES (?,?,?,?,?,?,?,?,strftime("%s","now"))',
+        '(walker, wallet, market, sig, ts, kind, amount_delta, base_amount, discovered_at, meta_json) '
+        'VALUES (?,?,?,?,?,?,?,?,strftime("%s","now"),?)',
         rows)
     return cur.rowcount  # number of new rows
 
 
 def get_walker_events_by_market(walker: str, market: str) -> list:
     """All events for a (walker, market) — used to rebuild positions from the
-    full event history rather than a single run's in-memory state."""
+    full event history rather than a single run's in-memory state. Includes
+    meta_json (parsed) when present."""
     rows = conn().execute(
-        'SELECT wallet, sig, ts, kind, amount_delta, base_amount '
+        'SELECT wallet, sig, ts, kind, amount_delta, base_amount, meta_json '
         'FROM walker_events WHERE walker=? AND market=? ORDER BY ts',
         (walker, market)
     ).fetchall()
-    return [dict(r) for r in rows]
+    out = []
+    for r in rows:
+        d = dict(r)
+        if d.get('meta_json'):
+            try: d['meta'] = json.loads(d['meta_json'])
+            except Exception: d['meta'] = None
+        else: d['meta'] = None
+        out.append(d)
+    return out
 
 
 def upsert_walker_output(walker: str, wallet: str, quest: str, flares: float):
