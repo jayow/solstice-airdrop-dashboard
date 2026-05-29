@@ -281,6 +281,39 @@ def main():
     except sqlite3.OperationalError:
         print('On-chain audit table not present — skipping nonexistent-wallet suppression')
 
+    # Walker-artifact suppression: wallets whose positions are walker bugs (e.g.
+    # phantom owners, undetected closed positions). Treated like nonexistent —
+    # suppressed from per-wallet JSON, aggregates, and data.json records.
+    walker_artifact_set = set()
+    p_art = os.path.join(ROOT, 'data', 'walker_artifacts.json')
+    if os.path.exists(p_art):
+        try:
+            for entry in (json.load(open(p_art)).get('wallets') or []):
+                addr = entry.get('address') if isinstance(entry, dict) else entry
+                if addr: walker_artifact_set.add(addr)
+            print(f'Walker artifacts: {len(walker_artifact_set):,} wallets (will be suppressed)')
+        except Exception as e:
+            print(f'WARN: failed to load walker_artifacts.json: {e}')
+    # Fold artifacts into the same suppression set used downstream.
+    nonexistent_set |= walker_artifact_set
+
+    # CEX hot wallets: confirmed exchange custody fronts. Excluded from system
+    # aggregates and tagged as PDAs in data.json (is_protocol_pda=true,
+    # pda_label='(CEX hot wallet)').
+    cex_hot_set = set()
+    cex_hot_labels = {}   # wallet -> label string for the data.json record
+    p_cex = os.path.join(ROOT, 'data', 'cex_hot_wallets.json')
+    if os.path.exists(p_cex):
+        try:
+            for entry in (json.load(open(p_cex)).get('wallets') or []):
+                addr = entry.get('address') if isinstance(entry, dict) else entry
+                if not addr: continue
+                cex_hot_set.add(addr)
+                cex_hot_labels[addr] = entry.get('exchange') or entry.get('reason') or '(CEX hot wallet)'
+            print(f'CEX hot wallets: {len(cex_hot_set):,} wallets (excluded from real-user aggregate)')
+        except Exception as e:
+            print(f'WARN: failed to load cex_hot_wallets.json: {e}')
+
     # All wallets that have any signal: wallet_quests OR quest_cache OR wallets
     print('Collecting wallet set...')
     all_wallets = set()
@@ -364,9 +397,27 @@ def main():
                     cb['usd_basis'] = 0.0
 
         manual = manual_pda_labels.get(w)
-        is_pda = (meta.get('classification') == 'pda_protocol') or (manual is not None)
+        is_cex = w in cex_hot_set
+        is_pda = (meta.get('classification') == 'pda_protocol') or (manual is not None) or is_cex
         tvl_by_quest = _safe_tvl_by_quest(evidence, w)
         total_tvl_usd = sum(v for v in tvl_by_quest.values() if v and v > 0)
+        # Resolve per-wallet PDA label / source.
+        if is_cex:
+            pda_source = 'cex_hot_wallet'
+            pda_label  = '(CEX hot wallet)'
+            pda_proto  = cex_hot_labels.get(w)
+        elif manual:
+            pda_source = 'manual'
+            pda_label  = manual.get('label')
+            pda_proto  = manual.get('protocol')
+        elif meta.get('classification') == 'pda_protocol':
+            pda_source = 'auto'
+            pda_label  = None
+            pda_proto  = None
+        else:
+            pda_source = None
+            pda_label  = None
+            pda_proto  = None
         payload = {
             'wallet': w,
             'meta': {
@@ -377,9 +428,9 @@ def main():
                 'first_seen_ts': meta.get('first_seen_ts'),
                 'last_active_ts': meta.get('last_active_ts'),
                 'is_protocol_pda': is_pda,
-                'pda_source': 'manual' if manual else ('auto' if meta.get('classification') == 'pda_protocol' else None),
-                'pda_label':  manual.get('label') if manual else None,
-                'pda_protocol_hint': manual.get('protocol') if manual else None,
+                'pda_source': pda_source,
+                'pda_label':  pda_label,
+                'pda_protocol_hint': pda_proto,
             },
             'total_flares': total,
             'by_quest': quest_rows,
@@ -424,11 +475,18 @@ def main():
         orig_recs = data.get('records', [])
         kept_recs = []
         n_rec_dropped = 0
+        n_rec_cex_flagged = 0
         for rec in orig_recs:
-            if rec.get('wallet') in nonexistent_set:
+            w_ = rec.get('wallet')
+            if w_ in nonexistent_set:
                 n_rec_dropped += 1
                 continue
-            rec['tvl'] = round(total_tvl_by_wallet.get(rec.get('wallet'), 0), 4)
+            rec['tvl'] = round(total_tvl_by_wallet.get(w_, 0), 4)
+            if w_ in cex_hot_set:
+                # Tag CEX hot wallets so the dashboard treats them like PDAs.
+                rec['is_protocol_pda'] = True
+                rec['pda_label'] = '(CEX hot wallet)'
+                n_rec_cex_flagged += 1
             kept_recs.append(rec)
         data['records'] = kept_recs
         with open(data_json_path, 'w') as f: json.dump(data, f, separators=(',', ':'))
@@ -437,6 +495,8 @@ def main():
         print(f'\nInjected system_daily_emission_by_quest into data.json: {total_daily:,.0f} flares/day across {sum(1 for v in system_daily_by_quest.values() if v > 0)} quests')
         print(f'Injected system_tvl_by_quest into data.json: ${total_tvl:,.0f} TVL across {sum(1 for v in system_tvl_by_quest.values() if v > 0)} quests')
         print(f'Dropped {n_rec_dropped:,} nonexistent-wallet records from data.json (kept {len(kept_recs):,}/{len(orig_recs):,})')
+        if n_rec_cex_flagged:
+            print(f'Flagged {n_rec_cex_flagged:,} CEX hot wallet records (is_protocol_pda=true)')
     except Exception as e:
         print(f'WARN: failed to inject system daily into data.json: {e}')
 

@@ -76,6 +76,16 @@ def main():
     # integrates only from S2_START via the loop below.
     def process_ata(ata, info):
         owner = info['owner']
+        # Validate owner exists on-chain. A token-account's owner field can be set
+        # to a pubkey whose underlying account never existed (e.g. a vault setup
+        # error). Without this check we credit phantom flares to nonexistent
+        # wallets — see the Dph2VRJm $3.9M ghost-wallet incident.
+        try:
+            r = rpc('getAccountInfo', [owner], timeout=10)
+            if (r.get('result') or {}).get('value') is None:
+                return owner, 0.0   # owner account doesn't exist → skip
+        except Exception:
+            return owner, 0.0   # RPC error → skip rather than risk phantom credit
         sigs = []
         before = None
         while True:

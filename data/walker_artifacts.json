@@ -1,0 +1,9 @@
+{
+  "comment": "Wallets that are walker artifacts — phantom positions credited to addresses that don't represent a real user (e.g. nonexistent owner pubkeys, closed positions the walker failed to detect, vault setup errors). Treated like 'nonexistent' wallets: suppressed from per-wallet JSON, system aggregates, and data.json records.",
+  "wallets": [
+    {
+      "address": "Dph2VRJmvemtFcrx57zqErrbeNhWTYudG7Y2k6n1qxx5",
+      "reason": "ghost: $3.9M phantom from closed position not detected by walker"
+    }
+  ]
+}

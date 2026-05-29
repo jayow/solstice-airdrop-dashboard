@@ -1,0 +1,5 @@
+{
+  "comment": "CEX hot wallets — addresses confirmed to be exchange custody fronts (hundreds of distinct external depositors + simple stablecoin custody flows + batched outflows). Excluded from real-user system aggregates and treated as PDAs in data.json records (is_protocol_pda=true, pda_label='(CEX hot wallet)').",
+  "audit_note": "2026-05-29 audit of the top 10 high-n_token_accts candidates returned ZERO CEX hot wallets. Patterns observed were memecoin/NFT-dust hoarders, DeFi yield-farmers, and one Zinc Finance keeper-driven vault — none showed the CEX hallmark of many distinct external depositors + simple stablecoin custody.",
+  "wallets": []
+}
