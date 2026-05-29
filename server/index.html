@@ -381,8 +381,10 @@ const POS_KEY = {
   S2_ORCA_USX_USDC:'orca_usx_usdc', S2_ORCA_EUSX_USX:'orca_eusx_usx', S2_ORCA_USX_USDG:'orca_usx_usdg',
   S2_RAYDIUM_USX_USDC:'raydium_usx_usdc', S2_RAYDIUM_EUSX_USX:'raydium_eusx_usx',
 };
-const USX_MARKET  = 'BxbiZpzj32nrVGecFy8VQ1HohaW7ryhas1k9aiETDWdm';
-const EUSX_MARKET = 'rBbzpGk3PTX8mvQg95VWJ24EDgvxyDJYrEo9jtauvjP';
+const USX_MARKET       = 'BxbiZpzj32nrVGecFy8VQ1HohaW7ryhas1k9aiETDWdm';
+const EUSX_MARKET      = 'rBbzpGk3PTX8mvQg95VWJ24EDgvxyDJYrEo9jtauvjP';
+const USX_SEP26_MARKET  = '2pZuAPFRJLbT57qJ1ebs8B2ExWwHywyaHUC6Y515BaMm';
+const EUSX_SEP26_MARKET = 'EsVGeJ99ADQGwGWLiBEg93xBtmuMjyC4P5zG9bpVMJWf';
 
 function fmtTs(t) { if (!t) return '—'; return new Date(t*1000).toISOString().replace('T',' ').slice(0,16) + 'Z'; }
 function fmtAge(t) { if (!t) return '—'; const a = Math.floor(Date.now()/1000) - t; if (a<3600) return Math.floor(a/60)+'m ago'; if (a<86400) return Math.floor(a/3600)+'h ago'; return Math.floor(a/86400)+'d ago'; }
@@ -419,11 +421,17 @@ function buildEvents(payload) {
   // YT positions: each timeline change = bought/sold YT
   const yt = ev.S2_EXPONENT_YT;
   if (yt && yt.by_market) {
+    const YT_MARKETS = {
+      [USX_MARKET]:        { label: 'USX-Jun26',  quest: 'S2_EXPONENT_YIELD_USX_JUN26' },
+      [EUSX_MARKET]:       { label: 'eUSX-Jun26', quest: 'S2_EXPONENT_YIELD_EUSX_JUN26' },
+      [USX_SEP26_MARKET]:  { label: 'USX-Sep26',  quest: 'S2_EXPONENT_YIELD_USX_SEP26' },
+      [EUSX_SEP26_MARKET]: { label: 'eUSX-Sep26', quest: 'S2_EXPONENT_YIELD_EUSX_SEP26' },
+    };
     for (const mb of yt.by_market) {
-      const isUsx = mb.market === USX_MARKET; const isEusx = mb.market === EUSX_MARKET;
-      if (!isUsx && !isEusx) continue;  // skip non-Solstice markets
-      const ylabel = isUsx ? 'USX-Jun26' : 'eUSX-Jun26';
-      const qcode  = isUsx ? 'S2_EXPONENT_YIELD_USX_JUN26' : 'S2_EXPONENT_YIELD_EUSX_JUN26';
+      const minfo = YT_MARKETS[mb.market];
+      if (!minfo) continue;  // skip non-Solstice markets
+      const ylabel = minfo.label;
+      const qcode  = minfo.quest;
       for (const p of mb.positions || []) {
         const tl = p.timeline || []; if (tl.length < 2) continue;
         // skip v1 LP residue: method=current_state_fallback with no emit
@@ -962,8 +970,10 @@ function renderExponentPositions(p, txs) {
   const NOW = Math.floor(Date.now()/1000);
   const S2_START = 1776038400;
   const MARKET_INFO = {
-    [USX_MARKET]:  { label: 'USX-Jun26',  mult: 30, quest: 'S2_EXPONENT_YIELD_USX_JUN26' },
-    [EUSX_MARKET]: { label: 'eUSX-Jun26', mult: 15, quest: 'S2_EXPONENT_YIELD_EUSX_JUN26' },
+    [USX_MARKET]:        { label: 'USX-Jun26',   mult: 30,   quest: 'S2_EXPONENT_YIELD_USX_JUN26' },
+    [EUSX_MARKET]:       { label: 'eUSX-Jun26',  mult: 15,   quest: 'S2_EXPONENT_YIELD_EUSX_JUN26' },
+    [USX_SEP26_MARKET]:  { label: 'USX-Sep26',   mult: 45,   quest: 'S2_EXPONENT_YIELD_USX_SEP26' },
+    [EUSX_SEP26_MARKET]: { label: 'eUSX-Sep26',  mult: 22.5, quest: 'S2_EXPONENT_YIELD_EUSX_SEP26' },
   };
   // earning flares by quest (from by_quest)
   const flaresByQuest = {};
@@ -1096,10 +1106,14 @@ function renderExponentPositions(p, txs) {
   // Add Exponent LP cards (one per market with events)
   const lpEv = (p.evidence || {}).S2_EXPONENT_LP || {};
   const lpEvents = lpEv.events || [];
-  const lpFlaresByQuest = {
-    'S2_EXPONENT_LP_USX_JUN26':  flaresByQuest['S2_EXPONENT_LP_USX_JUN26'] || 0,
-    'S2_EXPONENT_LP_EUSX_JUN26': flaresByQuest['S2_EXPONENT_LP_EUSX_JUN26'] || 0,
+  const LP_MARKET_INFO = {
+    [USX_MARKET]:        { quest: 'S2_EXPONENT_LP_USX_JUN26',  mult: 20,   label: 'USX-Jun26 LP',  posKey: 'usx_jun26_lp_usd'  },
+    [EUSX_MARKET]:       { quest: 'S2_EXPONENT_LP_EUSX_JUN26', mult: 10,   label: 'eUSX-Jun26 LP', posKey: 'eusx_jun26_lp_usd' },
+    [USX_SEP26_MARKET]:  { quest: 'S2_EXPONENT_LP_USX_SEP26',  mult: 30,   label: 'USX-Sep26 LP',  posKey: 'usx_sep26_lp_usd'  },
+    [EUSX_SEP26_MARKET]: { quest: 'S2_EXPONENT_LP_EUSX_SEP26', mult: 15,   label: 'eUSX-Sep26 LP', posKey: 'eusx_sep26_lp_usd' },
   };
+  const lpFlaresByQuest = {};
+  for (const m of Object.values(LP_MARKET_INFO)) lpFlaresByQuest[m.quest] = flaresByQuest[m.quest] || 0;
   const lpByMarket = {};
   for (const e of lpEvents) {
     const k = e.pos_pubkey;
@@ -1107,11 +1121,11 @@ function renderExponentPositions(p, txs) {
   }
   const lpCostBasisByQuest = (lpEv.cost_basis_by_quest) || {};
   const lpCards = Object.entries(lpByMarket).map(([market, list]) => {
-    const isUsx = market === USX_MARKET;
-    const quest = isUsx ? 'S2_EXPONENT_LP_USX_JUN26' : 'S2_EXPONENT_LP_EUSX_JUN26';
-    const mult = isUsx ? 20 : 10;
-    const label = isUsx ? 'USX-Jun26 LP' : 'eUSX-Jun26 LP';
-    const currentUsd = (lpEv.positions || {})[isUsx ? 'usx_jun26_lp_usd' : 'eusx_jun26_lp_usd'] || 0;
+    const minfo = LP_MARKET_INFO[market]; if (!minfo) return '';
+    const quest = minfo.quest;
+    const mult = minfo.mult;
+    const label = minfo.label;
+    const currentUsd = (lpEv.positions || {})[minfo.posKey] || 0;
     const flares = lpFlaresByQuest[quest];
     const cb = lpCostBasisByQuest[quest];
     return `<div class="pos-card">
@@ -1132,7 +1146,7 @@ function renderExponentPositions(p, txs) {
   // Bail only when BOTH YT and LP have no cards.
   if (!rows.length && !lpCards) return '';
   const ytFlares = (p.by_quest||[]).reduce((s,q) => s + (q.quest.startsWith('S2_EXPONENT_YIELD_') ? (q.flares||0) : 0), 0);
-  const lpFlares = lpFlaresByQuest['S2_EXPONENT_LP_USX_JUN26'] + lpFlaresByQuest['S2_EXPONENT_LP_EUSX_JUN26'];
+  const lpFlares = Object.values(lpFlaresByQuest).reduce((s,v) => s + (v||0), 0);
   const totalFlares = ytFlares + lpFlares;
   const ytEarning = rows.some(r => r.earning === 'EARNING');
   const lpEarning = ((lpEv.positions || {}).usx_jun26_lp_usd || 0) + ((lpEv.positions || {}).eusx_jun26_lp_usd || 0) > 0;
