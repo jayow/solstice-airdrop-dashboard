@@ -37,19 +37,24 @@ where:
 ### Day boundary (from PDF spec)
 `c(d) = (d+1) 00:00 UTC` — state at midnight UTC of the NEXT day = end of day d.
 
-### Sources included (walkers covered)
-| Source | Decoder in transform_twa.py | Notes |
-|---|---|---|
-| HOLD USX / eUSX / weUSX | `extract_balance_events` | Wallet ATA balance via Helius tokenBalanceChanges |
-| Exponent LP | `decode_lp` | All 5 LP event types (provide/withdraw/classic/base) |
-| Exponent YT | `decode_yt` | BuyYt + SellYt + carry-in for pre-S1 buys |
-| Kamino lending | `decode_kamino` | USX/eUSX/USDG reserves on Solstice market |
-| Orca CLMM | `decode_clmm` | increase/decrease_liquidity events |
-| Raydium CLMM | `decode_clmm` | increase/decrease_liquidity events |
+### Sources included — matches Solstice's official S1 TWA column spec
 
-### Sources NOT included (deliberately, for S1)
-- ❌ Loopscale supply / borrow (legacy: minimal S1 exposure on cal wallets)
-- ❌ Kamino Strategy / KVault (legacy: not active during S1)
+Per Solstice's official S1 TWA breakdown table (6 columns):
+
+| Solstice column | What it counts | Our decoder | Status |
+|---|---|---|---|
+| `kamino_usx` | Kamino reserve/lending position value at cutoff | `decode_kamino` (USX/eUSX/USDG reserves) | ✓ |
+| `exponent_usx` | Capital still invested in Exponent at cutoff (LP + YT combined, cost basis) | `decode_lp` + `decode_yt` | ✓ |
+| `raydium_usx` | CLMM LP position value (token0 + token1) converted to USX | `decode_clmm` (Raydium) | ✓ |
+| `whirlpool_usx` | Orca Whirlpool CLMM same as Raydium | `decode_clmm` (Orca) | ✓ |
+| `usx_holding` | Raw USX SPL balance in wallet at slot | `extract_balance_events` | ✓ |
+| `eusx_holding` | eUSX SPL balance × eusxRate at slot | `extract_balance_events` + `peg_at()` | ✓ |
+
+T_w(d) = sum of all 6 columns at cutoff c(d) = (d+1) 00:00 UTC.
+
+### Sources NOT included (deliberate — Loopscale wasn't a Solstice partner during S1)
+- ❌ **Loopscale** — not yet integrated when S1 ended (became a partner in S2)
+- ❌ Kamino Strategy / KVault — not active during S1
 
 ### LP-specific rules
 1. **Cost basis tracking**: deposits add `base_amount`; withdraws reduce proportionally.
@@ -118,17 +123,22 @@ This metric would be needed for:
 ### Formula
 Same as S1 in shape (`TWA = S_w / n_w`), but with S2 window.
 
-### Sources required (must ALL be added)
-| Source | Status | What's missing |
-|---|---|---|
-| HOLD USX / eUSX | reuse from S1 | nothing |
-| Exponent LP | reuse from S1 | active markets are Jun26 + Sep26 (different sy/lp ratios) |
-| Exponent YT | reuse from S1 | same |
-| Kamino lending | reuse from S1 | nothing |
-| Orca CLMM | reuse from S1 | historical pool tick needed (currently uses snapshot) |
-| Raydium CLMM | reuse from S1 | same |
-| **Kamino Strategy / KVault** | **NEW** | needs `decode_kamino_strategy()` |
-| **Loopscale supply / borrow** | **NEW** | needs `decode_loopscale()` + `decode_loopscale_events()` |
+### Sources required for S2 TWA — Solstice's S2 column spec (extends S1)
+
+S1's 6 columns + Loopscale + Kamino Strategy. Loopscale is the major net-new
+partner: it became a Solstice integration partner during S2 (it wasn't yet
+integrated in S1, which is why the S1 spec table doesn't include it).
+
+| Source | S1 spec | S2 spec | Decoder status |
+|---|---|---|---|
+| Kamino lending (`kamino_usx`) | ✓ | ✓ | reuse `decode_kamino` |
+| Exponent LP + YT (`exponent_usx`) | ✓ | ✓ | reuse `decode_lp` + `decode_yt` (active markets shift to Jun26 + Sep26) |
+| Raydium CLMM (`raydium_usx`) | ✓ | ✓ | reuse `decode_clmm` |
+| Orca CLMM (`whirlpool_usx`) | ✓ | ✓ | reuse `decode_clmm` |
+| USX hold (`usx_holding`) | ✓ | ✓ | reuse `extract_balance_events` |
+| eUSX hold (`eusx_holding`) | ✓ | ✓ | reuse `extract_balance_events` + `peg_at()` |
+| **Loopscale (`loopscale_usx`)** | ❌ not yet integrated | ✓ NEW for S2 | **MUST BUILD `decode_loopscale()`** |
+| **Kamino Strategy / KVault** | ❌ not active | ✓ NEW for S2 | **MUST BUILD `decode_kamino_strategy()`** |
 
 ### S2-specific rule differences vs S1
 - **Legacy markets**: definition shifts. For S2, "legacy" = matured during S2 window (Apr 13 → Aug 1). Currently that's USX-Feb26, eUSX-Mar26 (already expired pre-S2, so not relevant) AND any Jun26 markets (mature 2026-06-01, mid-S2). **Need to verify if Solstice excludes Jun26 from S2 TWA after its maturity.**
