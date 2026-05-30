@@ -124,6 +124,154 @@ footer { text-align: center; color: var(--ink-500); font-size: 11px; margin-top:
   .controls input { width: 100%; }
   th, td { padding: 8px 10px; }
 }
+
+/* ─── Mobile (phone-only, ≤767px) ───────────────────────────────────────────
+   Separate visual layer: stats stack, table becomes card list, drawer is
+   bottom-anchored. Desktop layout above untouched. */
+@media (max-width: 767px) {
+  body { font-size: 13px; }
+  main { padding: 0 16px; }
+
+  /* Header: stack brand + links vertically, tighter spacing */
+  header { flex-direction: column; align-items: flex-start; gap: 10px; padding: 14px 0; }
+  .brand { font-size: 11px; line-height: 1.4; }
+  .brand img { height: 26px !important; }
+  .right-links { font-size: 10px; gap: 10px; flex-wrap: wrap; }
+
+  /* Stats: single column stack, smaller numbers */
+  .stats-row { gap: 16px; margin-bottom: 28px; }
+  .stats { grid-template-columns: 1fr 1fr; gap: 16px 20px; }
+  .stat .v { font-size: 19px; }
+  .stat .sub { font-size: 10px; }
+
+  /* Donut chart: shrink to fit (keep visible since it's the visual headline) */
+  #partner-stats svg { max-width: 220px; height: auto; }
+
+  /* Section headings */
+  section { margin-bottom: 32px; }
+  section h2 { font-size: 15px; }
+
+  /* Chart: keep 240px height (JS hardcodes that for bar scale + y-axis label
+     positions). Tightening only the padding-left so the y-axis labels nestle
+     against the chart edge, not eating 54px of horizontal space. */
+  #chart { padding-left: 36px !important; }
+  #chart-y-axis > div { padding-left: 0 !important; }
+  #chart-y-axis span { font-size: 9px !important; }
+  #chart-x-axis { font-size: 9px; padding-left: 36px !important; }
+  /* Partner legend below chart: tighter on mobile */
+  #chart-partner-legend { padding-left: 36px !important; gap: 8px !important; font-size: 9.5px !important; }
+  /* Hide per-bar value labels on mobile — y-axis grid + tap tooltips
+     carry the same info without the visual noise. */
+  #chart > div > div:first-child { display: none !important; }
+  /* Chart surface card: tighter padding so bars get more horizontal room */
+  #chart-section .surface { padding: 14px !important; }
+
+  /* Controls: stack vertically, full-width tap targets */
+  .controls { padding: 12px 14px; gap: 8px; flex-direction: column; align-items: stretch; }
+  .controls > * { width: 100%; }
+  .controls > span[style*="flex:1"] { display: none; }
+  .controls input, .controls select, .controls button { padding: 11px 14px; font-size: 13px; }
+  .controls > div, .controls #prev-top, .controls #next-top {
+    /* Group the prev/next buttons side-by-side at the bottom */
+  }
+
+  /* Table → information-dense flex-wrap card list. Visual order:
+       Row 1:  rank · wallet+tags · TOTAL
+       Row 2:  partner-flare chips (non-zero only, wrap as needed)
+       Row 3:  small S1 TWA footnote (only when value present)
+     Implemented via flexbox with `flex-basis: 100%` line-breakers so each
+     "row" is forced onto its own visual line. Avoids the grid-cell-overlap
+     bug from the prior layout. */
+  thead { display: none; }
+  table { border-collapse: separate; }
+  tbody { display: block; width: 100%; }
+  tbody tr {
+    display: flex; flex-wrap: wrap; align-items: baseline;
+    gap: 6px 8px;
+    padding: 14px 16px; border-top: 1px solid rgba(255,255,255,.06);
+  }
+  tbody tr:hover { background: transparent; }
+  tbody tr:active { background: rgba(255,255,255,.03); }
+  tbody td { padding: 0; white-space: normal; }
+
+  /* Row 1: rank | wallet (grows) | total */
+  tbody td:nth-child(1) { /* rank */
+    order: 1; flex: 0 0 auto;
+    font-size: 11px; color: var(--ink-500); min-width: 18px;
+  }
+  tbody td:nth-child(2) { /* wallet + tags */
+    order: 2; flex: 1 1 auto;
+    font-size: 13px; text-align: left;
+  }
+  tbody td:nth-child(4) { /* total flares (or TVL) — pushed to right edge */
+    order: 3; flex: 0 0 auto;
+    font-size: 14px; font-weight: 600; color: var(--accent-300);
+    text-align: right;
+  }
+  tbody td:nth-child(4)::before {
+    content: 'TOTAL '; color: var(--ink-500); font-size: 9.5px;
+    text-transform: uppercase; letter-spacing: 0.08em; font-weight: normal;
+    margin-right: 4px; vertical-align: 1px;
+  }
+
+  /* Force row break before partner chips */
+  tbody td:nth-child(5) { margin-left: 0; }
+  tbody tr::after {
+    content: ''; flex-basis: 100%; order: 4; height: 0;
+  }
+
+  /* Rows 2+3: 8 metric chips, 4 per row.
+     Order matches the desktop columns left-to-right:
+       row 2: TWA TVL (S1) | Hold USX | Hold eUSX | Exponent
+       row 3: Kamino       | Orca     | Raydium   | Loop
+     Each chip is exactly 25% width (minus gap) so 4 fit per row precisely. */
+  tbody td:nth-child(3),                          /* TWA TVL (S1) */
+  tbody td:nth-child(n+5):nth-child(-n+11) {      /* USX..Loop partner cells */
+    order: 5; flex: 0 0 calc(25% - 6px);
+    box-sizing: border-box;
+    font-size: 10.5px; color: var(--ink-200);
+    padding: 4px 7px; border-radius: 5px;
+    background: rgba(255,255,255,.025);
+    font-variant-numeric: tabular-nums;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    line-height: 1.4;
+  }
+  /* Hide zero-value partner cells. TWA "—" stays as a chip so every card
+     shows S1 status at a glance. */
+  tbody td:nth-child(n+5):nth-child(-n+11):has(span.zero) { display: none; }
+  tbody td:nth-child(n+5):nth-child(-n+11):empty { display: none; }
+  /* Tiny labels inside each chip */
+  tbody td:nth-child(3)::before  { content: 'TWA TVL '; color: var(--ink-500); font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; }
+  tbody td:nth-child(5)::before  { content: 'USX '; color: var(--ink-500); font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; }
+  tbody td:nth-child(6)::before  { content: 'eUSX '; color: var(--ink-500); font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; }
+  tbody td:nth-child(7)::before  { content: 'EXP '; color: var(--ink-500); font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; }
+  tbody td:nth-child(8)::before  { content: 'KAM '; color: var(--ink-500); font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; }
+  tbody td:nth-child(9)::before  { content: 'ORCA '; color: var(--ink-500); font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; }
+  tbody td:nth-child(10)::before { content: 'RAY '; color: var(--ink-500); font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; }
+  tbody td:nth-child(11)::before { content: 'LOOP '; color: var(--ink-500); font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; }
+
+  /* Pagination: bigger tap targets */
+  .pagination { padding: 14px 16px; font-size: 11px; }
+  .pagination button { padding: 10px 16px; font-size: 12px; }
+
+  /* Drawer: tighter padding, mobile-optimized */
+  #drawer > div { padding: 16px 14px !important; max-width: none !important; }
+  #drawer .label { font-size: 10px !important; }
+  #dr-addr { font-size: 11px !important; word-break: break-all; }
+  #dr-meta { font-size: 10px !important; }
+  /* Drawer header row: stack wallet info above action buttons on mobile */
+  #drawer > div > div[style*="justify-content:space-between"],
+  #drawer > div > div[style*="space-between"] {
+    flex-direction: column !important; gap: 14px;
+  }
+  #drawer > div > div[style*="space-between"] > div:last-child {
+    flex-wrap: wrap; width: 100%;
+  }
+  #dr-calc, #dr-sort { flex: 1; min-width: 0; justify-content: center; font-size: 11px !important; padding: 10px 12px !important; }
+
+  /* Footer */
+  footer { font-size: 10px; padding: 0 16px; }
+}
 </style>
 </head>
 <body>
