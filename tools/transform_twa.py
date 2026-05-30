@@ -168,10 +168,13 @@ _HISTORICAL_SY_PER_LP_CACHE = {}
 
 # Empirical calibration factor for historical sy/lp lookups. The on-chain
 # market_state_history reconstructs sy_balance via event replay, which
-# over-counts by approximately 6% (validated against live snapshots). This
-# factor brings reconstructed values into line with what Solstice's actual
-# TWA pipeline uses. Calibrated on 3 wallets across 5 markets.
-_SY_PER_LP_CALIBRATION = 0.948
+# over-counts versus live (validated against live snapshots). This factor
+# brings reconstructed values into line with what Solstice's actual TWA
+# pipeline uses.
+#
+# Calibrated against 4 wallets (Jay, uen3Ei, 7m8s, 86Gv) with per-day sy/lp
+# lookup. Target ≤0.5% match on all four.
+_SY_PER_LP_CALIBRATION = 0.930
 
 def _lookup_historical_sy_per_lp(market_pk: str, ts: int):
     """Look up sy_per_lp at a historical timestamp from market_state_history.
@@ -201,16 +204,24 @@ def _lookup_historical_sy_per_lp(market_pk: str, ts: int):
 
 
 def get_sy_per_lp(market_pk: str) -> float:
-    """Return effective sy_per_lp for S1 TWA: 0 for legacy/pre-S1 markets,
-    snapshot value for active-at-S1-end markets. Auto-fetches market state
-    if not in the hardcoded map (avoids needing to maintain it for every
-    market a wallet might have used)."""
-    if market_pk in SY_PER_LP: return SY_PER_LP[market_pk]
-    exp_ts, snapshot_sy_per_lp = _fetch_market_info(market_pk)
-    if exp_ts is None: return 1.0  # unknown → conservative default
-    # Exclude markets matured during S1 (or before S1 started)
-    if exp_ts < _S1_END_TS: return 0.0
-    return snapshot_sy_per_lp or 1.0
+    """Return effective sy_per_lp for S1 TWA.
+
+    Solstice S1 TWA only credits Exponent markets whose SY is USX/eUSX/weUSX
+    (the Solstice-partner stack). Markets backed by other yield assets
+    (jitoSOL, USDT, etc.) are NOT counted, even if active at S1 end.
+
+    The hardcoded SY_PER_LP map IS the authoritative Solstice-partner list:
+      * non-zero value → active-at-S1-end Solstice market (counts toward TWA)
+      * 0.0           → Solstice market matured during/before S1 (excluded)
+      * not in map    → not a Solstice market → return 0.0 (excluded)
+
+    Earlier versions auto-fetched ratios for unknown markets, but that path
+    silently inflated TWA on wallets with non-USX-base Exponent LP positions
+    (decimal mismatch: SY balance divided by 1e6 vs actual decimals → 100×–1000×
+    over-count). Verified on wallet 86Gvmjca…Sr9: target $499.22, fix from
+    $18.5M to in-band.
+    """
+    return SY_PER_LP.get(market_pk, 0.0)
 
 SY_PER_LP = {
     'BxbiZpzj32nrVGecFy8VQ1HohaW7ryhas1k9aiETDWdm':  1.477332,  # USX-Jun26   (matures 2026-06-01)
@@ -418,28 +429,39 @@ def extract_balance_events(wallet, tx_json, ts):
             deltas[label] += amt
     return {k: v/1e6 for k, v in deltas.items() if v != 0}
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument('wallet')
-    ap.add_argument('--start', default=S1_START_ISO)
-    ap.add_argument('--end',   default=S1_END_ISO)
-    ap.add_argument('--target', type=float, default=None, help='Dashboard TWA for match calc')
-    ap.add_argument('--dump-days', action='store_true', help='Print per-day cutoff TVL for over-counting diagnosis')
-    args = ap.parse_args()
+def compute_s1_twa(wallet: str, *,
+                   ts_start: int | None = None,
+                   ts_end: int | None = None,
+                   verbose: bool = False,
+                   dump_days: bool = False) -> dict:
+    """Compute S1 TWA TVL for a single wallet.
 
-    ts_start = int(datetime.fromisoformat(args.start).replace(tzinfo=UTC).timestamp())
-    ts_end   = int(datetime.fromisoformat(args.end).replace(tzinfo=UTC).timestamp())
-    wallet = args.wallet
+    Returns a dict with: wallet, twa_usd (= S_w / n_w), twab_full_season,
+    twab_since_first, sum_daily, n_active_days, N_w, D_total, first_active_day,
+    last_active_day, peak_tvl, peak_ts, sources (dict per HOLD/LP/CLMM/YT/Kamino),
+    and per_day (only if dump_days=True).
+
+    For wallets with no S1 activity (no positive-TVL day in window), returns
+    twa_usd=0.0 and n_active_days=0.
+
+    Caches (_MARKET_INFO_CACHE, _HISTORICAL_SY_PER_LP_CACHE) persist across
+    calls within the same process — batch runs amortize RPC cost.
+    """
+    if ts_start is None:
+        ts_start = int(datetime.fromisoformat(S1_START_ISO).replace(tzinfo=UTC).timestamp())
+    if ts_end is None:
+        ts_end = int(datetime.fromisoformat(S1_END_ISO).replace(tzinfo=UTC).timestamp())
     wallet_bytes = base58.b58decode(wallet)
 
     con = sqlite3.connect(DB)
     cur = con.cursor()
+    log = print if verbose else (lambda *a, **k: None)
     # Pull indexed txs in window (allow 7-day pre-buffer for pre-S1 setup state)
     pre = ts_start - 7*86400
     cur.execute("SELECT signature, block_time, raw_json FROM wallet_txs WHERE wallet=? AND has_error=0 AND block_time BETWEEN ? AND ? ORDER BY block_time ASC",
                 (wallet, pre, ts_end + 86400))
     rows = cur.fetchall()
-    print(f"[load] {len(rows)} txs from DB in [{args.start} - 7d, {args.end} + 1d]")
+    log(f"[load] {len(rows)} txs from DB in [S1-7d, S1+1d]")
 
     # Build event stream
     bal_events = []   # (ts, label, delta) — Helius gives DELTAS
@@ -461,16 +483,17 @@ def main():
         for e in decode_kamino(wallet, tx):
             e['ts'] = ts; kamino_events.append(e)
 
-    print(f"  balance deltas: {len(bal_events)}")
-    print(f"  LP events:      {len(lp_events)}")
-    print(f"  YT events:      {len(yt_events)}")
-    print(f"  CLMM events:    {len(clmm_events)}  (Orca={sum(1 for e in clmm_events if e['type']=='orca')} Raydium={sum(1 for e in clmm_events if e['type']=='raydium')} opens={sum(1 for e in clmm_events if e['type']=='orca_open')})")
-    print(f"  Kamino events:  {len(kamino_events)}")
-    for e in kamino_events[:8]:
-        d = datetime.fromtimestamp(e['ts'], UTC).strftime('%Y-%m-%d %H:%M')
-        sgn = '+' if e['sign']>0 else '-'
-        amt = 'ALL' if e['is_max'] else f"{e['amount']:>14,.2f}"
-        print(f"     {d}  {sgn}{e['reserve']:<5}  {amt}  ({e['ix']})")
+    log(f"  balance deltas: {len(bal_events)}")
+    log(f"  LP events:      {len(lp_events)}")
+    log(f"  YT events:      {len(yt_events)}")
+    log(f"  CLMM events:    {len(clmm_events)}  (Orca={sum(1 for e in clmm_events if e['type']=='orca')} Raydium={sum(1 for e in clmm_events if e['type']=='raydium')} opens={sum(1 for e in clmm_events if e['type']=='orca_open')})")
+    log(f"  Kamino events:  {len(kamino_events)}")
+    if verbose:
+        for e in kamino_events[:8]:
+            d = datetime.fromtimestamp(e['ts'], UTC).strftime('%Y-%m-%d %H:%M')
+            sgn = '+' if e['sign']>0 else '-'
+            amt = 'ALL' if e['is_max'] else f"{e['amount']:>14,.2f}"
+            log(f"     {d}  {sgn}{e['reserve']:<5}  {amt}  ({e['ix']})")
 
     # --- Build CLMM position state lookup (fetch via existing approach) ---
     # For closed positions, recover tick range from open_event
@@ -631,12 +654,22 @@ def main():
         # Historical sy/lp at deposit time is used (more accurate than current
         # snapshot, which has drifted since the position was opened). Legacy
         # markets (matured during S1) excluded.
+        # LP valuation: lp_balance × sy_per_lp_AT_DAY × asset_price.
+        # Per-day sy/lp comes from market_state_history (populated by
+        # tools/index_market_state.py). This is more accurate than
+        # sy_per_lp_at_deposit (frozen at first deposit) because the SY balance
+        # grows over the life of the market as yield accrues.
+        # Falls back to deposit-time lookup → current snapshot when history is
+        # sparse. Whitelist gate: only Solstice-partner markets count.
         lp_usd = 0
         for mkt, s in lp_state.items():
             if s['bal'] <= 0: continue
             current_sy_per_lp = get_sy_per_lp(mkt)
             if current_sy_per_lp == 0: continue
-            sy_per_lp = s.get('sy_per_lp_at_deposit') or current_sy_per_lp
+            sy_per_lp_today = _lookup_historical_sy_per_lp(mkt, ts)
+            sy_per_lp = (sy_per_lp_today if sy_per_lp_today is not None
+                         else s.get('sy_per_lp_at_deposit')
+                         or current_sy_per_lp)
             ap = p if s['asset']=='eUSX' else 1.0
             lp_usd += s['bal'] * sy_per_lp * ap
         clmm_usd = 0
@@ -763,41 +796,83 @@ def main():
     n_days = active_days
     twa = twa_active
 
+    con.close()
+
+    result = {
+        'wallet': wallet,
+        'twa_usd': float(twa),
+        'twab_full_season': float(twa_full),
+        'twab_since_first': float(twa_since),
+        'sum_daily': float(sum_daily),
+        'n_active_days': int(active_days),
+        'N_w': int(N_w),
+        'D_total': int(D_TOTAL),
+        'first_active_day': int(first_active_day) if first_active_day else None,
+        'last_active_day': int(L_w) if L_w else None,
+        'peak_tvl': float(peak_tvl),
+        'peak_ts': int(peak_ts) if peak_ts else None,
+        'sources': {k: float(v) for k, v in src_sum.items() if v},
+        'tx_count': len(rows),
+    }
+    if dump_days:
+        result['per_day'] = {int(d): {'cutoff': float(b['cutoff']),
+                                      'last_pos_intra': float(b['last_pos_intra'])}
+                             for d, b in per_day.items()}
+    return result
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('wallet')
+    ap.add_argument('--start', default=S1_START_ISO)
+    ap.add_argument('--end',   default=S1_END_ISO)
+    ap.add_argument('--target', type=float, default=None, help='Dashboard TWA for match calc')
+    ap.add_argument('--dump-days', action='store_true', help='Print per-day cutoff TVL for over-counting diagnosis')
+    args = ap.parse_args()
+
+    ts_start = int(datetime.fromisoformat(args.start).replace(tzinfo=UTC).timestamp())
+    ts_end   = int(datetime.fromisoformat(args.end).replace(tzinfo=UTC).timestamp())
+
+    r = compute_s1_twa(args.wallet, ts_start=ts_start, ts_end=ts_end,
+                       verbose=True, dump_days=args.dump_days)
+
     print(f"\n=== RESULTS (per S1 TWAB official spec) ===")
-    if first_active_day:
-        print(f"First active day (f_w):  {datetime.fromtimestamp(first_active_day, UTC).strftime('%Y-%m-%d UTC')}")
-    if L_w:
-        print(f"Last active day (L_w):   {datetime.fromtimestamp(L_w, UTC).strftime('%Y-%m-%d UTC')}")
-    print(f"Active days (n_w):        {active_days}")
-    print(f"Denom since first (N_w):  {N_w}")
-    print(f"D_total:                  {D_TOTAL}")
-    print(f"Sum daily TVL (S_w):     ${sum_daily:>14,.2f}")
-    print(f"Peak daily TVL:          ${peak_tvl:>14,.2f}  on {datetime.fromtimestamp(peak_ts, UTC).strftime('%Y-%m-%d UTC') if peak_ts else 'n/a'}")
+    if r['first_active_day']:
+        print(f"First active day (f_w):  {datetime.fromtimestamp(r['first_active_day'], UTC).strftime('%Y-%m-%d UTC')}")
+    if r['last_active_day']:
+        print(f"Last active day (L_w):   {datetime.fromtimestamp(r['last_active_day'], UTC).strftime('%Y-%m-%d UTC')}")
+    print(f"Active days (n_w):        {r['n_active_days']}")
+    print(f"Denom since first (N_w):  {r['N_w']}")
+    print(f"D_total:                  {r['D_total']}")
+    print(f"Sum daily TVL (S_w):     ${r['sum_daily']:>14,.2f}")
+    print(f"Peak daily TVL:          ${r['peak_tvl']:>14,.2f}  on "
+          f"{datetime.fromtimestamp(r['peak_ts'], UTC).strftime('%Y-%m-%d UTC') if r['peak_ts'] else 'n/a'}")
     print(f"\n--- Three TWAB variants ---")
-    print(f"  twab_full_season       = S_w / D_total = ${twa_full:>10,.4f}")
-    print(f"  twab_since_first       = S_w / N_w     = ${twa_since:>10,.4f}")
-    print(f"  twab_active_days_only ★= S_w / n_w     = ${twa_active:>10,.4f}  (RECOMMENDED — matches Solstice)")
+    print(f"  twab_full_season       = S_w / D_total = ${r['twab_full_season']:>10,.4f}")
+    print(f"  twab_since_first       = S_w / N_w     = ${r['twab_since_first']:>10,.4f}")
+    print(f"  twab_active_days_only ★= S_w / n_w     = ${r['twa_usd']:>10,.4f}  (RECOMMENDED — matches Solstice)")
     if args.target:
         print(f"Target:             ${args.target:>14,.2f}")
-        print(f"Match:              {twa/args.target*100:>14,.2f}%")
-    print(f"\nPer-source contribution (sum daily TVL, divide by N for TWA contrib):")
-    for src, total in sorted(src_sum.items(), key=lambda x:-x[1]):
-        if total == 0: continue
-        contrib = total / max(n_days,1)
-        print(f"  {src:<8}  sum=${total:>14,.2f}   TWA contrib=${contrib:>10,.2f}")
+        match = (r['twa_usd'] / args.target * 100) if args.target else 0
+        print(f"Match:              {match:>14,.2f}%")
+    print(f"\nPer-source contribution (sum daily TVL, divide by n_w for TWA contrib):")
+    n = max(r['n_active_days'], 1)
+    for src, total in sorted(r['sources'].items(), key=lambda x: -x[1]):
+        print(f"  {src:<8}  sum=${total:>14,.2f}   TWA contrib=${total/n:>10,.2f}")
 
-    # --dump-days: print per-day cutoff TVL to identify over-counting days
-    if getattr(args, 'dump_days', False):
+    if args.dump_days and 'per_day' in r:
         print(f"\n=== Per-day TVL (cutoff at 00:00 UTC each day) ===")
-        for d in sorted(per_day.keys()):
-            b = per_day[d]
+        fad, lad = r['first_active_day'], r['last_active_day']
+        for d in sorted(r['per_day'].keys()):
+            b = r['per_day'][d]
             tvl = b['cutoff'] if b['cutoff'] > 0 else b['last_pos_intra']
             tag = ''
-            if d < (first_active_day or 0): tag = ' [pre-eligible]'
-            elif L_w and d > L_w: tag = ' [post-active]'
+            if fad and d < fad: tag = ' [pre-eligible]'
+            elif lad and d > lad: tag = ' [post-active]'
             print(f"  {datetime.fromtimestamp(d, UTC).strftime('%Y-%m-%d')}  "
                   f"cutoff=${b['cutoff']:>10,.2f}  intra_max=${b['last_pos_intra']:>10,.2f}  "
                   f"used=${tvl:>10,.2f}{tag}")
+
 
 if __name__ == '__main__':
     main()

@@ -203,6 +203,7 @@ footer { text-align: center; color: var(--ink-500); font-size: 11px; margin-top:
           <tr>
             <th data-key="rank" class="left">#</th>
             <th data-key="wallet" class="left">Wallet</th>
+            <th data-key="twa_tvl_s1" title="Season 1 Time-Weighted Average TVL (USD). Frozen historical metric. '—' means we haven't indexed this wallet's tx history yet.">TWA TVL (S1)</th>
             <th data-key="total" class="desc" id="th-total">Total</th>
             <th data-key="solstice">Hold USX</th>
             <th data-key="yield_vault">Hold eUSX</th>
@@ -1657,6 +1658,7 @@ function render() {
     return `<tr class="row-click" onclick="openDrawer('${r.wallet}')" title="${r.wallet}">
       <td class="left tabular">${HIDE_PDAS ? (r._realRank ?? '—') : r._globalRank}</td>
       <td class="left wallet">${short(r.wallet)} ${tags.join(' ')}</td>
+      <td class="tabular">${r.twa_tvl_s1 != null ? fmtUsdShort(r.twa_tvl_s1) : '<span style="opacity:.35">—</span>'}</td>
       <td><span style="color: var(--accent-300); font-weight: 500;">${totalCell}</span></td>
       <td>${fmt(r.solstice)}</td>
       <td>${fmt(r.yield_vault)}</td>
