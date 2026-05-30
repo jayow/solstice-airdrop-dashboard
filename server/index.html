@@ -220,20 +220,19 @@ footer { text-align: center; color: var(--ink-500); font-size: 11px; margin-top:
     content: ''; flex-basis: 100%; order: 4; height: 0;
   }
 
-  /* Rows 2+3: 8 metric chips, 4 per row.
-     Order matches the desktop columns left-to-right:
-       row 2: TWA TVL (S1) | Hold USX | Hold eUSX | Exponent
-       row 3: Kamino       | Orca     | Raydium   | Loop
-     Each chip is exactly 25% width (minus gap) so 4 fit per row precisely. */
+  /* Rows 2+: metric chips. Each chip sizes to its content and wraps naturally.
+     No strict 25%/50% slots — short values ("EXP 6.10B") take less room and
+     more chips fit per row; long values ("TWA TVL $3.63K") take what they
+     need without truncation. */
   tbody td:nth-child(3),                          /* TWA TVL (S1) */
   tbody td:nth-child(n+5):nth-child(-n+11) {      /* USX..Loop partner cells */
-    order: 5; flex: 0 0 calc(25% - 6px);
+    order: 5; flex: 0 0 auto;                     /* size to content, no grow */
     box-sizing: border-box;
     font-size: 10.5px; color: var(--ink-200);
-    padding: 4px 7px; border-radius: 5px;
+    padding: 4px 8px; border-radius: 5px;
     background: rgba(255,255,255,.025);
     font-variant-numeric: tabular-nums;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    white-space: nowrap;                          /* keep chip on one line */
     line-height: 1.4;
   }
   /* Hide zero-value partner cells. TWA "—" stays as a chip so every card
@@ -1364,7 +1363,7 @@ const fmt = n => {
   if (n === 0) return `<span class="zero">0</span>`;
   if (Math.abs(n) >= 1e9) return (n/1e9).toFixed(2) + "B";
   if (Math.abs(n) >= 1e6) return (n/1e6).toFixed(2) + "M";
-  if (Math.abs(n) >= 1e3) return Math.round(n).toLocaleString();
+  if (Math.abs(n) >= 1e3) return (n/1e3).toFixed(2) + "K";
   return n.toFixed(2);
 };
 const fmtUsd = n => n ? "$" + Math.round(n).toLocaleString() : `<span class="zero">$0</span>`;
@@ -1381,7 +1380,7 @@ const fmtUsdShort = n => {
   if (n === 0) return `<span class="zero">$0</span>`;
   if (Math.abs(n) >= 1e9) return "$" + (n/1e9).toFixed(2) + "B";
   if (Math.abs(n) >= 1e6) return "$" + (n/1e6).toFixed(2) + "M";
-  if (Math.abs(n) >= 1e3) return "$" + Math.round(n).toLocaleString();
+  if (Math.abs(n) >= 1e3) return "$" + (n/1e3).toFixed(2) + "K";
   return "$" + n.toFixed(2);
 };
 
