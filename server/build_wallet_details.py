@@ -231,20 +231,59 @@ def _safe_daily_emission(evidence: dict, wallet: str) -> dict:
 
 
 def compute_tvl_by_quest(evidence: dict) -> dict:
-    """Derive current per-quest TVL (USD) by inverting compute_daily_emission.
-    For each daily-emitting quest, flares/day = TVL_usd * multiplier, so
-    TVL_usd = flares/day / multiplier. Bonus tiers (_1MO, _3MO) are NOT daily
-    emitting — they are one-shot qualification bonuses — and are excluded.
-    Returns {quest_code: usd_amount}."""
+    """Derive current per-quest TVL (USD) for the dashboard.
+
+    For HOLD / LP / Kamino / Loopscale / Orca / Raydium quests: daily emission
+    is already TVL_usd × multiplier (the walker writes USD-denominated
+    positions), so TVL_usd = rate / mult holds.
+
+    For Exponent YT quests this inversion is WRONG — the walker tracks YT
+    token count (not USD) and computes daily emission as yt × mult. Each YT
+    represents a fractional claim on remaining yield, not $1 of underlying,
+    so yt count != USD. Per Solstice's docs: "Exponent YT TVL is tracked at
+    the amount you originally deposited, not the current market value." We
+    use cost_basis.usd_basis (per-market) — the same amount-deposited figure
+    the YT walker computes for cost-basis math.
+
+    Bonus tiers (_1MO, _3MO) are excluded — one-shot qualification bonuses,
+    not daily TVL-proportional.
+
+    Returns {quest_code: usd_amount}.
+    """
+    YT_MARKET_TO_QUEST = {
+        'BxbiZpzj32nrVGecFy8VQ1HohaW7ryhas1k9aiETDWdm': 'S2_EXPONENT_YIELD_USX_JUN26',
+        'rBbzpGk3PTX8mvQg95VWJ24EDgvxyDJYrEo9jtauvjP': 'S2_EXPONENT_YIELD_EUSX_JUN26',
+        '2pZuAPFRJLbT57qJ1ebs8B2ExWwHywyaHUC6Y515BaMm': 'S2_EXPONENT_YIELD_USX_SEP26',
+        'EsVGeJ99ADQGwGWLiBEg93xBtmuMjyC4P5zG9bpVMJWf': 'S2_EXPONENT_YIELD_EUSX_SEP26',
+    }
     rates = compute_daily_emission(evidence)
     tvl = {}
     for qcode, rate in rates.items():
         # Skip bonus tiers — they're not daily TVL-proportional.
         if qcode.endswith('_1MO') or qcode.endswith('_3MO'):
             continue
+        # Skip YT — handled separately below using cost basis (the correct
+        # amount-deposited measure).
+        if qcode.startswith('S2_EXPONENT_YIELD_'):
+            continue
         mult = QUEST_MULT.get(qcode)
         if not mult or mult <= 0: continue
         tvl[qcode] = rate / mult
+
+    # YT TVL = cost_basis.usd_basis (amount originally deposited, decay-adjusted
+    # for pre-S2 buys). Only credit quests where the wallet currently holds YT.
+    yt = evidence.get('S2_EXPONENT_YT') or {}
+    cb_by_market = (yt.get('cost_basis_by_market') or {})
+    for mb in (yt.get('by_market') or []):
+        mkt = mb.get('market')
+        qcode = YT_MARKET_TO_QUEST.get(mkt)
+        if not qcode: continue
+        any_emitting = any((p.get('yt') or 0) > 0 for p in (mb.get('positions') or []))
+        if not any_emitting: continue
+        cb = cb_by_market.get(mkt) or mb.get('cost_basis') or {}
+        usd_basis = float(cb.get('usd_basis') or 0)
+        if usd_basis > 0:
+            tvl[qcode] = tvl.get(qcode, 0) + usd_basis
     return tvl
 
 

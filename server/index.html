@@ -159,7 +159,11 @@ footer { text-align: center; color: var(--ink-500); font-size: 11px; margin-top:
     <div class="section-head">
       <h2 class="display">Flares by partner</h2>
       <span class="section-sub">
-        <button id="chart-mode" onclick="toggleChartMode()" style="background:transparent; border:1px solid rgba(255,255,255,.1); color:var(--ink-300); padding:4px 10px; border-radius:6px; cursor:pointer; font-size:11px;">Cumulative ▼</button>
+        <select id="chart-mode" onchange="onChartModeChange(this.value)" style="background:transparent; border:1px solid rgba(255,255,255,.1); color:var(--ink-300); padding:4px 24px 4px 10px; border-radius:6px; cursor:pointer; font-size:11px; appearance:none; -webkit-appearance:none; background-image: linear-gradient(45deg, transparent 50%, var(--ink-400) 50%), linear-gradient(135deg, var(--ink-400) 50%, transparent 50%); background-position: calc(100% - 12px) 50%, calc(100% - 7px) 50%; background-size: 5px 5px, 5px 5px; background-repeat: no-repeat;">
+          <option value="solstice">Solstice (official)</option>
+          <option value="cumulative">Cumulative</option>
+          <option value="inflation">Daily emission</option>
+        </select>
       </span>
     </div>
     <div class="surface" style="padding:24px;">
@@ -190,12 +194,16 @@ footer { text-align: center; color: var(--ink-500); font-size: 11px; margin-top:
         </select>
         <button id="toggle-pdas" onclick="togglePDAs()" title="Show or hide protocol-internal PDA addresses (vault contracts, strategy aggregators, etc.). Totals and ranks update accordingly.">Hide PDAs</button>
         <button id="toggle-view" onclick="toggleView()" title="Switch the headline stat, table column, and per-wallet drawer between cumulative S2 Flares and current-snapshot TVL (USD).">Show TVL</button>
+        <span style="flex:1;"></span>
+        <button id="prev-top" title="Previous page">‹ Prev</button>
+        <button id="next-top" title="Next page">Next ›</button>
       </div>
       <table id="t">
         <thead>
           <tr>
             <th data-key="rank" class="left">#</th>
             <th data-key="wallet" class="left">Wallet</th>
+            <th data-key="twa_tvl_s1" title="Season 1 Time-Weighted Average TVL (USD). Frozen historical metric. '—' means we haven't indexed this wallet's tx history yet.">TWA TVL (S1)</th>
             <th data-key="total" class="desc" id="th-total">Total</th>
             <th data-key="solstice">Hold USX</th>
             <th data-key="yield_vault">Hold eUSX</th>
@@ -226,6 +234,10 @@ footer { text-align: center; color: var(--ink-500); font-size: 11px; margin-top:
 <!-- Wallet detail (full screen overlay) -->
 <div id="drawer" style="display:none; position:fixed; inset:0; background:var(--ink-950); z-index:51; overflow-y:auto;">
   <div style="max-width: 960px; margin: 0 auto; padding: 32px 24px;">
+    <button onclick="closeDrawer()" style="background:transparent; border:1px solid rgba(255,255,255,.1); color:var(--ink-200); padding:8px 14px; border-radius:8px; cursor:pointer; font-size:12px; display:inline-flex; align-items:center; gap:6px; margin-bottom:20px;">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+      Back
+    </button>
     <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:24px;">
       <div>
         <div class="label" style="margin-bottom:4px;">Wallet detail</div>
@@ -238,7 +250,6 @@ footer { text-align: center; color: var(--ink-500); font-size: 11px; margin-top:
           SLX Calculator
         </a>
         <button id="dr-sort" onclick="toggleDrawerSort()" style="background:transparent; border:1px solid rgba(255,255,255,.1); color:var(--ink-200); padding:8px 14px; border-radius:8px; cursor:pointer; font-size:12px;">newest first ▼</button>
-        <button onclick="closeDrawer()" style="background:transparent; border:1px solid rgba(255,255,255,.1); color:var(--ink-200); padding:8px 14px; border-radius:8px; cursor:pointer; font-size:12px;">Close ✕</button>
       </div>
     </div>
     <div id="dr-total" style="margin-bottom:24px;"></div>
@@ -1227,7 +1238,11 @@ const fmtUsdShort = n => {
 };
 
 let DAILY = null;
-let CHART_MODE = 'cumulative';   // default; toggle flips to 'inflation' (daily emission)
+// Default to Solstice (official) — the headline series most users want to see.
+// Persisted per browser via localStorage.
+let CHART_MODE = (localStorage.getItem('chartMode') &&
+                  ['cumulative','inflation','solstice'].includes(localStorage.getItem('chartMode')))
+                ? localStorage.getItem('chartMode') : 'solstice';
 
 async function load() {
   const r = await fetch("data.json");
@@ -1259,16 +1274,10 @@ async function load() {
   applyFilters();
 }
 
-const CHART_MODE_LABELS = {
-  cumulative: 'Cumulative ▼',
-  inflation:  'Daily emission ▼',
-  solstice:   'Solstice (official) ▼',
-};
-const CHART_MODE_CYCLE = ['cumulative', 'inflation', 'solstice'];
-function toggleChartMode() {
-  const idx = CHART_MODE_CYCLE.indexOf(CHART_MODE);
-  CHART_MODE = CHART_MODE_CYCLE[(idx + 1) % CHART_MODE_CYCLE.length];
-  document.getElementById('chart-mode').textContent = CHART_MODE_LABELS[CHART_MODE];
+function onChartModeChange(v) {
+  if (!['cumulative','inflation','solstice'].includes(v)) return;
+  CHART_MODE = v;
+  localStorage.setItem('chartMode', v);
   renderChart();
 }
 
@@ -1280,9 +1289,13 @@ function renderChart() {
   }
   // Solstice (official) mode draws a single-series bar chart from the
   // flares_snapshots-derived solstice_series; partner stacking does not apply.
+  // Sync the dropdown selection — handles both the page-load init and any
+  // mode flip that came from elsewhere.
+  const sel = document.getElementById('chart-mode');
+  if (sel && sel.value !== CHART_MODE) sel.value = CHART_MODE;
   if (CHART_MODE === 'solstice') {
     const ss = (DAILY.solstice_series || []).filter(d => d.cumulative > 0);
-    if (!ss.length) { CHART_MODE = 'cumulative'; document.getElementById('chart-mode').textContent = CHART_MODE_LABELS[CHART_MODE]; return renderChart(); }
+    if (!ss.length) { CHART_MODE = 'cumulative'; if (sel) sel.value = CHART_MODE; return renderChart(); }
     renderSolsticeChart(ss); return;
   }
   const days = DAILY.days;
@@ -1524,20 +1537,36 @@ function renderPartnerStats() {
   if (!rows.length) {
     document.getElementById('partner-stats').innerHTML = ''; return;
   }
-  const size = 200, stroke = 28, radius = (size - stroke) / 2, circ = 2 * Math.PI * radius;
-  let offset = 0;
+  const size = 200, stroke = 28, radius = (size - stroke) / 2;
+  const cx = size / 2, cy = size / 2;
+  // Render arcs as explicit SVG paths instead of <circle> + stroke-dasharray.
+  // The dasharray trick rendered as a "bowtie" on some data shapes due to
+  // browser-specific dash-pattern wrapping; explicit arc commands always
+  // render cleanly. We rotate the start point to 12 o'clock (angle 0 = top).
+  const polar = (a) => [cx + radius * Math.sin(a), cy - radius * Math.cos(a)];
+  let acc = 0;   // cumulative angle (radians)
+  const TAU = 2 * Math.PI;
   const arcs = rows.map(r => {
     const frac = r.tot / grand;
-    const dash = circ * frac;
+    const a0 = acc;
+    const a1 = acc + frac * TAU;
+    acc = a1;
     const tip = `${PARTNER_LABELS[r.p] || r.p}\n${fmt(r.tot)} flares\n${(frac*100).toFixed(1)}% · +${fmt(r.rate)}/day`;
-    const seg = `<circle r="${radius}" cx="${size/2}" cy="${size/2}"
-                         fill="none" stroke="${PARTNER_COLORS[r.p] || '#888'}" stroke-width="${stroke}"
-                         stroke-dasharray="${dash} ${circ - dash}" stroke-dashoffset="${-offset}"
-                         transform="rotate(-90 ${size/2} ${size/2})"
-                         class="has-hover-tip"
-                         data-tip="${tip.replace(/"/g,'&quot;')}"></circle>`;
-    offset += dash;
-    return seg;
+    // Single-arc edge case: a full-circle path with M/A/A back to start.
+    if (frac >= 0.9999) {
+      // Draw two half-arcs since SVG `arc` can't represent a 360° single arc.
+      const [x0, y0] = polar(0);
+      const [x1, y1] = polar(Math.PI);
+      return `<path d="M ${x0} ${y0} A ${radius} ${radius} 0 0 1 ${x1} ${y1} A ${radius} ${radius} 0 0 1 ${x0} ${y0}"
+                    fill="none" stroke="${PARTNER_COLORS[r.p] || '#888'}" stroke-width="${stroke}"
+                    class="has-hover-tip" data-tip="${tip.replace(/"/g,'&quot;')}"></path>`;
+    }
+    const [x0, y0] = polar(a0);
+    const [x1, y1] = polar(a1);
+    const largeArc = (a1 - a0) > Math.PI ? 1 : 0;
+    return `<path d="M ${x0} ${y0} A ${radius} ${radius} 0 ${largeArc} 1 ${x1} ${y1}"
+                  fill="none" stroke="${PARTNER_COLORS[r.p] || '#888'}" stroke-width="${stroke}"
+                  class="has-hover-tip" data-tip="${tip.replace(/"/g,'&quot;')}"></path>`;
   }).join('');
   // Compact legend — color chip + name only, no numbers (tooltip on donut handles those).
   const legend = rows.map(r => `
@@ -1629,6 +1658,7 @@ function render() {
     return `<tr class="row-click" onclick="openDrawer('${r.wallet}')" title="${r.wallet}">
       <td class="left tabular">${HIDE_PDAS ? (r._realRank ?? '—') : r._globalRank}</td>
       <td class="left wallet">${short(r.wallet)} ${tags.join(' ')}</td>
+      <td class="tabular">${r.twa_tvl_s1 != null ? fmtUsdShort(r.twa_tvl_s1) : '<span style="opacity:.35">—</span>'}</td>
       <td><span style="color: var(--accent-300); font-weight: 500;">${totalCell}</span></td>
       <td>${fmt(r.solstice)}</td>
       <td>${fmt(r.yield_vault)}</td>
@@ -1641,14 +1671,22 @@ function render() {
   }).join("");
   document.getElementById("pageinfo").textContent =
     `${start+1}–${end} of ${filtered.length.toLocaleString()}`;
-  document.getElementById("prev").disabled = page === 0;
-  document.getElementById("next").disabled = end >= filtered.length;
+  const atFirst = page === 0;
+  const atLast  = end >= filtered.length;
+  for (const id of ['prev', 'prev-top']) document.getElementById(id).disabled = atFirst;
+  for (const id of ['next', 'next-top']) document.getElementById(id).disabled = atLast;
 }
 
 document.getElementById("search").addEventListener("input", applyFilters);
 document.getElementById("protocol-filter").addEventListener("change", applyFilters);
-document.getElementById("prev").addEventListener("click", () => { if (page>0) { page--; render(); window.scrollTo(0,0); }});
-document.getElementById("next").addEventListener("click", () => { page++; render(); window.scrollTo(0,0); });
+// Pagination: keep current scroll position when paging — clicking Next from
+// the bottom of the page used to fling the user back to the top of the chart.
+function _goPrev() { if (page > 0) { page--; render(); } }
+function _goNext() { page++; render(); }
+document.getElementById("prev").addEventListener("click", _goPrev);
+document.getElementById("next").addEventListener("click", _goNext);
+document.getElementById("prev-top").addEventListener("click", _goPrev);
+document.getElementById("next-top").addEventListener("click", _goNext);
 document.querySelectorAll("th[data-key]").forEach(th => {
   th.addEventListener("click", () => {
     const key = th.dataset.key;

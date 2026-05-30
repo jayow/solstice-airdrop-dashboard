@@ -1,5 +1,5 @@
 {
-  "generated_at": 1780054652,
+  "generated_at": 1780102003,
   "criteria": "kind=eoa AND n_sigs_seen<30 AND n_token_accts<10 AND total_tvl_usd>1_000_000",
   "note": "Informational only. These are real EOAs (not PDAs) but exhibit low-activity, high-TVL patterns typical of institutional fronting wallets.",
   "count": 3,

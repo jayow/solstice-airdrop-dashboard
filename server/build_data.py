@@ -60,6 +60,16 @@ def main():
                           (addr, 'pda_protocol'))
                 wallets_meta.setdefault(addr, {})['classification'] = 'pda_protocol'
 
+    # Load S1 TWA TVL — only present for wallets that have been computed via
+    # tools/batch_s1_twa.py. Frontend renders None as "—". See docs/twa_framework.md.
+    s1_twa_map = {}
+    try:
+        for r in c.execute('SELECT wallet, twa_usd FROM s1_twa'):
+            s1_twa_map[r['wallet']] = float(r['twa_usd'])
+        print(f'  {len(s1_twa_map):,} wallets with S1 TWA computed')
+    except Exception as e:
+        print(f'  WARN: s1_twa load failed: {e}')
+
     # Load exclusion reasons (descriptive category + human reason per wallet)
     exclusion_reasons = {}
     try:
@@ -115,6 +125,7 @@ def main():
                            else ('Institutional wallet' if cls == 'institution' else None)),
             'exclusion_category': excl[0] if excl else None,
             'exclusion_reason':   excl[1] if excl else None,
+            'twa_tvl_s1': s1_twa_map.get(wallet),
         })
 
     # 5. Sort + ranks
