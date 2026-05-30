@@ -153,6 +153,12 @@ footer { text-align: center; color: var(--ink-500); font-size: 11px; margin-top:
 
   /* Cost-basis YT card: tighter padding */
   #calc-cost-basis { padding: 10px 12px !important; font-size: 12px !important; }
+
+  /* YT projection helper: stack inputs vertically; button full-width below */
+  #yt-helper-grid { grid-template-columns: 1fr 1fr !important; gap: 8px !important; }
+  #yt-helper-grid > button { grid-column: 1 / -1; padding: 12px !important; }
+  #yt-helper-out { grid-template-columns: 1fr 1fr !important; gap: 10px 12px !important; font-size: 11px !important; }
+  #yt-helper-out > div:nth-child(3) { grid-column: 1 / -1; }
 }
 </style>
 </head>
@@ -192,24 +198,58 @@ footer { text-align: center; color: var(--ink-500); font-size: 11px; margin-top:
                style="font-family:ui-monospace,monospace; font-size:13px;" />
         <button class="btn-primary" onclick="calcLoadWallet()">Load wallet</button>
       </div>
+
+      <!-- ── YT projection helper for new joiners ──────────────────────── -->
+      <div id="yt-helper" style="margin-bottom:22px; padding:14px 16px; background:rgba(124,92,255,.04); border:1px solid rgba(124,92,255,.18); border-radius:10px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; gap:10px; flex-wrap:wrap;">
+          <div class="label">New to Solstice? Project YT flares
+            <span class="has-hover-tip" data-tip="Live YT prices from Exponent. Projection caps at S2 end (Aug 1)." style="color:var(--ink-500); font-size:10px; margin-left:4px;">ⓘ</span>
+          </div>
+          <a href="https://app.exponent.finance/markets" target="_blank" rel="noopener noreferrer"
+             style="font-size:11px; color:var(--ink-500); text-decoration:underline dotted; text-underline-offset:3px;">Exponent ↗</a>
+        </div>
+        <div id="yt-helper-grid" style="display:grid; grid-template-columns: 1fr 1fr auto; gap:10px; align-items:end;">
+          <div>
+            <label class="field-label" for="yt-deposit">Deposit amount</label>
+            <input id="yt-deposit" type="text" value="100" inputmode="decimal"
+                   placeholder="e.g. 100 or 5K"
+                   oninput="onYtInput()" onblur="onAmountBlur(this)" onfocus="onAmountFocus(this)"
+                   style="font-size:13px;" />
+          </div>
+          <div>
+            <label class="field-label" for="yt-market">YT market</label>
+            <select id="yt-market" onchange="onYtInput()" style="width:100%; padding:10px 12px; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.1); border-radius:8px; color:var(--ink-100); font-size:13px;">
+              <option value="">Loading…</option>
+            </select>
+          </div>
+          <button class="btn-primary" onclick="ytHelperApply()" style="padding:10px 14px; white-space:nowrap;">Use in calc ↑</button>
+        </div>
+        <div id="yt-helper-out" style="margin-top:12px; display:grid; grid-template-columns: repeat(3, 1fr); gap:8px 14px; font-size:12px; color:var(--ink-300); font-variant-numeric:tabular-nums;">
+          <div><span style="color:var(--ink-500); font-size:10px; text-transform:uppercase; letter-spacing:0.06em;">YT received</span><br><span id="yt-out-yt">—</span></div>
+          <div><span style="color:var(--ink-500); font-size:10px; text-transform:uppercase; letter-spacing:0.06em;">Daily flares</span><br><span id="yt-out-daily">—</span></div>
+          <div><span style="color:var(--ink-500); font-size:10px; text-transform:uppercase; letter-spacing:0.06em;">Total to S2 end</span><br><span id="yt-out-total" style="color:var(--accent-300); font-weight:600;">—</span></div>
+        </div>
+      </div>
       <div id="calc-error" class="error" style="display:none;"></div>
       <div id="calc-source" class="source"></div>
       <div id="calc-cost-basis" style="display:none; margin-top:14px; padding:12px 16px; background:rgba(252,211,77,.04); border:1px solid rgba(252,211,77,.18); border-radius:10px; font-size:13px;"></div>
 
       <div class="input-row" style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-top: 20px;">
         <div>
-          <label class="field-label" for="calc-total">Your total flares at end date</label>
+          <label class="field-label" for="calc-total">Your total flares at end date
+            <span id="calc-prefill-hint-ico" class="has-hover-tip" data-tip="" style="display:none; color:var(--ink-500); font-size:10px; margin-left:4px;">ⓘ</span>
+          </label>
           <input id="calc-total" type="text" value="0" inputmode="decimal"
                  placeholder="e.g. 5,000,000 or 5M"
-                 oninput="onAmountInput(this)" onblur="onAmountBlur(this)" onfocus="onAmountFocus(this)" />
-          <div class="source" id="calc-prefill-hint" style="margin-top:6px;"></div>
+                 oninput="onUserTotalEdit(this)" onblur="onUserTotalBlur(this)" onfocus="onAmountFocus(this)" />
         </div>
         <div>
-          <label class="field-label" for="calc-sys-total">System total at end date</label>
+          <label class="field-label" for="calc-sys-total">System total at end date
+            <span id="calc-sys-hint-ico" class="has-hover-tip" data-tip="" style="display:none; color:var(--ink-500); font-size:10px; margin-left:4px;">ⓘ</span>
+          </label>
           <input id="calc-sys-total" type="text" value="0" inputmode="decimal"
                  placeholder="e.g. 60,000,000,000 or 60B"
-                 oninput="onSysTotalInput(this)" onblur="onAmountBlur(this)" onfocus="onAmountFocus(this)" />
-          <div class="source" id="calc-sys-hint" style="margin-top:6px;"></div>
+                 oninput="onSysTotalEdit(this)" onblur="onSysTotalBlur(this)" onfocus="onAmountFocus(this)" />
         </div>
         <div>
           <label class="field-label" for="calc-end">End date</label>
@@ -220,34 +260,37 @@ footer { text-align: center; color: var(--ink-500); font-size: 11px; margin-top:
 
       <div class="input-row" style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-top: 16px;">
         <div style="display:flex; flex-direction:column;">
-          <label class="field-label" for="calc-your-mult" style="min-height:36px; display:block;">Your loyalty multiplier</label>
-          <select id="calc-your-mult" onchange="onAnyInput()" style="width:100%; padding:8px 12px; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.1); border-radius:8px; color:var(--ink-100); font-size:14px;">
+          <label class="field-label" for="calc-your-mult" style="min-height:36px; display:block;">Your loyalty multiplier
+            <span class="has-hover-tip" data-tip="Applied to your S2 flares at end of season." style="color:var(--ink-500); font-size:10px; margin-left:4px;">ⓘ</span>
+          </label>
+          <select id="calc-your-mult" onchange="onLoyaltyChange()" style="width:100%; padding:8px 12px; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.1); border-radius:8px; color:var(--ink-100); font-size:14px;">
             <option value="1.4">1.4x — Full Loyalty (TVL ≥ 100% of TWA)</option>
             <option value="1.3">1.3x — Reduced (50-99% of TWA)</option>
             <option value="1.2">1.2x — Minimum (20-49% of TWA)</option>
             <option value="1.0">1.0x — No multiplier (below 20%)</option>
           </select>
-          <div class="source" style="margin-top:6px;">Applied to your S2 flares at end of season.</div>
         </div>
         <div style="display:flex; flex-direction:column;">
-          <label class="field-label" for="calc-avg-mult" style="min-height:36px; display:block;">Assumed average loyalty across all participants</label>
-          <select id="calc-avg-mult" onchange="onAnyInput()" style="width:100%; padding:8px 12px; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.1); border-radius:8px; color:var(--ink-100); font-size:14px;">
+          <label class="field-label" for="calc-avg-mult" style="min-height:36px; display:block;">Assumed average loyalty across all participants
+            <span class="has-hover-tip" data-tip="If others have lower mult than you, your share grows by (your_mult / avg)." style="color:var(--ink-500); font-size:10px; margin-left:4px;">ⓘ</span>
+          </label>
+          <select id="calc-avg-mult" onchange="onLoyaltyChange()" style="width:100%; padding:8px 12px; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.1); border-radius:8px; color:var(--ink-100); font-size:14px;">
             <option value="1.4">1.4x — Everyone Full Loyalty (neutral, no change to share)</option>
             <option value="1.3" selected>1.3x — Mostly retaining</option>
             <option value="1.2">1.2x — Mixed</option>
             <option value="1.1">1.1x — Many dropped</option>
             <option value="1.0">1.0x — Few retained TVL</option>
           </select>
-          <div class="source" style="margin-top:6px;">If others have lower mult than you, your share grows by (your_mult / avg).</div>
         </div>
         <div style="display:flex; flex-direction:column;">
-          <label class="field-label" for="calc-airdrop-pct" style="min-height:36px; display:block;">S2 SLX allocation</label>
+          <label class="field-label" for="calc-airdrop-pct" style="min-height:36px; display:block;">S2 SLX allocation
+            <span class="has-hover-tip" data-tip="Solstice Dynamic Distribution can raise this as TVL grows." style="color:var(--ink-500); font-size:10px; margin-left:4px;">ⓘ</span>
+          </label>
           <select id="calc-airdrop-pct" onchange="onAnyInput()" style="width:100%; padding:8px 12px; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.1); border-radius:8px; color:var(--ink-100); font-size:14px;">
             <option value="0.03" selected>3.00% — 30M SLX (current docs anchor)</option>
             <option value="0.0325">3.25% — 32.5M SLX (rumored bump)</option>
             <option value="0.035">3.50% — 35M SLX (further upside)</option>
           </select>
-          <div class="source" style="margin-top:6px;">Solstice Dynamic Distribution can raise this as TVL grows.</div>
         </div>
       </div>
 
@@ -288,6 +331,10 @@ footer { text-align: center; color: var(--ink-500); font-size: 11px; margin-top:
 const SLX_TOTAL_SUPPLY = 1_000_000_000;
 const S2_AIRDROP_PCT   = 0.03;
 const FDV_SCENARIOS_M  = [30, 50, 100, 150, 200, 300, 400, 500];
+// SLX SPL mint — used to fetch live spot price from Jupiter.
+const SLX_MINT         = 'SLXdx4BUt2v9uJQNzWqSfzTJ9UKLUDsvxHFMEEdrfgq';
+let LIVE_SLX = null;   // { price, fdvM, change24h, ts }
+let YT_HELPER_DEPOSIT_USD = 0;   // updated by ytHelperApply; used as basis for breakeven FDV
 
 // Exponent USX/eUSX Jun26 markets mature at 2026-06-01 12:58:19 UTC.
 // YT positions earn flares only until maturity (after that YT is worth $0).
@@ -316,6 +363,14 @@ function formatAmount(n) {
   if (!isFinite(n) || n == null) return '';
   return Math.round(n).toLocaleString('en-US');
 }
+function formatFdvM(m) {
+  // FDV displayed in millions, with sensible decimals: 12.5M, 209.9M, 1.20B
+  if (!isFinite(m) || m <= 0) return '0M';
+  if (m >= 1000) return (m/1000).toFixed(2) + 'B';
+  if (m >= 100)  return m.toFixed(1) + 'M';
+  if (m >= 10)   return m.toFixed(1) + 'M';
+  return m.toFixed(2) + 'M';
+}
 
 let SYS_TOTAL_USER_EDITED = false;   // sticky once the user types into the system field
 
@@ -336,7 +391,7 @@ function onAmountFocus(el) {
 
 function onSysTotalInput(el) {
   SYS_TOTAL_USER_EDITED = true;
-  document.getElementById('calc-sys-hint').textContent = 'Manual override · clear & blur to reset to projection';
+  setSysTip('Manual override · clear & blur to reset to projection');
   // If user clears it, restore auto-projection on the next render.
   if (el.value.trim() === '') {
     SYS_TOTAL_USER_EDITED = false;
@@ -364,17 +419,107 @@ function refreshUserProjection() {
   const ytDays = Math.min(days, daysToMaturity);
   const w = WALLET_CONTEXT;
   const projected = w.current_flares + w.yt_daily * ytDays + w.nonyt_daily * days;
-  document.getElementById('calc-total').value = formatAmount(projected);
-  const hint = document.getElementById('calc-prefill-hint');
+  setUserTotalRaw(projected);
   const ytNote = w.yt_daily > 0
-    ? ` · YT emission ($${formatAmount(w.yt_daily)}/d) capped at ${daysToMaturity.toFixed(1)}d (maturity 2026-06-01)`
+    ? ` · YT emission (${formatAmount(w.yt_daily)}/d) capped at ${daysToMaturity.toFixed(1)}d (maturity 2026-06-01)`
     : '';
-  hint.textContent = 'Pre-filled: ' + formatAmount(w.current_flares) + ' today + projected '
+  setPrefillTip('Pre-filled: ' + formatAmount(w.current_flares) + ' today + projected '
     + formatAmount(projected - w.current_flares) + ' across ' + days + ' days.' + ytNote
-    + ' Edit to override.';
+    + ' Edit to override.');
 }
 
 function onAnyInput() { renderResults(); }
+
+// ── Tooltip ⓘ helpers for the now-hidden hint texts ──────────────────────
+function setPrefillTip(text) {
+  const ico = document.getElementById('calc-prefill-hint-ico');
+  if (!ico) return;
+  if (text && text.trim()) {
+    ico.setAttribute('data-tip', text);
+    ico.style.display = 'inline';
+  } else {
+    ico.removeAttribute('data-tip');
+    ico.style.display = 'none';
+  }
+}
+function setSysTip(text) {
+  const ico = document.getElementById('calc-sys-hint-ico');
+  if (!ico) return;
+  if (text && text.trim()) {
+    ico.setAttribute('data-tip', text);
+    ico.style.display = 'inline';
+  } else {
+    ico.removeAttribute('data-tip');
+    ico.style.display = 'none';
+  }
+}
+
+// ── Loyalty-aware input handling ──────────────────────────────────────────
+// The two flare inputs (calc-total + calc-sys-total) display the BOOSTED
+// totals (raw × loyalty). The raw value is tracked in `dataset.raw` so the
+// inputs can re-render when the user picks a different multiplier.
+function _getMult(which) {
+  const id = which === 'sys' ? 'calc-avg-mult' : 'calc-your-mult';
+  return parseFloat(document.getElementById(id).value) || 1.0;
+}
+function setUserTotalRaw(raw) {
+  const el = document.getElementById('calc-total');
+  el.dataset.raw = String(raw);
+  el.value = formatAmount(raw * _getMult('your'));
+}
+function setSysTotalRaw(raw) {
+  const el = document.getElementById('calc-sys-total');
+  el.dataset.raw = String(raw);
+  el.value = formatAmount(raw * _getMult('sys'));
+}
+function getUserTotalRaw() {
+  const el = document.getElementById('calc-total');
+  return parseFloat(el.dataset.raw || '0') || 0;
+}
+function getSysTotalRaw() {
+  const el = document.getElementById('calc-sys-total');
+  return parseFloat(el.dataset.raw || '0') || 0;
+}
+// User typed directly into the boosted-value input → divide by mult to get raw.
+function onUserTotalEdit(el) {
+  const boosted = parseAmount(el.value);
+  if (!isFinite(boosted)) return;
+  el.dataset.raw = String(boosted / _getMult('your'));
+  renderResults();
+}
+function onSysTotalEdit(el) {
+  const boosted = parseAmount(el.value);
+  if (!isFinite(boosted)) return;
+  el.dataset.raw = String(boosted / _getMult('sys'));
+  renderResults();
+}
+function onUserTotalBlur(el) {
+  const boosted = parseAmount(el.value);
+  if (isFinite(boosted)) {
+    el.dataset.raw = String(boosted / _getMult('your'));
+    el.value = formatAmount(boosted);
+  } else el.value = '';
+  renderResults();
+}
+function onSysTotalBlur(el) {
+  const boosted = parseAmount(el.value);
+  if (isFinite(boosted)) {
+    el.dataset.raw = String(boosted / _getMult('sys'));
+    el.value = formatAmount(boosted);
+  } else el.value = '';
+  renderResults();
+}
+// When loyalty mults change, re-render input values from stored raw so the
+// user sees their boosted total immediately.
+function onLoyaltyChange() {
+  const totalEl = document.getElementById('calc-total');
+  const sysEl   = document.getElementById('calc-sys-total');
+  const rawU = getUserTotalRaw();
+  const rawS = getSysTotalRaw();
+  if (rawU > 0) totalEl.value = formatAmount(rawU * _getMult('your'));
+  if (rawS > 0) sysEl.value   = formatAmount(rawS * _getMult('sys'));
+  renderResults();
+}
 
 function computeSystemDailyRates() {
   // Sum per-quest daily emission across all non-PDA wallets, then split into
@@ -447,7 +592,7 @@ function refreshSysProjection() {
   const end = new Date(endIso + 'T00:00:00Z');
   const days = Math.max(0, Math.round((end - today) / 86400000));
   const projected = computeSystemTotalAtEnd(days);
-  document.getElementById('calc-sys-total').value = formatAmount(projected);
+  setSysTotalRaw(projected);
   let note;
   if (DAILY && DAILY.solstice_series && DAILY.solstice_series.length >= 2) {
     const ss = DAILY.solstice_series;
@@ -468,34 +613,60 @@ function refreshSysProjection() {
       ? `Auto-projected (framework): ${formatAmount(sysYtDaily)} YT/d (cap ${daysToMaturity.toFixed(1)}d) + ${formatAmount(sysNonytDaily)} non-YT/d × ${days}d`
       : 'Auto-projected from current state + last-3d avg inflation';
   }
-  document.getElementById('calc-sys-hint').textContent = note;
+  setSysTip(note);
 }
 
 function renderResults() {
-  const userTotal = parseAmount(document.getElementById('calc-total').value) || 0;
-  const sysTotal  = parseAmount(document.getElementById('calc-sys-total').value) || 0;
+  // The inputs display BOOSTED values (raw × loyalty). The raw values are
+  // tracked via dataset.raw so we can re-render the input value when the
+  // loyalty multiplier changes. Share math operates on boosted directly.
+  const rawUser = getUserTotalRaw();
+  const rawSys  = getSysTotalRaw();
+  const yourMult = _getMult('your');
+  const avgMult  = _getMult('sys');
+  const boostedUser = rawUser * yourMult;
+  const boostedSys  = rawSys * avgMult;
   const endIso = document.getElementById('calc-end').value || '2026-08-01';
   const today = new Date(); today.setUTCHours(0, 0, 0, 0);
   const end = new Date(endIso + 'T00:00:00Z');
   const days = Math.max(0, Math.round((end - today) / 86400000));
-  // S2 loyalty multiplier: scales BOTH numerator and denominator by their
-  // respective multipliers. Net effect on share = (your_mult / avg_mult).
-  const yourMult = parseFloat(document.getElementById('calc-your-mult').value) || 1.0;
-  const avgMult  = parseFloat(document.getElementById('calc-avg-mult').value) || 1.0;
-  const multRatio = avgMult > 0 ? (yourMult / avgMult) : 1.0;
-  const rawShare = sysTotal > 0 ? userTotal / sysTotal : 0;
-  const share = rawShare * multRatio;
+  const share = boostedSys > 0 ? boostedUser / boostedSys : 0;
   const airdropPct = parseFloat(document.getElementById('calc-airdrop-pct').value) || S2_AIRDROP_PCT;
   const slx = share * SLX_TOTAL_SUPPLY * airdropPct;
 
   document.getElementById('calc-days').textContent = days.toLocaleString('en-US');
-  const yourBoostNote = yourMult !== avgMult ? ` × ${yourMult}/${avgMult}` : '';
-  document.getElementById('calc-you').textContent = formatAmount(userTotal) + ' flares' + yourBoostNote;
+  // "You at end" tile shows boosted flares — the actual number Solstice
+  // credits to the user at end of season for share calc.
+  document.getElementById('calc-you').textContent = formatAmount(boostedUser) + ' flares';
   document.getElementById('calc-share').textContent = (share * 100).toFixed(4) + '%';
   document.getElementById('calc-slx').textContent = formatAmount(slx) + ' SLX';
 
-  const basis = (WALLET_CONTEXT && WALLET_CONTEXT.cost_basis && WALLET_CONTEXT.cost_basis.total) || 0;
-  document.getElementById('calc-fdv-rows').innerHTML = FDV_SCENARIOS_M.map(fdvM => {
+  // basis = USD at risk: wallet's tracked YT cost basis OR the YT helper's
+  // most recent deposit (whichever is larger). Used for ROI + breakeven FDV.
+  const walletBasis = (WALLET_CONTEXT && WALLET_CONTEXT.cost_basis && WALLET_CONTEXT.cost_basis.total) || 0;
+  const basis = Math.max(walletBasis, YT_HELPER_DEPOSIT_USD);
+
+  const rows = [];
+
+  // Breakeven FDV row — the FDV needed so projected USD allocation equals
+  // the user's deposit. Shown whenever both basis and slx are positive.
+  if (basis > 0 && slx > 0) {
+    const breakevenPrice = basis / slx;
+    const breakevenFdvM = (breakevenPrice * SLX_TOTAL_SUPPLY) / 1e6;
+    rows.push(`<tr style="background:rgba(252,211,77,.06);">
+      <td class="fdv-label">
+        <div style="color:var(--accent-300);">$${formatFdvM(breakevenFdvM)}</div>
+        <div style="font-size:10px; color:var(--ink-400); font-weight:500; margin-top:2px;">Breakeven FDV for your $${formatAmount(basis)} deposit</div>
+      </td>
+      <td class="fdv-price">$${breakevenPrice.toFixed(4)}/SLX</td>
+      <td class="fdv-usd">$${formatAmount(basis)}</td>
+      <td class="fdv-roi" style="color:var(--ink-300);">1.00×</td>
+    </tr>`);
+  }
+
+  // (Live spot row removed per user feedback — only the breakeven row matters
+  //  here. Jupiter fetch retained in case we surface live price elsewhere.)
+  for (const fdvM of FDV_SCENARIOS_M) {
     const price = (fdvM * 1e6) / SLX_TOTAL_SUPPLY;
     const usd = slx * price;
     let roiCell;
@@ -506,13 +677,14 @@ function renderResults() {
     } else {
       roiCell = `<td class="fdv-roi" style="color:var(--ink-500);">—</td>`;
     }
-    return `<tr>
+    rows.push(`<tr>
       <td class="fdv-label">$${fdvM}M</td>
       <td class="fdv-price">$${price.toFixed(3)}/SLX</td>
       <td class="fdv-usd">$${formatAmount(usd)}</td>
       ${roiCell}
-    </tr>`;
-  }).join('');
+    </tr>`);
+  }
+  document.getElementById('calc-fdv-rows').innerHTML = rows.join('');
   // Update the column header to reflect basis state.
   const head = document.getElementById('calc-fdv-roi-head');
   if (head) head.textContent = basis > 0 ? 'vs YT cost' : '—';
@@ -522,21 +694,43 @@ function renderResults() {
 (function initHoverTip() {
   const tip = document.getElementById('hover-tooltip');
   if (!tip) return;
+
+  function showAt(text, clientX, clientY) {
+    tip.textContent = text;
+    tip.style.left = (clientX + 14) + 'px';
+    tip.style.top  = (clientY + 14) + 'px';
+    tip.classList.add('visible');
+    const r = tip.getBoundingClientRect();
+    if (r.right > window.innerWidth - 8)  tip.style.left = (clientX - r.width - 14) + 'px';
+    if (r.bottom > window.innerHeight - 8) tip.style.top  = (clientY - r.height - 14) + 'px';
+  }
+  function showFromRect(text, rect) {
+    // Mobile: anchor below the tapped element (no cursor available).
+    tip.textContent = text;
+    tip.style.left = Math.max(8, rect.left) + 'px';
+    tip.style.top  = (rect.bottom + 6) + 'px';
+    tip.classList.add('visible');
+    const r = tip.getBoundingClientRect();
+    if (r.right > window.innerWidth - 8) tip.style.left = (window.innerWidth - r.width - 8) + 'px';
+  }
+  // Desktop: follow cursor on hover.
   document.addEventListener('mousemove', (e) => {
     const t = e.target.closest('.has-hover-tip');
     if (!t) { tip.classList.remove('visible'); return; }
     const text = t.getAttribute('data-tip');
-    if (!text) return;
-    tip.textContent = text;
-    const x = e.clientX + 14, y = e.clientY + 14;
-    tip.style.left = x + 'px';
-    tip.style.top  = y + 'px';
-    tip.classList.add('visible');
-    const r = tip.getBoundingClientRect();
-    if (r.right > window.innerWidth - 8) tip.style.left = (e.clientX - r.width - 14) + 'px';
-    if (r.bottom > window.innerHeight - 8) tip.style.top = (e.clientY - r.height - 14) + 'px';
+    if (text) showAt(text, e.clientX, e.clientY);
   });
   document.addEventListener('mouseleave', () => tip.classList.remove('visible'));
+  // Mobile: tap on an ⓘ to show; tap anywhere else dismisses.
+  document.addEventListener('click', (e) => {
+    const t = e.target.closest('.has-hover-tip');
+    if (!t) { tip.classList.remove('visible'); return; }
+    const text = t.getAttribute('data-tip');
+    if (!text) return;
+    e.preventDefault();
+    e.stopPropagation();
+    showFromRect(text, t.getBoundingClientRect());
+  }, true);
 })();
 
 function extractCostBasis(evidence) {
@@ -568,7 +762,6 @@ async function calcLoadWallet() {
   const addr = (document.getElementById('calc-wallet').value || '').trim();
   const err = document.getElementById('calc-error');
   const src = document.getElementById('calc-source');
-  const hint = document.getElementById('calc-prefill-hint');
   const cbInfo = document.getElementById('calc-cost-basis');
   err.style.display = 'none';
   if (!addr) {
@@ -576,6 +769,8 @@ async function calcLoadWallet() {
     err.style.display = 'block';
     return;
   }
+  // Loading a real wallet clears any prior YT helper scenario.
+  YT_HELPER_DEPOSIT_USD = 0;
   src.textContent = 'loading…';
   try {
     const r = await fetch('wallets/' + addr + '.json');
@@ -610,14 +805,14 @@ async function calcLoadWallet() {
     const ytDays = Math.min(days, daysToMaturity);
     const projected = current + ytDaily * ytDays + nonytDaily * days;
 
-    document.getElementById('calc-total').value = formatAmount(projected);
+    setUserTotalRaw(projected);
     // Pre-fill hint mentions YT decay if applicable
     const ytNote = ytDaily > 0
-      ? ` · YT emission ($${formatAmount(ytDaily)}/d) capped at ${daysToMaturity.toFixed(1)}d (maturity 2026-06-01)`
+      ? ` · YT emission (${formatAmount(ytDaily)}/d) capped at ${daysToMaturity.toFixed(1)}d (maturity 2026-06-01)`
       : '';
-    hint.textContent = 'Pre-filled: ' + formatAmount(current) + ' today + projected '
+    setPrefillTip('Pre-filled: ' + formatAmount(current) + ' today + projected '
       + formatAmount(projected - current) + ' across ' + days + ' days.' + ytNote
-      + ' Edit to override.';
+      + ' Edit to override.');
     src.innerHTML = 'Loaded <span style="font-family:ui-monospace,monospace;">' + addr.slice(0, 6) + '…' + addr.slice(-6) + '</span>'
       + ' · <a href="index.html#w/' + encodeURIComponent(addr) + '" style="color:var(--accent-300); text-decoration:underline dotted;">View on dashboard ↗</a>';
 
@@ -649,6 +844,166 @@ async function calcLoadWallet() {
   }
 }
 
+// ── YT projection helper ────────────────────────────────────────────────
+// Pulls live YT prices + multipliers from Exponent's public markets API
+// and projects flare emission for a hypothetical deposit. Targets Sep26
+// markets only (Jun26 is days from maturity).
+const YT_HELPER_MIN_DAYS_TO_MATURITY = 30;   // skip about-to-mature markets
+// 2026-08-01 00:00 UTC = 1767225600 (Jan 1) + 212 days = 1785542400. Flares
+// stop accruing at this boundary regardless of market maturity. Earlier
+// version of this file had 1785024000 (Jul 26) which clipped the projection
+// 6 days early.
+const S2_END_TS = 1785542400;
+// Solstice +50% boost on Sep26 rate markets ends 2026-06-02 00:00 UTC.
+// After this, YT/LP multipliers revert to base (boost/1.5). The Exponent API
+// currently returns boost values; we split projections at this boundary.
+const BOOST_END_TS = 1780358400;
+const BOOST_RATIO  = 1.5;
+
+// Split a YT projection into boost-period flares and base-period flares.
+// Returns { totalFlares, daysBoost, daysBase, boostMult, baseMult }.
+function projectYtFlares(yt, apiMult, effectiveEnd) {
+  const now = Math.floor(Date.now() / 1000);
+  const totalDays = Math.max(0, (effectiveEnd - now) / 86400);
+  if (now >= BOOST_END_TS) {
+    // Boost already over — apiMult IS the base; all days at base rate.
+    return { totalFlares: yt * apiMult * totalDays,
+             daysBoost: 0, daysBase: totalDays,
+             boostMult: apiMult, baseMult: apiMult };
+  }
+  const daysBoost = Math.min(totalDays, (BOOST_END_TS - now) / 86400);
+  const daysBase  = Math.max(0, totalDays - daysBoost);
+  const baseMult  = apiMult / BOOST_RATIO;
+  const totalFlares = yt * (apiMult * daysBoost + baseMult * daysBase);
+  return { totalFlares, daysBoost, daysBase, boostMult: apiMult, baseMult };
+}
+let YT_MARKETS = [];
+
+async function loadYtMarkets() {
+  try {
+    const r = await fetch('https://api.exponent.finance/api/markets');
+    if (!r.ok) throw new Error('exponent api fail');
+    const all = await r.json();
+    const now = Math.floor(Date.now() / 1000);
+    YT_MARKETS = all
+      .filter(m => m.platform === 'solstice')
+      .filter(m => (m.maturityDateUnixTs || 0) - now > YT_HELPER_MIN_DAYS_TO_MATURITY * 86400)
+      .filter(m => m.pointsBoost && m.pointsBoost.yt_multiplier)
+      .map(m => ({
+        key: m.vaultAddress,
+        ticker: (m.underlyingAsset || {}).ticker || '?',
+        maturityTs: m.maturityDateUnixTs,
+        ytPrice: m.ytPriceInAsset,           // YT price in underlying asset
+        ytMultiplier: m.pointsBoost.yt_multiplier,
+        impliedApy: m.impliedApy,
+      }))
+      .sort((a, b) => b.ytMultiplier - a.ytMultiplier);  // best mult first
+    const sel = document.getElementById('yt-market');
+    if (sel) {
+      const nowTs = Math.floor(Date.now() / 1000);
+      const boostActive = nowTs < BOOST_END_TS;
+      sel.innerHTML = YT_MARKETS.length
+        ? YT_MARKETS.map(m => {
+            const d = new Date(m.maturityTs * 1000);
+            const dd  = String(d.getUTCDate()).padStart(2, '0');
+            const mmm = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'][d.getUTCMonth()];
+            const yy  = String(d.getUTCFullYear()).slice(-2);
+            const sym = `YT-${m.ticker}${dd}${mmm}${yy}`;
+            const multStr = boostActive
+              ? `${m.ytMultiplier}× → ${(m.ytMultiplier / BOOST_RATIO)}× (Jun 2)`
+              : `${m.ytMultiplier}× boost`;
+            return `<option value="${m.key}">${sym}  ·  ${multStr}  ·  ${(m.impliedApy*100).toFixed(2)}% APY</option>`;
+          }).join('')
+        : '<option value="">No active markets</option>';
+    }
+    onYtInput();
+  } catch (e) {
+    console.warn('YT markets fetch failed:', e);
+    const sel = document.getElementById('yt-market');
+    if (sel) sel.innerHTML = '<option value="">Exponent API offline</option>';
+  }
+}
+
+function onYtInput() {
+  const dep = parseAmount(document.getElementById('yt-deposit').value);
+  const key = document.getElementById('yt-market').value;
+  const market = YT_MARKETS.find(m => m.key === key);
+  const out = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
+  if (!isFinite(dep) || dep <= 0 || !market) {
+    out('yt-out-yt', '—'); out('yt-out-daily', '—'); out('yt-out-total', '—');
+    return;
+  }
+  const yt = dep / market.ytPrice;
+  const effectiveEnd = Math.min(market.maturityTs, S2_END_TS);
+  const proj = projectYtFlares(yt, market.ytMultiplier, effectiveEnd);
+  const fmt = n => n >= 1e9 ? (n/1e9).toFixed(2)+'B' : n >= 1e6 ? (n/1e6).toFixed(2)+'M' : n >= 1e3 ? (n/1e3).toFixed(2)+'K' : Math.round(n).toLocaleString();
+  out('yt-out-yt', fmt(yt) + ' YT');
+  // Daily-rate cell: show split when there's both a boost and a base period.
+  const daysTotal = proj.daysBoost + proj.daysBase;
+  if (proj.daysBoost > 0 && proj.daysBase > 0) {
+    const dailyBoost = yt * proj.boostMult;
+    const dailyBase  = yt * proj.baseMult;
+    out('yt-out-daily',
+      `${fmt(dailyBoost)}/d <span style="color:var(--ink-500); font-size:10px;">× ${proj.daysBoost.toFixed(0)}d boost</span>
+       <br><span style="color:var(--ink-400);">${fmt(dailyBase)}/d</span> <span style="color:var(--ink-500); font-size:10px;">× ${proj.daysBase.toFixed(0)}d base (post-Jun 2)</span>`);
+  } else {
+    const daily = yt * (proj.daysBoost > 0 ? proj.boostMult : proj.baseMult);
+    out('yt-out-daily', fmt(daily) + '/d <span style="color:var(--ink-500); font-size:10px;">over ' + daysTotal.toFixed(0) + 'd</span>');
+  }
+  out('yt-out-total', fmt(proj.totalFlares));
+}
+
+function ytHelperApply() {
+  const dep = parseAmount(document.getElementById('yt-deposit').value);
+  const key = document.getElementById('yt-market').value;
+  const market = YT_MARKETS.find(m => m.key === key);
+  if (!isFinite(dep) || dep <= 0 || !market) return;
+  const yt = dep / market.ytPrice;
+  const effectiveEnd = Math.min(market.maturityTs, S2_END_TS);
+  const proj = projectYtFlares(yt, market.ytMultiplier, effectiveEnd);
+  const totalFlares = proj.totalFlares;
+  const daysToAccrue = proj.daysBoost + proj.daysBase;
+  // Push projection into main calculator + set end date to effectiveEnd
+  setUserTotalRaw(totalFlares);
+  const endIso = new Date(effectiveEnd * 1000).toISOString().slice(0, 10);
+  document.getElementById('calc-end').value = endIso;
+  // Clear any wallet context (this is a hypothetical scenario)
+  WALLET_CONTEXT = null;
+  // Record the deposit's USD-equivalent as cost basis for the breakeven row.
+  // USX ≈ $1, eUSX ≈ $1.03 (close enough for breakeven framing).
+  const usdPerUnit = (market.ticker === 'eUSX') ? 1.03 : 1.0;
+  YT_HELPER_DEPOSIT_USD = dep * usdPerUnit;
+  const multNote = proj.daysBoost > 0 && proj.daysBase > 0
+    ? `${proj.boostMult}× × ${proj.daysBoost.toFixed(0)}d boost, then ${proj.baseMult}× × ${proj.daysBase.toFixed(0)}d (post-Jun 2)`
+    : `${proj.daysBoost > 0 ? proj.boostMult : proj.baseMult}× × ${daysToAccrue.toFixed(0)}d`;
+  setPrefillTip('Pre-filled from YT helper: $' + formatAmount(dep) + ' → '
+    + formatAmount(yt) + ' YT, ' + multNote + '. Edit to override.');
+  // Refresh main calc result
+  if (typeof renderResults === 'function') renderResults();
+  // Smooth-scroll user back to the main result grid so they see SLX projection
+  const target = document.querySelector('.result-grid');
+  if (target) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+async function loadLiveSlxPrice() {
+  // Jupiter price v3 — public, no auth. Falls back silently if Jupiter is
+  // offline or SLX isn't listed; the "live" FDV row just won't render.
+  try {
+    const r = await fetch('https://api.jup.ag/price/v3?ids=' + SLX_MINT);
+    if (!r.ok) return;
+    const data = await r.json();
+    const entry = data[SLX_MINT];
+    if (!entry || !isFinite(entry.usdPrice) || entry.usdPrice <= 0) return;
+    LIVE_SLX = {
+      price: entry.usdPrice,
+      fdvM: (entry.usdPrice * SLX_TOTAL_SUPPLY) / 1e6,
+      change24h: entry.priceChange24h,
+      ts: Date.now(),
+    };
+    renderResults();
+  } catch (e) { /* offline — no-op */ }
+}
+
 async function init() {
   try {
     const [dr, mr] = await Promise.all([
@@ -660,6 +1015,9 @@ async function init() {
   } catch (e) {}
   // Seed the system-total input with the auto-projection. User can override after.
   refreshSysProjection();
+  // Kick off Exponent YT markets + Jupiter SLX price (non-blocking).
+  loadYtMarkets();
+  loadLiveSlxPrice();
   // Read ?w=<addr> from URL to auto-load (deep-linkable).
   const params = new URLSearchParams(location.search);
   const w = params.get('w');
