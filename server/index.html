@@ -124,6 +124,143 @@ footer { text-align: center; color: var(--ink-500); font-size: 11px; margin-top:
   .controls input { width: 100%; }
   th, td { padding: 8px 10px; }
 }
+
+/* ─── Mobile (phone-only, ≤767px) ───────────────────────────────────────────
+   Separate visual layer: stats stack, table becomes card list, drawer is
+   bottom-anchored. Desktop layout above untouched. */
+@media (max-width: 767px) {
+  body { font-size: 13px; }
+  main { padding: 0 16px; }
+
+  /* Header: stack brand + links vertically, tighter spacing */
+  header { flex-direction: column; align-items: flex-start; gap: 10px; padding: 14px 0; }
+  .brand { font-size: 11px; line-height: 1.4; }
+  .brand img { height: 26px !important; }
+  .right-links { font-size: 10px; gap: 10px; flex-wrap: wrap; }
+
+  /* Stats: single column stack, smaller numbers */
+  .stats-row { gap: 16px; margin-bottom: 28px; }
+  .stats { grid-template-columns: 1fr 1fr; gap: 16px 20px; }
+  .stat .v { font-size: 19px; }
+  .stat .sub { font-size: 10px; }
+
+  /* Donut chart: shrink to fit (keep visible since it's the visual headline) */
+  #partner-stats svg { max-width: 220px; height: auto; }
+
+  /* Section headings */
+  section { margin-bottom: 32px; }
+  section h2 { font-size: 15px; }
+
+  /* Chart: bars tighter, hide most x-axis labels */
+  #chart, #chart-wrap > div { height: 180px !important; padding-left: 36px !important; }
+  #chart-y-axis { height: 180px !important; }
+  #chart-x-axis { font-size: 9px; padding-left: 36px !important; }
+  #chart-x-axis > div:nth-child(even) { visibility: hidden; }
+
+  /* Controls: stack vertically, full-width tap targets */
+  .controls { padding: 12px 14px; gap: 8px; flex-direction: column; align-items: stretch; }
+  .controls > * { width: 100%; }
+  .controls > span[style*="flex:1"] { display: none; }
+  .controls input, .controls select, .controls button { padding: 11px 14px; font-size: 13px; }
+  .controls > div, .controls #prev-top, .controls #next-top {
+    /* Group the prev/next buttons side-by-side at the bottom */
+  }
+
+  /* Table → information-dense card list. Each row becomes a 3-section card:
+       Top:    rank + wallet (with tags)
+       Middle: S1 TWA value · Total flares (or TVL when toggled)
+       Bottom: compact strip of all non-zero partner flares
+     CSS grid lays out top/middle on rows 1+2 of the card; partner cells flow
+     inline on row 3, each with a tiny ::before label. */
+  thead { display: none; }
+  table { border-collapse: separate; }
+  tbody { display: block; width: 100%; }
+  tbody tr {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    grid-template-rows: auto auto auto;
+    column-gap: 14px; row-gap: 8px;
+    padding: 14px 16px; border-top: 1px solid rgba(255,255,255,.06);
+  }
+  tbody tr:hover { background: transparent; }
+  tbody tr:active { background: rgba(255,255,255,.03); }
+  tbody td { padding: 0; text-align: left; white-space: normal; display: block; }
+
+  /* Row 1: rank (col 1) + wallet (col 2) */
+  tbody td:nth-child(1) {
+    grid-row: 1; grid-column: 1;
+    font-size: 11px; color: var(--ink-500); align-self: baseline;
+  }
+  tbody td:nth-child(2) {
+    grid-row: 1; grid-column: 2;
+    font-size: 13px;
+  }
+
+  /* Row 2: S1 TWA (col 1, left) + Total (col 2, right) */
+  tbody td:nth-child(3) {
+    grid-row: 2; grid-column: 1 / 2;
+    font-size: 12px; color: var(--ink-300); align-self: baseline;
+  }
+  tbody td:nth-child(3)::before {
+    content: 'S1 TWA: '; color: var(--ink-500); font-size: 9.5px;
+    text-transform: uppercase; letter-spacing: 0.08em; margin-right: 4px;
+  }
+  tbody td:nth-child(4) {
+    grid-row: 2; grid-column: 2;
+    font-size: 14px; font-weight: 600; color: var(--accent-300);
+    text-align: right;
+  }
+  tbody td:nth-child(4)::before {
+    content: 'TOTAL '; color: var(--ink-500); font-size: 9.5px;
+    text-transform: uppercase; letter-spacing: 0.08em; font-weight: normal;
+    margin-right: 4px;
+  }
+
+  /* Row 3: partner flares as inline chips, each with a tiny label.
+     Empty/zero cells are hidden via :has() so the row never looks sparse. */
+  tbody td:nth-child(n+5):nth-child(-n+11) {
+    grid-row: 3; grid-column: 1 / -1;
+    display: inline-block; font-size: 10.5px; color: var(--ink-300);
+    margin-right: 10px; padding: 3px 7px; border-radius: 4px;
+    background: rgba(255,255,255,.025); align-self: start;
+    font-variant-numeric: tabular-nums;
+  }
+  /* Hide zero-value partner cells (fmt() wraps 0 in span.zero). Only the
+     non-zero contributions show up, so dense wallets read like rich strips
+     and sparse ones stay clean. */
+  tbody td:nth-child(n+5):nth-child(-n+11):has(span.zero) { display: none; }
+  tbody td:nth-child(n+5):nth-child(-n+11):empty { display: none; }
+  /* Tiny labels before each partner cell */
+  tbody td:nth-child(5)::before  { content: 'USX '; color: var(--ink-500); font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; }
+  tbody td:nth-child(6)::before  { content: 'eUSX '; color: var(--ink-500); font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; }
+  tbody td:nth-child(7)::before  { content: 'Exp '; color: var(--ink-500); font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; }
+  tbody td:nth-child(8)::before  { content: 'Kamino '; color: var(--ink-500); font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; }
+  tbody td:nth-child(9)::before  { content: 'Orca '; color: var(--ink-500); font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; }
+  tbody td:nth-child(10)::before { content: 'Ray '; color: var(--ink-500); font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; }
+  tbody td:nth-child(11)::before { content: 'Loop '; color: var(--ink-500); font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; }
+
+  /* Pagination: bigger tap targets */
+  .pagination { padding: 14px 16px; font-size: 11px; }
+  .pagination button { padding: 10px 16px; font-size: 12px; }
+
+  /* Drawer: tighter padding, mobile-optimized */
+  #drawer > div { padding: 16px 14px !important; max-width: none !important; }
+  #drawer .label { font-size: 10px !important; }
+  #dr-addr { font-size: 11px !important; word-break: break-all; }
+  #dr-meta { font-size: 10px !important; }
+  /* Drawer header row: stack wallet info above action buttons on mobile */
+  #drawer > div > div[style*="justify-content:space-between"],
+  #drawer > div > div[style*="space-between"] {
+    flex-direction: column !important; gap: 14px;
+  }
+  #drawer > div > div[style*="space-between"] > div:last-child {
+    flex-wrap: wrap; width: 100%;
+  }
+  #dr-calc, #dr-sort { flex: 1; min-width: 0; justify-content: center; font-size: 11px !important; padding: 10px 12px !important; }
+
+  /* Footer */
+  footer { font-size: 10px; padding: 0 16px; }
+}
 </style>
 </head>
 <body>
