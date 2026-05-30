@@ -22,50 +22,96 @@ from rpc_helper import rpc
 from snapshot_ts import last_snapshot_ts
 import walker_db
 
-# Exponent program ID — emits the Wrapper events via emit_cpi
-EXPONENT_PROG = 'ExponentnaRg3CQbW6dqQNZKXp7gtZ9DGMp1cwC4HAS7'
+# Exponent program IDs — emit the Wrapper events via emit_cpi.
+# V1 core deployed since launch; V2 wrapper launched ~2026-05 with a parallel
+# set of markets (e.g. GesxMwfk... = USX V2). V2 emits the same event
+# discriminators as V1 (WrapperProvideLiquidity etc.) with the same first
+# few u64 fields (base_in, lp_out, yt_out, ...), but longer total payload
+# (280 bytes vs V1's ~112) — the trailing fields are V2-specific context
+# that our decoder ignores. user@[16:48], market@[48:80], lp_field@[80+i*8].
+EXPONENT_PROG_V1 = 'ExponentnaRg3CQbW6dqQNZKXp7gtZ9DGMp1cwC4HAS7'
+EXPONENT_PROG_V2 = 'XPC1MM4dYACDfykNuXYZ5una2DsMDWL24CrYubCvarC'
+EXPONENT_PROGS = {EXPONENT_PROG_V1, EXPONENT_PROG_V2}
+# Backwards-compat alias for any code reading the old constant name.
+EXPONENT_PROG = EXPONENT_PROG_V1
 
 # Anchor event discriminators for each Wrapper LP event. Computed as
 # sha256("event:<EventName>")[:8]; verified against exponent-core source.
-# Each event's emit_cpi inner-ix data layout is:
+#
+# V1 event layout:
 #   bytes[0:8]   anchor IX disc (CPI sentinel, ignored)
-#   bytes[8:16]  event disc (matches one of the values below)
+#   bytes[8:16]  event disc
 #   bytes[16:48] user pubkey
 #   bytes[48:80] market pubkey
 #   ... event-specific u64 fields ...
 #   bytes[-8:]   lp_price (f64) — canonical lp_price_in_asset() at tx time
-# Each entry: (lp_amount_offset_from_pubkeys, sign_for_lp_delta).
-# lp_amount_offset is the 0-indexed position of the lp_in/lp_out u64 among the
-# trailing u64 fields (after the two pubkeys, before the f64 lp_price).
-_LP_EVENT_TYPES = {
-    bytes.fromhex('d12ae34dbbd811b1'): ('provide',         1, +1),  # WrapperProvideLiquidity: base_in, lp_out, yt_out, lp_price
-    bytes.fromhex('3c79a45ddc0d8ec5'): ('provide_base',    3, +1),  # WrapperProvideLiquidityBase: base_in, pt_out, sy_in, lp_out, lp_price
-    bytes.fromhex('57a396a2ba93eac8'): ('provide_classic', 2, +1),  # WrapperProvideLiquidityClassic: base_in, pt_in, lp_out, lp_price
-    bytes.fromhex('3420b4f124dd48a7'): ('withdraw',         1, -1), # WrapperWithdrawLiquidity: base_out, lp_in, lp_price
-    bytes.fromhex('129ad42724179e7c'): ('withdraw_classic', 1, -1), # WrapperWithdrawLiquidityClassic: base_out, lp_in, pt_out, lp_price
+# Each entry: (event_type, lp_field_idx, sign, base_field_idx).
+# lp_field_idx = 0-indexed u64 position of lp_in/lp_out within the body.
+# base_field_idx = position of base_in/base_out (used to derive lp_price for V2).
+_LP_EVENT_TYPES_V1 = {
+    bytes.fromhex('d12ae34dbbd811b1'): ('provide',         1, +1, 0),  # base_in, lp_out, yt_out, lp_price
+    bytes.fromhex('3c79a45ddc0d8ec5'): ('provide_base',    3, +1, 0),  # base_in, pt_out, sy_in, lp_out, lp_price
+    bytes.fromhex('57a396a2ba93eac8'): ('provide_classic', 2, +1, 0),  # base_in, pt_in, lp_out, lp_price
+    bytes.fromhex('3420b4f124dd48a7'): ('withdraw',         1, -1, 0), # base_out, lp_in, lp_price
+    bytes.fromhex('129ad42724179e7c'): ('withdraw_classic', 1, -1, 0), # base_out, lp_in, pt_out, lp_price
 }
 
+# V2 event layout — REVERSE-ENGINEERED from 2,379-sig program scan (2026-05-30).
+# Same anchor sentinel + user@[16:48] + market@[48:80] as V1. But body schemas
+# differ and `lp_price` is NOT in last 8 bytes. We derive lp_price from
+# base/lp ratio within the event itself.
+# Confirmed field offsets via cross-validating u64 positions against SPL
+# token-transfer amounts across 4 samples each.
+_LP_EVENT_TYPES_V2 = {
+    bytes.fromhex('d12ae34dbbd811b1'): ('provide',         1, +1, 0),  # base@0, lp_out@1, sy_in@2, pt_out@3, yt_out@4 (same lp pos as V1)
+    bytes.fromhex('3c79a45ddc0d8ec5'): ('provide_base',    9, +1, 4),  # 4-u64 prefix; base@4, ..., sy_in@6, pt_out@7, lp_out@9
+    bytes.fromhex('57a396a2ba93eac8'): ('provide_classic', 2, +1, 0),  # same lp pos as V1
+    bytes.fromhex('3420b4f124dd48a7'): ('withdraw',         1, -1, 0), # base_out@0, lp_in@1
+    bytes.fromhex('129ad42724179e7c'): ('withdraw_classic', 1, -1, 0), # base_out@0, lp_in@1
+}
 
-def _decode_lp_event(data: bytes):
+# Backwards-compat alias (V1 fields, 3-tuple form) for any external caller.
+_LP_EVENT_TYPES = {disc: (name, idx, sign) for disc, (name, idx, sign, _) in _LP_EVENT_TYPES_V1.items()}
+
+
+def _decode_lp_event(data: bytes, version: str = 'v1'):
     """Decode an Exponent Wrapper LP event from emit_cpi inner-ix data.
-    Returns (event_type, user_pk, market_pk, lp_amount, lp_price) or None.
+    Returns (event_type, user_pk, market_pk, lp_amount, lp_price, sign) or None.
 
-    Uses the canonical lp_price_in_asset() value emitted by the program, which
-    is what Exponent's dashboard displays. This bypasses token-delta heuristics
-    entirely and matches the protocol's authoritative LP valuation."""
-    if len(data) < 16 + 32 + 32 + 8 + 8: return None
+    V1: lp_price is the last 8 bytes (f64), emitted by the program as
+    `lp_price_in_asset()`. Canonical.
+
+    V2: lp_price is DERIVED from base_field / lp_field ratio within the event
+    body. V2 doesn't emit lp_price in the payload — instead the event packs
+    extra state (sy_in, pt_out, position metadata, etc.). Cross-validated on
+    4 samples of each V2 event type.
+    """
+    if len(data) < 16 + 32 + 32: return None
     disc = data[8:16]
-    if disc not in _LP_EVENT_TYPES: return None
-    event_type, lp_field_idx, sign = _LP_EVENT_TYPES[disc]
+    types = _LP_EVENT_TYPES_V2 if version == 'v2' else _LP_EVENT_TYPES_V1
+    if disc not in types: return None
+    event_type, lp_field_idx, sign, base_field_idx = types[disc]
     user = base58.b58encode(data[16:48]).decode()
     market = base58.b58encode(data[48:80]).decode()
-    # u64 fields between pubkeys (offset 80) and lp_price (last 8 bytes)
-    body = data[80:-8]
+
+    if version == 'v2':
+        body = data[80:]  # V2 doesn't have trailing f64 lp_price
+    else:
+        body = data[80:-8]  # V1: lp_price f64 trails
     n_u64 = len(body) // 8
     if lp_field_idx >= n_u64: return None
-    p = lp_field_idx * 8
-    lp_raw = int.from_bytes(body[p:p+8], 'little')
-    lp_price = struct.unpack('<d', data[-8:])[0]
+    lp_raw = int.from_bytes(body[lp_field_idx*8:lp_field_idx*8+8], 'little')
+
+    if version == 'v2':
+        # Derive lp_price = base_amount / lp_amount (asset per LP unit).
+        # Assumes base + lp share the same scale; valid for USX/eUSX/weUSX
+        # markets where everything is 6 decimals.
+        if base_field_idx >= n_u64 or lp_raw == 0: return None
+        base_raw = int.from_bytes(body[base_field_idx*8:base_field_idx*8+8], 'little')
+        lp_price = base_raw / lp_raw if lp_raw > 0 else 0.0
+    else:
+        lp_price = struct.unpack('<d', data[-8:])[0]
+
     return event_type, user, market, lp_raw, lp_price, sign
 
 
@@ -151,6 +197,23 @@ MARKETS = {
         'peg':          None,   # populated from chain
         'quest':        'S2_EXPONENT_LP_EUSX_SEP26',
     },
+    # V2 native Solstice markets (owned by V2 wrapper XPC1MM4..., disc
+    # f2f01a0f94bab9cd) discovered 2026-05-30. V2 event payload schemas
+    # reverse-engineered from 2,379-sig program scan + 4 samples per event type
+    # cross-validated against SPL token transfer amounts. See _LP_EVENT_TYPES_V2.
+    # lp_price for V2 events is DERIVED from base/lp ratio within the event itself
+    # (V2 doesn't emit canonical lp_price like V1 does).
+    'USX-V2-Sep26': {
+        'market':       'GesxMwfknVkVziqJKfGrNyhSoeBxdSEE6ZqpXk9Kbci8',
+        'lp_vault':     'nGv7yz6QLxB4w8W9kzMwz7aBggBcuCGB4TzvP3GakA4',
+        'lp_mint':      '4CEd2syXcV8rAiwFkdCkpmTBsgGVS7NcFnygf86EG2KT',
+        'underlying':   '6FrrzDk5mQARGc1TDYoyVnSyRdds1t4PbtohCD6p3tgG',
+        'mult':         30,    # same as Sep26 v1 (1.5× boost over Jun's 20×).
+        'peg':          1.0,
+        'quest':        'S2_EXPONENT_LP_USX_SEP26',  # may need V2-specific quest if Solstice splits
+    },
+    # V2 eUSX (4yf98Xwh...) doesn't expose an LP mint in early offsets; deferred
+    # until that path is live or its layout is mapped.
 }
 
 
@@ -248,8 +311,9 @@ def parse_tx_lp_event(tx: dict, cfg: dict) -> dict:
 
     # Scan inner instructions for an Exponent Wrapper LP event matching this market.
     for prog, data in _extract_inner_ix_data(tx):
-        if prog != EXPONENT_PROG: continue
-        decoded = _decode_lp_event(data)
+        if prog not in EXPONENT_PROGS: continue
+        version = 'v2' if prog == EXPONENT_PROG_V2 else 'v1'
+        decoded = _decode_lp_event(data, version=version)
         if not decoded: continue
         event_type, user, evt_market, lp_raw, lp_price, sign = decoded
         if evt_market != market_pk: continue
