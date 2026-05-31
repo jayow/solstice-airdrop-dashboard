@@ -197,21 +197,23 @@ MARKETS = {
         'peg':          None,   # populated from chain
         'quest':        'S2_EXPONENT_LP_EUSX_SEP26',
     },
-    # V2 native Solstice markets (owned by V2 wrapper XPC1MM4..., disc
-    # f2f01a0f94bab9cd) discovered 2026-05-30. V2 event payload schemas
-    # reverse-engineered from 2,379-sig program scan + 4 samples per event type
-    # cross-validated against SPL token transfer amounts. See _LP_EVENT_TYPES_V2.
-    # lp_price for V2 events is DERIVED from base/lp ratio within the event itself
-    # (V2 doesn't emit canonical lp_price like V1 does).
-    'USX-V2-Sep26': {
-        'market':       'GesxMwfknVkVziqJKfGrNyhSoeBxdSEE6ZqpXk9Kbci8',
-        'lp_vault':     'nGv7yz6QLxB4w8W9kzMwz7aBggBcuCGB4TzvP3GakA4',
-        'lp_mint':      '4CEd2syXcV8rAiwFkdCkpmTBsgGVS7NcFnygf86EG2KT',
-        'underlying':   '6FrrzDk5mQARGc1TDYoyVnSyRdds1t4PbtohCD6p3tgG',
-        'mult':         30,    # same as Sep26 v1 (1.5× boost over Jun's 20×).
-        'peg':          1.0,
-        'quest':        'S2_EXPONENT_LP_USX_SEP26',  # may need V2-specific quest if Solstice splits
-    },
+    # ⚠️ V2 market DISABLED 2026-05-31 — withdraw events decode with lp_amount
+    # near zero and rate (lp_price = base_in/lp_out) inflated by 5-6 orders
+    # of magnitude. Integrating lp_balance × bad_rate produced ~57B flares
+    # spurious for 2 wallets (5LurCmpQ +37.6B, 2kyoEvCV +18.8B) in the daily
+    # refresh, blowing total system flares from ~37B → 94B and trashing the
+    # Solstice match (205% vs healthy 80%).
+    # Re-enable after fixing _LP_EVENT_TYPES_V2 withdraw decoder + adding a
+    # sanity cap on lp_price.
+    # 'USX-V2-Sep26': {
+    #     'market':       'GesxMwfknVkVziqJKfGrNyhSoeBxdSEE6ZqpXk9Kbci8',
+    #     'lp_vault':     'nGv7yz6QLxB4w8W9kzMwz7aBggBcuCGB4TzvP3GakA4',
+    #     'lp_mint':      '4CEd2syXcV8rAiwFkdCkpmTBsgGVS7NcFnygf86EG2KT',
+    #     'underlying':   '6FrrzDk5mQARGc1TDYoyVnSyRdds1t4PbtohCD6p3tgG',
+    #     'mult':         30,
+    #     'peg':          1.0,
+    #     'quest':        'S2_EXPONENT_LP_USX_SEP26',
+    # },
     # V2 eUSX (4yf98Xwh...) doesn't expose an LP mint in early offsets; deferred
     # until that path is live or its layout is mapped.
 }
