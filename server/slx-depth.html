@@ -800,9 +800,12 @@ const SLIDER_LOG_RATIO = Math.log(SLIDER_MAX_PCT / SLIDER_MIN_PCT);
 const sliderToPct = v => SLIDER_MIN_PCT * Math.exp((v / 100) * SLIDER_LOG_RATIO);
 const pctToSlider = p => (Math.log(Math.max(p, SLIDER_MIN_PCT) / SLIDER_MIN_PCT) / SLIDER_LOG_RATIO) * 100;
 
-// Log-scale slider math (Buy): maps slider 0..100 → $100..$10M of USD spend.
+// Log-scale slider math (Buy): maps slider 0..100 → $100..$1B of USD spend.
+// Upper bound = $1B (5× current SLX FDV) so users can model arbitrarily-large
+// "pump" / accumulation scenarios that would crater the orderbook. Text input
+// still accepts any larger value beyond the slider range.
 const SLIDER_MIN_USD = 100;
-const SLIDER_MAX_USD = 10_000_000;
+const SLIDER_MAX_USD = 1_000_000_000;
 const SLIDER_USD_LOG_RATIO = Math.log(SLIDER_MAX_USD / SLIDER_MIN_USD);
 const sliderToUsd = v => SLIDER_MIN_USD * Math.exp((v / 100) * SLIDER_USD_LOG_RATIO);
 const usdToSlider = u => (Math.log(Math.max(u, SLIDER_MIN_USD) / SLIDER_MIN_USD) / SLIDER_USD_LOG_RATIO) * 100;
@@ -889,7 +892,7 @@ async function renderScenario() {
         : '—';
     document.getElementById('scenario-slider-hint').innerHTML =
       '<span id="scenario-pct-val">' + fmtUsd(usdSpend) +
-      '</span> · log scale ($100 → $10M)';
+      '</span> · log scale ($100 → $1B)';
   } else {
     slx = rawAmt;
     usdSpend = slx * spot;
