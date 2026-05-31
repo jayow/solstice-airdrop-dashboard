@@ -474,11 +474,18 @@ document.getElementById('search').addEventListener('input', renderTable);
 
 // Venues with live fetchers in slx-depth-engine.js — match on identifier substring.
 // Anything in TICKERS not matching one of these gets passed as a fallback estimate.
+// Keep this list in sync with the cexFns array in fetchAllDepth() inside the engine.
 const ENGINE_LIVE_HINTS = [
-  'bitget', 'bitmart', 'kraken', 'hotcoin',
-  'pancakeswap',          // PancakeSwap Infinity (BSC)
-  'uniswap',              // UniswapV3 + V4 (BSC)
-  'jupiter',              // Solana aggregator (via Jupiter quote API)
+  // Direct CORS CEX (6)
+  'bitget', 'bitmart', 'kraken', 'hotcoin', 'digifinex', 'kcex',
+  // Proxied CEX (7)
+  'mexc', 'gate', 'lbank', 'orangex', 'toobit', 'ourbit', 'weex',
+  // BSC DEX pools (on-chain)
+  'pancakeswap',          // PancakeSwap Infinity CLMM
+  'uniswap',              // Uniswap V3 + V4 (BSC)
+  // Solana DEX aggregator
+  'jupiter',
+  'orca', 'raydium', 'meteora',   // Jupiter routes through these → all covered
 ];
 function isCoveredByEngine(ticker) {
   const id = (ticker.identifier || '').toLowerCase();
