@@ -1,0 +1,704 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SLX Liquidity Depth · Hanyon Analytics</title>
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png" />
+<link rel="icon" type="image/png" sizes="192x192" href="favicon-192.png" />
+<link rel="apple-touch-icon" href="apple-touch-icon.png" />
+<style>
+:root {
+  --ink-50: rgb(232, 232, 237);
+  --ink-100: rgb(232, 232, 237);
+  --ink-200: rgb(201, 201, 208);
+  --ink-300: rgb(155, 155, 163);
+  --ink-400: rgb(122, 122, 131);
+  --ink-500: rgb(84, 84, 92);
+  --ink-700: rgb(40, 40, 46);
+  --ink-900: rgb(17, 17, 20);
+  --ink-950: rgb(10, 10, 12);
+  --accent-200: rgb(253, 230, 138);
+  --accent-300: rgb(252, 211, 77);
+  --accent-400: rgb(251, 191, 36);
+  --accent-500: rgb(245, 158, 11);
+  --good: #86efac;
+  --bad:  #fda4af;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--ink-950); color: var(--ink-100);
+             font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+             font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+.tabular { font-variant-numeric: tabular-nums; }
+.display { font-family: "Inter", ui-sans-serif, system-ui; font-weight: 600; letter-spacing: -0.02em; }
+.label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.14em; color: var(--ink-400); }
+
+main { max-width: 1100px; margin: 0 auto; padding: 64px 24px; }
+header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 40px; }
+.brand { display: flex; align-items: center; gap: 16px; color: var(--ink-300); }
+.brand a { color: inherit; text-decoration: none; display: inline-flex; align-items: center; gap: 8px; font-size: 13px; }
+.brand .sep { color: var(--ink-500); }
+.right-links { display: flex; align-items: center; gap: 16px; font-size: 11px; }
+.right-links a { color: var(--ink-500); text-decoration: none; text-transform: uppercase; letter-spacing: 0.14em; transition: color .15s; }
+.right-links a.featured { color: var(--accent-300); }
+.right-links a:hover { color: var(--ink-200); }
+.right-links .sep { color: var(--ink-500); }
+
+section { margin-bottom: 28px; }
+section h1 { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 6px; }
+.section-sub { font-size: 12px; color: var(--ink-500); }
+
+.surface { background: rgba(255,255,255,.015); border: 1px solid rgba(255,255,255,.06); border-radius: 16px; overflow: hidden; }
+
+/* Stats banner */
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px 32px; padding: 22px 24px; }
+.stat .lbl { font-size: 10px; color: var(--ink-500); text-transform: uppercase; letter-spacing: 0.14em; }
+.stat .v   { font-size: 22px; font-weight: 600; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.stat .v.accent { color: var(--accent-300); }
+.stat .sub { font-size: 11px; color: var(--ink-500); margin-top: 3px; }
+
+/* Controls + table */
+.controls { display: flex; gap: 8px; padding: 14px 20px; align-items: center; flex-wrap: wrap;
+            border-top: 1px solid rgba(255,255,255,.06); }
+.controls select, .controls input, .controls button {
+  background: rgba(255,255,255,.03); color: var(--ink-100); border: 1px solid rgba(255,255,255,.08);
+  padding: 8px 12px; border-radius: 8px; font: inherit; font-size: 12px; cursor: pointer;
+}
+.controls input { cursor: text; }
+.controls .grow { flex: 1; }
+
+table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+th, td { text-align: right; padding: 11px 14px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+th { font-weight: 500; color: var(--ink-400); cursor: pointer; user-select: none; text-transform: uppercase; font-size: 10px; letter-spacing: 0.14em; }
+th.asc::after  { content: ' ▲'; color: var(--accent-300); }
+th.desc::after { content: ' ▼'; color: var(--accent-300); }
+td.left, th.left { text-align: left; }
+tbody tr { border-top: 1px solid rgba(255,255,255,.04); transition: background .1s; }
+tbody tr:hover { background: rgba(255,255,255,.015); }
+
+.venue { font-weight: 500; color: var(--ink-100); }
+.pair  { color: var(--ink-400); font-size: 11px; margin-left: 6px; }
+.tag   { display: inline-block; padding: 2px 7px; border-radius: 999px; font-size: 9.5px;
+         text-transform: uppercase; letter-spacing: 0.06em; border: 1px solid; margin-left: 6px;
+         font-variant-numeric: tabular-nums; vertical-align: 1px; }
+.tag.cex   { color: #c4b5fd; border-color: rgba(196, 181, 253, 0.25); }
+.tag.dex   { color: #86efac; border-color: rgba(134, 239, 172, 0.25); }
+.tag.perp  { color: #fde68a; border-color: rgba(253, 230, 138, 0.25); }
+.tag.stale { color: var(--ink-500); border-color: rgba(255,255,255,.10); }
+
+.spread.tight { color: var(--good); }
+.spread.wide  { color: var(--bad); }
+
+.bar-cell { padding: 4px 14px; }
+.bar { background: linear-gradient(90deg, rgba(252,211,77,.18), rgba(252,211,77,.04));
+       border-radius: 3px; height: 4px; margin-top: 2px; }
+.bar-row { display: flex; gap: 8px; align-items: baseline; }
+.bar-row .pct { font-size: 10px; color: var(--ink-500); min-width: 36px; text-align: right; }
+
+.trade-link { color: var(--ink-400); text-decoration: none; font-size: 11px; }
+.trade-link:hover { color: var(--accent-300); }
+
+.loading { text-align: center; padding: 40px; color: var(--ink-500); font-size: 13px; }
+.error   { text-align: center; padding: 28px; color: var(--bad); font-size: 12px; }
+.note    { font-size: 11px; color: var(--ink-500); padding: 14px 20px; line-height: 1.6;
+           border-top: 1px solid rgba(255,255,255,.06); }
+
+footer { text-align: center; color: var(--ink-500); font-size: 11px; margin-top: 40px; }
+
+/* Mobile (≤767px) */
+@media (max-width: 767px) {
+  body { font-size: 13px; }
+  main { padding: 18px 14px; max-width: none; }
+  header { flex-direction: column; align-items: flex-start; gap: 10px; margin-bottom: 22px; }
+  .brand { font-size: 11px; }
+  .brand img { height: 24px !important; }
+  .right-links { font-size: 10px; gap: 10px; flex-wrap: wrap; }
+  section { margin-bottom: 18px; }
+  section h1 { font-size: 17px; }
+
+  /* Stats banner: 2-col on phone */
+  .stats { grid-template-columns: repeat(2, 1fr); padding: 16px; gap: 14px 20px; }
+  .stat .v { font-size: 17px; }
+
+  /* Scenario tool: stack inputs + spot value */
+  #scenario-grid { grid-template-columns: 1fr !important; padding: 16px !important; gap: 14px !important; }
+  #scenario-grid > div:last-child { text-align: left !important; }
+  #scenario-result > div:first-child { grid-template-columns: 1fr 1fr !important; }
+  #scenario-result > div:first-child > div:last-child { grid-column: 1 / -1; }
+
+  .controls { padding: 12px 14px; gap: 8px; }
+  .controls > * { width: 100%; }
+  .controls .grow { display: none; }
+
+  /* Table → card list */
+  thead { display: none; }
+  tbody, tr, td { display: block; width: 100%; }
+  tbody tr {
+    display: grid; grid-template-columns: 1fr auto; gap: 4px 10px;
+    padding: 12px 14px; border-top: 1px solid rgba(255,255,255,.06);
+  }
+  tbody td { padding: 0; text-align: left; white-space: normal; }
+  td.left:nth-child(1) { grid-column: 1 / 2; }   /* venue + pair */
+  tbody td:nth-child(2) { /* type chip */ grid-column: 2; text-align: right; font-size: 10px; color: var(--ink-500); }
+  tbody td:nth-child(3) { /* price */ grid-column: 1; font-size: 12px; color: var(--ink-300); }
+  tbody td:nth-child(3)::before { content: 'Price '; color: var(--ink-500); font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; margin-right: 4px; }
+  tbody td:nth-child(4) { /* 24h volume */ grid-column: 2; text-align: right; font-size: 13px; font-weight: 600; color: var(--accent-300); }
+  tbody td:nth-child(4)::before { content: '24h '; color: var(--ink-500); font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; margin-right: 4px; }
+  tbody td:nth-child(5) { /* spread */ grid-column: 1 / -1; font-size: 11px; }
+  tbody td:nth-child(5)::before { content: 'Spread '; color: var(--ink-500); font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; margin-right: 4px; }
+  tbody td:nth-child(6) { /* trade link */ grid-column: 1 / -1; font-size: 11px; text-align: left; margin-top: 4px; }
+}
+</style>
+</head>
+<body>
+
+<main>
+  <header>
+    <div class="brand">
+      <a href="index.html" style="display:inline-flex; align-items:center;">
+        <img src="logos/solstice-text.svg" alt="Solstice" style="height: 28px; display:block; filter: invert(1);" />
+      </a>
+      <span class="sep">·</span>
+      <span class="display" style="font-size: 12px; color: var(--ink-400);">
+        SLX Depth by
+        <a href="https://hanyon.app" target="_blank" rel="noopener noreferrer" style="color: var(--ink-200); text-decoration: underline dotted; text-underline-offset: 3px;">Hanyon Analytics</a>
+      </span>
+    </div>
+    <div class="right-links">
+      <a href="index.html">← Dashboard</a>
+      <span class="sep">·</span>
+      <a href="s2-calculator.html">SLX Calculator</a>
+      <span class="sep">·</span>
+      <a href="https://app.solstice.finance/?ref=z763qy4JcE" class="featured" target="_blank" rel="noopener noreferrer">Join Solstice ↗</a>
+    </div>
+  </header>
+
+  <section>
+    <h1 class="display">SLX liquidity depth</h1>
+    <div class="section-sub">Where SLX trades right now — across every CEX and DEX listed on CoinGecko. Use the spread % and 24h volume to gauge how much depth each venue can absorb.</div>
+  </section>
+
+  <!-- ── Sell scenario ─────────────────────────────────────────────────── -->
+  <section>
+    <div class="surface" id="scenario-card">
+      <div style="padding:20px 24px; border-bottom: 1px solid rgba(255,255,255,.06);">
+        <div style="display:flex; align-items:baseline; justify-content:space-between; gap:14px; flex-wrap:wrap;">
+          <div>
+            <div class="label" style="margin-bottom:4px;">Sell scenario</div>
+            <div class="section-sub">Estimate slippage if you market-sold this amount across all <strong>spot</strong> venues at once. Perp futures don't directly absorb spot sells — excluded.</div>
+          </div>
+          <a href="#" id="scenario-jupiter-link" target="_blank" rel="noopener noreferrer" style="font-size:11px; color:var(--ink-500); text-decoration:underline dotted;">Jupiter live quote ↗</a>
+        </div>
+      </div>
+      <div id="scenario-grid" style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:16px; padding:20px 24px;">
+        <div>
+          <label class="label" style="font-size:9.5px; margin-bottom:6px; display:block;">Sell amount (SLX)</label>
+          <input id="scenario-amount" type="text" value="1,000,000" inputmode="decimal"
+                 style="background:rgba(255,255,255,.03); color:var(--ink-100); border:1px solid rgba(255,255,255,.1); padding:10px 12px; border-radius:8px; font:inherit; font-size:13px; width:100%;" />
+          <div style="font-size:10px; color:var(--ink-500); margin-top:4px;" id="scenario-pct-hint">— of 1B supply</div>
+        </div>
+        <div>
+          <label class="label" style="font-size:9.5px; margin-bottom:6px; display:block;">% of supply</label>
+          <input id="scenario-pct" type="range" min="0" max="100" step="0.1" value="40"
+                 style="width:100%; margin-top:8px;" />
+          <div style="font-size:10px; color:var(--ink-500); margin-top:4px;"><span id="scenario-pct-val">0.100</span>% · log scale (0.001 → 100%)</div>
+        </div>
+        <div style="text-align:right;">
+          <div class="label" style="font-size:9.5px; margin-bottom:4px;">Value at spot</div>
+          <div style="font-size:20px; font-weight:600; color:var(--accent-300); font-variant-numeric:tabular-nums;" id="scenario-value-spot">—</div>
+          <div style="font-size:10px; color:var(--ink-500); margin-top:2px;" id="scenario-spot-sub"></div>
+        </div>
+      </div>
+      <div id="scenario-result" style="padding:0 24px 22px; display:none;">
+        <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:14px 22px; padding:14px 16px; background:rgba(252,211,77,.04); border:1px solid rgba(252,211,77,.18); border-radius:10px;">
+          <div>
+            <div class="label" style="font-size:9.5px;">Est. USD received</div>
+            <div style="font-size:17px; font-weight:600; margin-top:4px; font-variant-numeric:tabular-nums;" id="scenario-received">—</div>
+          </div>
+          <div>
+            <div class="label" style="font-size:9.5px;">Avg fill price</div>
+            <div style="font-size:17px; font-weight:600; margin-top:4px; font-variant-numeric:tabular-nums;" id="scenario-avgprice">—</div>
+          </div>
+          <div>
+            <div class="label" style="font-size:9.5px;">Slippage from spot</div>
+            <div style="font-size:17px; font-weight:600; margin-top:4px; font-variant-numeric:tabular-nums; color:var(--bad);" id="scenario-slippage">—</div>
+          </div>
+        </div>
+        <div style="margin-top:14px; font-size:11px; color:var(--ink-500); line-height:1.7;" id="scenario-breakdown"></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="surface">
+      <div class="stats">
+        <div class="stat">
+          <div class="lbl">Spot price</div>
+          <div class="v accent" id="stat-price">—</div>
+          <div class="sub" id="stat-price-sub"></div>
+        </div>
+        <div class="stat">
+          <div class="lbl">24h volume</div>
+          <div class="v" id="stat-vol">—</div>
+          <div class="sub" id="stat-vol-sub"></div>
+        </div>
+        <div class="stat">
+          <div class="lbl">Venues live</div>
+          <div class="v" id="stat-venues">—</div>
+          <div class="sub" id="stat-venues-sub"></div>
+        </div>
+        <div class="stat">
+          <div class="lbl">FDV</div>
+          <div class="v" id="stat-fdv">—</div>
+          <div class="sub">price × 1B supply</div>
+        </div>
+      </div>
+
+      <div class="controls">
+        <select id="filter-type">
+          <option value="">All venues</option>
+          <option value="cex">Spot CEX</option>
+          <option value="dex">Spot DEX</option>
+        </select>
+        <select id="filter-stale">
+          <option value="active">Hide stale</option>
+          <option value="">Show all</option>
+        </select>
+        <input id="search" placeholder="Filter by venue name…" autocomplete="off" />
+        <span class="grow"></span>
+        <span class="label" style="color:var(--ink-500); font-size:10px;">Source: CoinGecko</span>
+      </div>
+
+      <div id="table-host">
+        <div class="loading" id="loading">Loading SLX tickers…</div>
+      </div>
+
+      <div class="note">
+        <strong>How to read this:</strong> Sort by 24h Volume to see where most flow is.
+        <strong>Spread</strong> approximates how much you'd pay in slippage on a small market trade — tighter is better. Stale tickers (no fresh trades in the last hour) are hidden by default.
+        Click any venue to open its trade page.
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    Live data from CoinGecko's tickers API · Refresh the page to refetch
+  </footer>
+</main>
+
+<script src="slx-depth-engine.js"></script>
+<script>
+const SLX_TOTAL_SUPPLY = 1_000_000_000;
+
+// Heuristic CEX vs DEX classifier. CoinGecko's `identifier` field is the
+// canonical venue slug. We tag any pair whose base/target looks like an
+// EVM/SPL address (long hex/base58) as DEX; named-symbol pairs as CEX.
+const DEX_HINTS = ['uniswap', 'pancakeswap', 'orca', 'meteora', 'raydium',
+                   'jupiter', 'sushiswap', 'curve', 'balancer', 'aerodrome',
+                   'velodrome', 'cetus', 'biswap', 'dexalot', '1inch'];
+function classifyVenue(t) {
+  const m = (t.market || {}).identifier || '';
+  const name = (t.market || {}).name || '';
+  const tgt = (t.target || '');
+  // Long alphanumeric target → DEX pool address
+  if (tgt.length > 30) return 'dex';
+  if (DEX_HINTS.some(h => m.toLowerCase().includes(h) || name.toLowerCase().includes(h))) return 'dex';
+  return 'cex';
+}
+
+const fmtUsd = n => {
+  if (!isFinite(n) || n == null) return '—';
+  if (Math.abs(n) >= 1e9) return '$' + (n/1e9).toFixed(2) + 'B';
+  if (Math.abs(n) >= 1e6) return '$' + (n/1e6).toFixed(2) + 'M';
+  if (Math.abs(n) >= 1e3) return '$' + (n/1e3).toFixed(2) + 'K';
+  return '$' + n.toFixed(2);
+};
+const fmtPrice = n => isFinite(n) ? '$' + n.toFixed(4) : '—';
+
+let TICKERS = [];
+let MAX_VOL = 0;
+let SORT_KEY = 'volume';
+let SORT_DIR = 'desc';
+
+async function load() {
+  try {
+    // Spot tickers only. Perp/futures liquidity does NOT directly absorb spot
+    // market sells — it only affects spot price indirectly via arbitrage,
+    // which is partial + delayed. Including perp volume in a spot-sell
+    // absorption model overstates effective depth, so we exclude it.
+    const spotResp = await fetch('https://api.coingecko.com/api/v3/coins/solstice/tickers?include_exchange_logo=false');
+    if (!spotResp.ok) throw new Error('CoinGecko returned ' + spotResp.status);
+    const spotData = await spotResp.json();
+    TICKERS = (spotData.tickers || []).map(t => ({
+      venue: (t.market || {}).name || '?',
+      identifier: (t.market || {}).identifier || '',
+      base: t.base || 'SLX',
+      target: t.target || '?',
+      price: (t.converted_last || {}).usd || t.last || 0,
+      volume: (t.converted_volume || {}).usd || 0,
+      spread: t.bid_ask_spread_percentage,
+      type: classifyVenue(t),
+      stale: !!t.is_stale,
+      tradeUrl: t.trade_url || null,
+    })).filter(t => t.price > 0);
+    MAX_VOL = TICKERS.reduce((m, t) => Math.max(m, t.volume), 0);
+    renderStats();
+    renderTable();
+    renderScenario();
+    refreshJupQuote();
+  } catch (e) {
+    document.getElementById('table-host').innerHTML = '<div class="error">Could not load tickers: ' + e.message + '</div>';
+  }
+}
+
+function renderStats() {
+  // Weighted-average price by 24h volume (excluding stale).
+  const live = TICKERS.filter(t => !t.stale);
+  const totalVol = live.reduce((s, t) => s + t.volume, 0);
+  let wPrice = 0;
+  for (const t of live) wPrice += t.price * (t.volume / Math.max(totalVol, 1));
+  if (totalVol === 0 && live.length) wPrice = live.reduce((s, t) => s + t.price, 0) / live.length;
+
+  document.getElementById('stat-price').textContent = fmtPrice(wPrice);
+  document.getElementById('stat-price-sub').textContent = 'volume-weighted across live venues';
+
+  document.getElementById('stat-vol').textContent = fmtUsd(totalVol);
+  document.getElementById('stat-vol-sub').textContent = 'sum across all live tickers';
+
+  const cexN = live.filter(t => t.type === 'cex').length;
+  const dexN = live.filter(t => t.type === 'dex').length;
+  document.getElementById('stat-venues').textContent = live.length.toString();
+  document.getElementById('stat-venues-sub').textContent = `${cexN} CEX · ${dexN} DEX (spot only)`;
+
+  document.getElementById('stat-fdv').textContent = fmtUsd(wPrice * SLX_TOTAL_SUPPLY);
+}
+
+function renderTable() {
+  const host = document.getElementById('table-host');
+  const ftype = document.getElementById('filter-type').value;
+  const fstale = document.getElementById('filter-stale').value;
+  const q = document.getElementById('search').value.toLowerCase().trim();
+
+  let rows = TICKERS.slice();
+  if (ftype) rows = rows.filter(t => t.type === ftype);
+  if (fstale === 'active') rows = rows.filter(t => !t.stale);
+  if (q) rows = rows.filter(t => t.venue.toLowerCase().includes(q) || t.identifier.toLowerCase().includes(q));
+
+  const dir = SORT_DIR === 'asc' ? 1 : -1;
+  rows.sort((a, b) => {
+    let av = a[SORT_KEY], bv = b[SORT_KEY];
+    if (typeof av === 'string') return dir * av.localeCompare(bv);
+    return dir * ((av || 0) - (bv || 0));
+  });
+
+  if (!rows.length) {
+    host.innerHTML = '<div class="loading">No venues match the filter.</div>';
+    return;
+  }
+
+  // Bid-ask spread % styling: <1% tight, >5% wide
+  function spreadCell(s) {
+    if (s == null || !isFinite(s)) return '<span style="color:var(--ink-500);">—</span>';
+    const cls = s < 1 ? 'tight' : s > 5 ? 'wide' : '';
+    return `<span class="spread ${cls}">${s.toFixed(3)}%</span>`;
+  }
+  function pairText(t) {
+    // Truncate long DEX addresses
+    const base = t.base.length > 8 ? t.base.slice(0, 4) + '…' + t.base.slice(-3) : t.base;
+    const tgt  = t.target.length > 8 ? t.target.slice(0, 4) + '…' + t.target.slice(-3) : t.target;
+    return base + '/' + tgt;
+  }
+  function venueTag(t) {
+    const tag = t.type === 'cex' ? '<span class="tag cex">CEX</span>' : '<span class="tag dex">DEX</span>';
+    const stale = t.stale ? '<span class="tag stale">stale</span>' : '';
+    return tag + stale;
+  }
+  function volBar(v) {
+    const pct = MAX_VOL > 0 ? (v / MAX_VOL * 100) : 0;
+    return `<div class="bar-row"><span>${fmtUsd(v)}</span><span class="pct">${pct.toFixed(0)}%</span></div>
+            <div class="bar" style="width:${Math.max(2, pct)}%"></div>`;
+  }
+
+  const tbody = rows.map(t => `
+    <tr>
+      <td class="left"><span class="venue">${t.venue}</span><span class="pair">${pairText(t)}</span></td>
+      <td>${venueTag(t)}</td>
+      <td>${fmtPrice(t.price)}</td>
+      <td>${volBar(t.volume)}</td>
+      <td>${spreadCell(t.spread)}</td>
+      <td>${t.tradeUrl ? `<a class="trade-link" href="${t.tradeUrl}" target="_blank" rel="noopener noreferrer">Trade ↗</a>` : ''}</td>
+    </tr>
+  `).join('');
+
+  host.innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th class="left" data-key="venue">Venue</th>
+          <th data-key="type">Type</th>
+          <th data-key="price">Price</th>
+          <th data-key="volume" class="desc">24h Volume</th>
+          <th data-key="spread">Spread</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>${tbody}</tbody>
+    </table>
+  `;
+  // Wire sort
+  document.querySelectorAll('th[data-key]').forEach(th => {
+    th.addEventListener('click', () => {
+      const k = th.dataset.key;
+      if (SORT_KEY === k) SORT_DIR = (SORT_DIR === 'asc' ? 'desc' : 'asc');
+      else { SORT_KEY = k; SORT_DIR = (k === 'venue' ? 'asc' : 'desc'); }
+      renderTable();
+    });
+  });
+}
+
+document.getElementById('filter-type').addEventListener('change', renderTable);
+document.getElementById('filter-stale').addEventListener('change', renderTable);
+document.getElementById('search').addEventListener('input', renderTable);
+
+// ── Sell scenario ───────────────────────────────────────────────────────
+// Live mode: window.SLXDepthEngine pulls real bid orderbooks (Bitget, BitMart,
+// Kraken, Hotcoin) + on-chain BSC pool state (PancakeSwap Infinity, UniswapV3,
+// UniswapV4) + a Jupiter v6 quote for Solana. Any CoinGecko-listed venue NOT
+// covered by a live fetcher is passed as fallbackVenues — the engine
+// synthesizes a quadratic-heuristic curve from {price, vol24h, spread} and
+// labels those fills source:"estimated".
+//
+// On network failure we fall back to the OLD quadratic estimate so the UI
+// keeps working (with a clear "live depth unavailable" note).
+
+// Venues with live fetchers in slx-depth-engine.js — match on identifier substring.
+// Anything in TICKERS not matching one of these gets passed as a fallback estimate.
+const ENGINE_LIVE_HINTS = [
+  'bitget', 'bitmart', 'kraken', 'hotcoin',
+  'pancakeswap',          // PancakeSwap Infinity (BSC)
+  'uniswap',              // UniswapV3 + V4 (BSC)
+  'jupiter',              // Solana aggregator (via Jupiter quote API)
+];
+function isCoveredByEngine(ticker) {
+  const id = (ticker.identifier || '').toLowerCase();
+  const name = (ticker.venue || '').toLowerCase();
+  return ENGINE_LIVE_HINTS.some(h => id.includes(h) || name.includes(h));
+}
+
+let LAST_JUP_RESULT = null;
+let SOLANA_LIVE_AVAILABLE = true;
+
+// Old quadratic absorption fallback — only used if the live engine throws.
+function _fallbackPerVenueSlippage(tradeUsd, vol24h, spreadPct) {
+  if (vol24h <= 0) return Infinity;
+  const ratio = tradeUsd / vol24h;
+  const dynamic = 4 * ratio * ratio * 100;
+  const base    = isFinite(spreadPct) ? spreadPct : 0.3;
+  return base + dynamic;
+}
+
+// Log-scale slider math: maps slider 0..100 → 0.001%..100% of supply.
+const SLIDER_MIN_PCT = 0.001;
+const SLIDER_MAX_PCT = 100;
+const SLIDER_LOG_RATIO = Math.log(SLIDER_MAX_PCT / SLIDER_MIN_PCT);
+const sliderToPct = v => SLIDER_MIN_PCT * Math.exp((v / 100) * SLIDER_LOG_RATIO);
+const pctToSlider = p => (Math.log(Math.max(p, SLIDER_MIN_PCT) / SLIDER_MIN_PCT) / SLIDER_LOG_RATIO) * 100;
+
+// Guard so overlapping async renderScenario calls don't clobber each other.
+let RENDER_TOKEN = 0;
+
+async function renderScenario() {
+  if (!TICKERS.length) return;
+  const live = TICKERS.filter(t => !t.stale);
+  if (!live.length) return;
+
+  // Spot price = volume-weighted across live venues (all are spot now).
+  const totalSpotVol = live.reduce((s, t) => s + t.volume, 0);
+  let spot = 0;
+  for (const t of live) spot += t.price * (t.volume / Math.max(totalSpotVol, 1));
+
+  const amtEl = document.getElementById('scenario-amount');
+  const pctEl = document.getElementById('scenario-pct');
+  const slx = parseFloat(amtEl.value.replace(/[,\s]/g, '')) || 0;
+  const pct = slx / SLX_TOTAL_SUPPLY * 100;
+  document.getElementById('scenario-pct-hint').textContent = pct.toFixed(4) + '% of 1B supply';
+  document.getElementById('scenario-pct-val').textContent = pct.toFixed(3);
+  pctEl.value = pctToSlider(pct).toFixed(2);
+
+  const valueSpot = slx * spot;
+  document.getElementById('scenario-value-spot').textContent = fmtUsd(valueSpot);
+  document.getElementById('scenario-spot-sub').textContent = '@ $' + spot.toFixed(4) + '/SLX';
+
+  // Jupiter trade-page deep link for the configured size.
+  document.getElementById('scenario-jupiter-link').href =
+    `https://jup.ag/swap/SLX-USDC?inputAmount=${slx.toFixed(2)}`;
+
+  if (slx <= 0) {
+    document.getElementById('scenario-result').style.display = 'none';
+    return;
+  }
+
+  const myToken = ++RENDER_TOKEN;
+
+  // Build fallbackVenues: every CoinGecko ticker NOT covered by the engine's
+  // live fetchers. The engine synthesizes a quadratic curve for each.
+  const fallbackVenues = live
+    .filter(t => !isCoveredByEngine(t))
+    .map(t => ({
+      venue: t.venue,
+      vol24h: t.volume,
+      spread: (t.spread || 0) / 100, // CoinGecko reports % — engine wants fraction
+      price: t.price,
+      type: t.type,
+    }));
+
+  let result = null;
+  let liveError = null;
+  try {
+    result = await window.SLXDepthEngine.priceSell(slx, fallbackVenues);
+  } catch (e) {
+    liveError = e && e.message ? e.message : String(e);
+  }
+  if (myToken !== RENDER_TOKEN) return; // a newer render is in flight
+
+  if (result && result.usdReceived > 0) {
+    const usdReceived = result.usdReceived;
+    const avgPrice = result.avgPrice;
+    // Slippage vs spot (the value the user sees in the "Value at spot" tile),
+    // not the engine's vs-best-bid number — keeps continuity with the UI label.
+    const slipVsSpot = valueSpot > 0 ? ((valueSpot - usdReceived) / valueSpot) * 100 : 0;
+
+    document.getElementById('scenario-received').textContent = fmtUsd(usdReceived);
+    document.getElementById('scenario-avgprice').textContent = '$' + avgPrice.toFixed(4);
+    document.getElementById('scenario-slippage').textContent =
+      (slipVsSpot >= 0 ? '−' : '+') + Math.abs(slipVsSpot).toFixed(2) + '%';
+
+    // Per-venue breakdown — top 8 by usdReceived
+    const sorted = (result.perVenueFill || []).slice().sort((a, b) => b.usdReceived - a.usdReceived);
+    const totalFillUsd = sorted.reduce((s, b) => s + b.usdReceived, 0) || 1;
+    const top = sorted.slice(0, 8);
+    const typeClass = t => (t === 'cex' || t === 'dex') ? t : 'dex';
+    const typeLabel = t => {
+      if (t === 'cex') return 'CEX';
+      if (t === 'dex_bsc') return 'BSC';
+      if (t === 'dex_sol') return 'SOL';
+      if (t === 'dex') return 'DEX';
+      return (t || '').toUpperCase();
+    };
+    const bdHtml = top.map(b => {
+      const share = b.usdReceived / totalFillUsd * 100;
+      const badge = b.source === 'live'
+        ? '<span class="tag" style="color:var(--good); border-color:rgba(134,239,172,.3);">live</span>'
+        : '<span class="tag stale">est.</span>';
+      return `<div style="display:flex; justify-content:space-between; gap:14px;">
+         <span><span style="color:var(--ink-300);">${b.venue}</span>
+               <span class="tag ${typeClass(b.type)}">${typeLabel(b.type)}</span>
+               ${badge}</span>
+         <span>${share.toFixed(1)}% of fill → ${fmtUsd(b.usdReceived)}
+               @ avg $${(b.usdReceived / Math.max(b.slxFilled, 1e-9)).toFixed(4)}</span>
+       </div>`;
+    }).join('');
+
+    let unfilledNote = '';
+    if (result.slxUnfilled > 0.01) {
+      unfilledNote = `<div style="margin-top:6px; color:var(--bad);">
+        Unfilled: ${Math.round(result.slxUnfilled).toLocaleString('en-US')} SLX exceeded available depth.
+      </div>`;
+    }
+
+    let jupNote = '';
+    if (LAST_JUP_RESULT) {
+      jupNote = `<div style="margin-top:10px; padding-top:10px; border-top:1px dashed rgba(255,255,255,.06);">
+        <strong style="color:var(--ink-300);">Jupiter aggregator (Solana only)</strong>:
+        ${LAST_JUP_RESULT.priceImpactPct.toFixed(2)}% price impact on ${fmtUsd(LAST_JUP_RESULT.outAmount)} received
+        (${LAST_JUP_RESULT.hops} hop${LAST_JUP_RESULT.hops === 1 ? '' : 's'})
+      </div>`;
+    }
+
+    document.getElementById('scenario-breakdown').innerHTML = bdHtml + unfilledNote + jupNote;
+    document.getElementById('scenario-result').style.display = 'block';
+    return;
+  }
+
+  // ── Fallback: live engine failed entirely. Use the old quadratic model. ──
+  const totalVol = live.reduce((s, t) => s + t.volume, 0);
+  const breakdown = live.map(t => {
+    const share = t.volume / totalVol;
+    const tradeUsd = valueSpot * share;
+    const slipPct = _fallbackPerVenueSlippage(tradeUsd, t.volume, t.spread);
+    return { venue: t.venue, type: t.type, share, tradeUsd, slip: slipPct };
+  });
+  const aggSlip = breakdown.reduce((s, b) => s + b.slip * b.share, 0);
+  const usdReceived = valueSpot * (1 - aggSlip / 100);
+  const avgPrice = usdReceived / slx;
+
+  document.getElementById('scenario-received').textContent = fmtUsd(usdReceived);
+  document.getElementById('scenario-avgprice').textContent = '$' + avgPrice.toFixed(4);
+  document.getElementById('scenario-slippage').textContent =
+    (aggSlip >= 0 ? '−' : '+') + Math.abs(aggSlip).toFixed(2) + '%';
+
+  const top = breakdown.slice().sort((a, b) => b.share - a.share).slice(0, 8);
+  const bdHtml = top.map(b =>
+    `<div style="display:flex; justify-content:space-between; gap:14px;">
+       <span><span style="color:var(--ink-300);">${b.venue}</span>
+             <span class="tag ${b.type}">${b.type.toUpperCase()}</span>
+             <span class="tag stale">est.</span></span>
+       <span>${(b.share*100).toFixed(1)}% of flow → ~${b.slip.toFixed(2)}% slip on ${fmtUsd(b.tradeUsd)}</span>
+     </div>`).join('');
+  const unavailNote =
+    `<div style="margin-top:10px; color:var(--ink-500);">
+       Live depth unavailable${liveError ? ` (${liveError})` : ''} — showing quadratic estimate from 24h volume.
+     </div>`;
+  let jupNote = '';
+  if (LAST_JUP_RESULT) {
+    jupNote = `<div style="margin-top:10px; padding-top:10px; border-top:1px dashed rgba(255,255,255,.06);">
+      <strong style="color:var(--ink-300);">Jupiter aggregator (Solana only)</strong>:
+      ${LAST_JUP_RESULT.priceImpactPct.toFixed(2)}% price impact on ${fmtUsd(LAST_JUP_RESULT.outAmount)} received
+      (${LAST_JUP_RESULT.hops} hop${LAST_JUP_RESULT.hops === 1 ? '' : 's'})
+    </div>`;
+  }
+  document.getElementById('scenario-breakdown').innerHTML = bdHtml + unavailNote + jupNote;
+  document.getElementById('scenario-result').style.display = 'block';
+}
+
+// Debounced Jupiter quote — runs when the user pauses typing.
+// Engine's fetchJupiterQuote returns {slxIn, outAmount, priceImpactPct, hops, avgPrice}.
+let jupDebounce = null;
+function refreshJupQuote() {
+  clearTimeout(jupDebounce);
+  jupDebounce = setTimeout(async () => {
+    const slx = parseFloat(document.getElementById('scenario-amount').value.replace(/[,\s]/g, '')) || 0;
+    if (slx <= 0 || !SOLANA_LIVE_AVAILABLE) { LAST_JUP_RESULT = null; renderScenario(); return; }
+    try {
+      LAST_JUP_RESULT = await window.SLXDepthEngine.fetchJupiterQuote(slx);
+    } catch (e) {
+      LAST_JUP_RESULT = null;
+      SOLANA_LIVE_AVAILABLE = false;
+    }
+    renderScenario();
+  }, 450);
+}
+
+document.getElementById('scenario-amount').addEventListener('input', (e) => {
+  renderScenario();
+  refreshJupQuote();
+});
+document.getElementById('scenario-amount').addEventListener('blur', (e) => {
+  const n = parseFloat(e.target.value.replace(/[,\s]/g, ''));
+  if (isFinite(n) && n > 0) e.target.value = Math.round(n).toLocaleString('en-US');
+  renderScenario();
+});
+document.getElementById('scenario-pct').addEventListener('input', (e) => {
+  const pct = sliderToPct(parseFloat(e.target.value));
+  const slx = pct / 100 * SLX_TOTAL_SUPPLY;
+  document.getElementById('scenario-amount').value = Math.round(slx).toLocaleString('en-US');
+  renderScenario();
+  refreshJupQuote();
+});
+
+load();
+</script>
+
+</body>
+</html>
