@@ -1,12 +1,12 @@
 name: Daily S2 refresh
 
 on:
-  schedule:
-    # 00:05 UTC daily — 5 min after Solstice's 00:00 UTC snapshot boundary.
-    # This captures the just-completed day; running before midnight would only
-    # see the previous day's already-known totals.
-    - cron: '5 0 * * *'
-  workflow_dispatch:   # allow manual trigger
+  # Auto-schedule disabled 2026-05-31 — local refresh is the source of truth;
+  # CI auto-refresh produced inconsistent data and isn't fully trusted.
+  # Re-enable by uncommenting the schedule block below.
+  # schedule:
+  #   - cron: '5 0 * * *'   # 00:05 UTC daily
+  workflow_dispatch:   # manual-only trigger
 
 # Allow the workflow to push commits back to the repo
 permissions:
