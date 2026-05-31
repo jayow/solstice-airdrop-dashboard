@@ -1,6 +1,13 @@
-// SLX Depth Engine — live orderbook + on-chain pool reader for sell-side liquidity.
+// SLX Depth Engine — live orderbook + on-chain pool reader for both BID (sell)
+// and ASK (buy) sides.
 //
 // Vanilla browser module. No imports, no bundler. Exposes window.SLXDepthEngine.
+//
+// Naming convention (kept stable across the buy-side extension):
+//   fetchXxxBids() — historical name, now returns BOTH `bids` and `asks` arrays.
+//   We deliberately did NOT rename these to fetchXxxDepth, because callers
+//   (orchestrator + dashboards) already key off the existing names. Lower
+//   friction = less risk of breaking the sell path.
 //
 // Live venues (assembled 2026-05-31, all individually verified):
 //   CEX (CORS-confirmed):  Bitget, BitMart, Kraken, Hotcoin, DigiFinex, KCEX
@@ -48,7 +55,7 @@
   // CEX FETCHERS (live, CORS-verified)
   // ═════════════════════════════════════════════════════════════════════════
 
-  // Fetches the live Bitget SLX/USDT bid orderbook.
+  // Fetches the live Bitget SLX/USDT bid + ask orderbook.
   async function fetchBitgetBids() {
     const venue = "Bitget";
     const url = "https://api.bitget.com/api/v2/spot/market/orderbook?symbol=SLXUSDT&limit=150";
@@ -86,10 +93,18 @@
       throw new Error(`${venue} orderbook returned no usable bids`);
     }
 
+    const asks = Array.isArray(json.data.asks)
+      ? json.data.asks
+          .map(parseLevel)
+          .filter(([p, s]) => Number.isFinite(p) && Number.isFinite(s) && p > 0 && s > 0)
+          .sort((a, b) => a[0] - b[0])
+      : [];
+
     return {
       venue,
       type: "cex",
       bids,
+      asks,
       midUsd: bids[0][0],
       fetchedAt: Date.now(),
     };
@@ -131,10 +146,31 @@
     }
     bids.sort((a, b) => b[0] - a[0]);
 
+    const rawAsks = json && json.data && Array.isArray(json.data.asks) ? json.data.asks : [];
+    const asks = [];
+    for (const entry of rawAsks) {
+      let priceRaw, sizeRaw;
+      if (Array.isArray(entry)) {
+        priceRaw = entry[0];
+        sizeRaw = entry[1];
+      } else if (entry && typeof entry === "object") {
+        priceRaw = entry.price ?? entry.p ?? entry[0];
+        sizeRaw = entry.amount ?? entry.size ?? entry.quantity ?? entry.q ?? entry[1];
+      } else {
+        continue;
+      }
+      const priceUsd = parseFloat(priceRaw);
+      const sizeSlx = parseFloat(sizeRaw);
+      if (!isFinite(priceUsd) || !isFinite(sizeSlx) || priceUsd <= 0 || sizeSlx <= 0) continue;
+      asks.push([priceUsd, sizeSlx]);
+    }
+    asks.sort((a, b) => a[0] - b[0]);
+
     return {
       venue: "BitMart",
       type: "cex",
       bids,
+      asks,
       midUsd: bids[0][0],
       fetchedAt: Date.now(),
     };
@@ -181,10 +217,34 @@
       throw new Error("Kraken depth: empty bids after parse");
     }
     bids.sort((a, b) => b[0] - a[0]);
+
+    const asks = [];
+    if (Array.isArray(book.asks)) {
+      for (const entry of book.asks) {
+        let priceRaw, sizeRaw;
+        if (Array.isArray(entry)) {
+          priceRaw = entry[0];
+          sizeRaw = entry[1];
+        } else if (entry && typeof entry === "object") {
+          priceRaw = entry.price ?? entry.p ?? entry[0];
+          sizeRaw = entry.size ?? entry.volume ?? entry.qty ?? entry[1];
+        } else {
+          continue;
+        }
+        const priceUsd = parseFloat(priceRaw);
+        const sizeSlx = parseFloat(sizeRaw);
+        if (!Number.isFinite(priceUsd) || !Number.isFinite(sizeSlx)) continue;
+        if (priceUsd <= 0 || sizeSlx <= 0) continue;
+        asks.push([priceUsd, sizeSlx]);
+      }
+      asks.sort((a, b) => a[0] - b[0]);
+    }
+
     return {
       venue: "Kraken",
       type: "cex",
       bids,
+      asks,
       midUsd: bids[0][0],
       fetchedAt: Date.now(),
     };
@@ -236,10 +296,37 @@
     }
     bids.sort((a, b) => b[0] - a[0]);
 
+    const rawAsks =
+      (container.depth && (container.depth.asks || container.depth.sells)) ||
+      (container.tick && (container.tick.asks || container.tick.sells)) ||
+      container.asks ||
+      container.sells ||
+      [];
+    const asks = [];
+    if (Array.isArray(rawAsks)) {
+      for (const entry of rawAsks) {
+        let price, size;
+        if (Array.isArray(entry)) {
+          price = parseFloat(entry[0]);
+          size = parseFloat(entry[1]);
+        } else if (entry && typeof entry === "object") {
+          price = parseFloat(entry.price ?? entry.p ?? entry[0]);
+          size = parseFloat(entry.size ?? entry.amount ?? entry.quantity ?? entry.q ?? entry[1]);
+        } else {
+          continue;
+        }
+        if (Number.isFinite(price) && Number.isFinite(size) && price > 0 && size > 0) {
+          asks.push([price, size]);
+        }
+      }
+      asks.sort((a, b) => a[0] - b[0]);
+    }
+
     return {
       venue: "Hotcoin",
       type: "cex",
       bids,
+      asks,
       midUsd: bids[0][0],
       fetchedAt: Date.now(),
     };
@@ -284,10 +371,32 @@
       throw new Error("DigiFinex bids parsed to empty array");
     }
     bids.sort((a, b) => b[0] - a[0]);
+
+    const rawAsks = json && Array.isArray(json.asks) ? json.asks : [];
+    const asks = [];
+    for (const entry of rawAsks) {
+      let priceRaw, sizeRaw;
+      if (Array.isArray(entry)) {
+        priceRaw = entry[0];
+        sizeRaw = entry[1];
+      } else if (entry && typeof entry === "object") {
+        priceRaw = entry.price ?? entry.p ?? entry[0];
+        sizeRaw = entry.size ?? entry.amount ?? entry.quantity ?? entry.q ?? entry[1];
+      } else {
+        continue;
+      }
+      const price = parseFloat(priceRaw);
+      const size = parseFloat(sizeRaw);
+      if (!Number.isFinite(price) || !Number.isFinite(size) || price <= 0 || size <= 0) continue;
+      asks.push([price, size]);
+    }
+    asks.sort((a, b) => a[0] - b[0]);
+
     return {
       venue: "DigiFinex",
       type: "cex",
       bids,
+      asks,
       midUsd: bids[0][0],
       fetchedAt: Date.now(),
     };
@@ -337,10 +446,35 @@
       throw new Error("KCEX bids parsed to empty array");
     }
     bids.sort((a, b) => b[0] - a[0]);
+
+    const rawAsks =
+      (json && json.data && json.data.data && Array.isArray(json.data.data.asks))
+        ? json.data.data.asks
+        : [];
+    const asks = [];
+    for (const entry of rawAsks) {
+      let priceRaw, sizeRaw;
+      if (entry && typeof entry === "object" && !Array.isArray(entry)) {
+        priceRaw = entry.p ?? entry.price ?? entry[0];
+        sizeRaw = entry.q ?? entry.size ?? entry.quantity ?? entry.amount ?? entry[1];
+      } else if (Array.isArray(entry)) {
+        priceRaw = entry[0];
+        sizeRaw = entry[1];
+      } else {
+        continue;
+      }
+      const price = parseFloat(priceRaw);
+      const size = parseFloat(sizeRaw);
+      if (!Number.isFinite(price) || !Number.isFinite(size) || price <= 0 || size <= 0) continue;
+      asks.push([price, size]);
+    }
+    asks.sort((a, b) => a[0] - b[0]);
+
     return {
       venue: "KCEX",
       type: "cex",
       bids,
+      asks,
       midUsd: bids[0][0],
       fetchedAt: Date.now(),
     };
@@ -411,34 +545,55 @@
     };
   }
 
+  // Parallel to _finishCexBids: parse a raw asks array. Unlike bids we do NOT
+  // throw if asks come back empty — that just means the proxy upstream didn't
+  // include them, and the buy side should silently skip this venue.
+  function _finishCexAsks(rawAsks) {
+    if (!Array.isArray(rawAsks) || rawAsks.length === 0) return [];
+    return rawAsks.map(_parseLevelPair).filter(Boolean).sort((a, b) => a[0] - b[0]);
+  }
+
+  // Convenience: take a fully-built bid record and a raw asks array, attach
+  // parsed asks onto the record, return record. Used by the proxied fetchers.
+  function _attachAsks(rec, rawAsks) {
+    rec.asks = _finishCexAsks(rawAsks);
+    return rec;
+  }
+
   // MEXC — shape: { bids: [[price, qty]], asks: [...] }
   async function fetchMEXCBids() {
     const j = await _proxyFetch("mexc");
-    return _finishCexBids("MEXC", j && j.bids);
+    return _attachAsks(_finishCexBids("MEXC", j && j.bids), j && j.asks);
   }
 
   // Gate.io — shape: { bids: [[price, qty]], asks: [...] }
   async function fetchGateBids() {
     const j = await _proxyFetch("gate");
-    return _finishCexBids("Gate", j && j.bids);
+    return _attachAsks(_finishCexBids("Gate", j && j.bids), j && j.asks);
   }
 
-  // LBank — shape: { data: { bids: [[price, qty]] }, result: "true" }
+  // LBank — shape: { data: { bids: [[price, qty]], asks: [...] }, result: "true" }
   async function fetchLBankBids() {
     const j = await _proxyFetch("lbank");
     if (j && j.result && j.result !== "true" && j.result !== true) {
       throw new Error(`LBank result=${j.result} msg=${j.msg || ""}`);
     }
-    return _finishCexBids("LBank", j && j.data && j.data.bids);
+    return _attachAsks(
+      _finishCexBids("LBank", j && j.data && j.data.bids),
+      j && j.data && j.data.asks
+    );
   }
 
-  // OrangeX (Deribit-style JSON-RPC) — shape: { result: { bids: [[price, qty]] } }
+  // OrangeX (Deribit-style JSON-RPC) — shape: { result: { bids: [[price, qty]], asks: [...] } }
   async function fetchOrangeXBids() {
     const j = await _proxyFetch("orangex");
-    return _finishCexBids("OrangeX", j && j.result && j.result.bids);
+    return _attachAsks(
+      _finishCexBids("OrangeX", j && j.result && j.result.bids),
+      j && j.result && j.result.asks
+    );
   }
 
-  // BingX — shape (when listed): { code:0, data: { bids: [[price, qty]] } }
+  // BingX — shape (when listed): { code:0, data: { bids: [[price, qty]], asks: [...] } }
   // Currently returns { code:100204, msg:"symbol is not found." } — fetcher
   // will surface that and the orchestrator drops it like any other failure.
   async function fetchBingXBids() {
@@ -448,22 +603,28 @@
     }
     const rawBids =
       (j && j.data && j.data.bids) ||
-      (j && j.data && Array.isArray(j.data) ? null : null) ||
       (j && j.bids) ||
       null;
-    return _finishCexBids("BingX", rawBids);
+    const rawAsks =
+      (j && j.data && j.data.asks) ||
+      (j && j.asks) ||
+      null;
+    return _attachAsks(_finishCexBids("BingX", rawBids), rawAsks);
   }
 
   // Toobit — shape: { t: <ts>, b: [[price, qty]], a: [...] }
   async function fetchToobitBids() {
     const j = await _proxyFetch("toobit");
-    return _finishCexBids("Toobit", j && (j.b || j.bids));
+    return _attachAsks(
+      _finishCexBids("Toobit", j && (j.b || j.bids)),
+      j && (j.a || j.asks)
+    );
   }
 
   // Ourbit — Binance-clone shape: { bids: [[price_str, qty_str]], asks: [...] }
   async function fetchOurbitBids() {
     const j = await _proxyFetch("ourbit");
-    return _finishCexBids("Ourbit", j && j.bids);
+    return _attachAsks(_finishCexBids("Ourbit", j && j.bids), j && j.asks);
   }
 
   // WEEX — Binance-style: { lastUpdateId, bids: [[price_str, qty_str]], asks: [...] }
@@ -473,7 +634,7 @@
     if (j && typeof j.code === "number" && j.code !== 0 && j.code !== 200) {
       throw new Error(`WEEX code=${j.code} msg=${j.msg || "unknown"}`);
     }
-    return _finishCexBids("WEEX", j && j.bids);
+    return _attachAsks(_finishCexBids("WEEX", j && j.bids), j && j.asks);
   }
 
   // ═════════════════════════════════════════════════════════════════════════
@@ -798,6 +959,172 @@
     return PancakeSwapInfinityTickWalkSell(state, slxInRaw, opts);
   }
 
+  // ── PancakeSwap Infinity BUY side (oneForZero: USDC in, SLX out, price UP) ───
+  //
+  // V3 math for token1 input that raises price (oneForZero, exact-in token1):
+  //   sqrtP_new = sqrtP_old + (usdtIn * Q96) / L          // amount1 → ΔsqrtP up
+  //   slxOut_raw = L * (sqrtP_new - sqrtP_old) * Q96 / (sqrtP_new * sqrtP_old)
+  //
+  // Both formulas use token1's "raw" amount (i.e. scaled by 10^dec1). On
+  // PancakeSwap Infinity the SLX/USDC pool uses USDC with 18 decimals here
+  // (pool is bridged-USDC), so usdcInRaw = usdHuman * 1e18.
+  function _pcsInfInRangeBuy(state, usdcInRaw) {
+    const sqrtP = BigInt(state.state.sqrtPriceX96);
+    const L = BigInt(state.state.liquidity);
+    if (L === 0n) throw new Error("zero in-range liquidity");
+    const dec0 = state.state.token0.decimals;
+    const dec1 = state.state.token1.decimals;
+
+    const sqrtNew = sqrtP + (usdcInRaw * PCS_INF_Q96) / L;
+    // amount0 (SLX out) = L * (sqrtNew - sqrtP) * Q96 / (sqrtNew * sqrtP)
+    const outRaw = (L * (sqrtNew - sqrtP) * PCS_INF_Q96) / (sqrtNew * sqrtP);
+
+    const slxOut = Number(outRaw) / Math.pow(10, dec0);
+    const usdIn = Number(usdcInRaw) / Math.pow(10, dec1);
+    const avgPrice = slxOut > 0 ? usdIn / slxOut : 0;
+    const spot = state.midUsd;
+    // Buyer slippage: paying MORE per SLX than spot is bad → positive number.
+    const priceImpactPct = spot > 0 ? ((avgPrice - spot) / spot) * 100 : 0;
+    return { slxOut, priceImpactPct, avgPrice, mode: "in-range", ticksCrossed: 0 };
+  }
+
+  // Largest initialized tick strictly ABOVE tickCurrent. Mirror of NextInitializedTickBelow.
+  async function _pcsInfNextInitializedTickAbove(tickCurrent, spacing, scanLimitWords) {
+    const compressed = Math.floor(tickCurrent / spacing);
+    const scanCompressed = compressed + 1; // strictly above
+    const wordPos = scanCompressed >> 8;
+    const startBit = scanCompressed & 0xff;
+    for (let wi = 0; wi < scanLimitWords; wi++) {
+      const w = wordPos + wi;
+      let bm;
+      try { bm = await _pcsInfGetBitmap(w); } catch { return null; }
+      if (bm !== 0n) {
+        const lo = wi === 0 ? startBit : 0;
+        for (let b = lo; b <= 255; b++) {
+          if ((bm >> BigInt(b)) & 1n) return (w * 256 + b) * spacing;
+        }
+      }
+    }
+    return null;
+  }
+
+  // Uniswap V3 MAX_SQRT_RATIO (mirror of MIN). Highest sqrtP the math permits.
+  const PCS_INF_MAX_SQRT_RATIO = 1461446703485210103287273052203988822378723970342n;
+
+  // Tick-walking BUY of token1 (USDC) for token0 (SLX). Walks UP through initialized
+  // ticks; at each crossing L is updated by +liquidityNet (oneForZero direction).
+  async function PancakeSwapInfinityTickWalkBuy(state, usdcInRaw, opts) {
+    if (typeof usdcInRaw !== "bigint") usdcInRaw = BigInt(usdcInRaw);
+    if (usdcInRaw <= 0n) throw new Error("usdcInRaw must be > 0");
+    const maxIter   = (opts && opts.maxIter)   || 50;
+    const scanWords = (opts && opts.scanWords) || 30;
+    const spacing = state.state.tickSpacing || PCS_INF_TICK_SPACING;
+    const dec0 = state.state.token0.decimals;
+    const dec1 = state.state.token1.decimals;
+
+    let sqrtP = BigInt(state.state.sqrtPriceX96);
+    let tick  = state.state.tick;
+    let L     = BigInt(state.state.liquidity);
+    const sqrtP_initial = sqrtP;
+
+    let remaining = usdcInRaw;
+    let totalOut = 0n; // SLX raw out
+    let ticksCrossed = 0;
+    let warning = null;
+
+    for (let iter = 0; iter < maxIter && remaining > 0n; iter++) {
+      if (L === 0n) {
+        // Dead zone — jump up to the next initialized tick and pick up liquidity.
+        const tn = await _pcsInfNextInitializedTickAbove(tick, spacing, scanWords);
+        if (tn === null) { warning = "L=0 in dead zone and no further init ticks"; break; }
+        const info = await _pcsInfGetTickInfo(tn);
+        L = L + info.liquidityNet; // oneForZero: L += liquidityNet on upward crossing
+        sqrtP = _pcsInfGetSqrtRatioAtTick(tn);
+        tick = tn; // resume at the activated tick
+        ticksCrossed++;
+        continue;
+      }
+      const tickNext = await _pcsInfNextInitializedTickAbove(tick, spacing, scanWords);
+      let sqrtPNext;
+      let isBoundary = false;
+      if (tickNext === null) {
+        sqrtPNext = PCS_INF_MAX_SQRT_RATIO - 1n;
+        warning = "no initialized tick within scan window; using MAX_SQRT_RATIO";
+      } else {
+        sqrtPNext = _pcsInfGetSqrtRatioAtTick(tickNext);
+        isBoundary = true;
+      }
+
+      // Exact V3: amount1 to move sqrtP from sqrtP → sqrtPNext (up)
+      //   amount1 = ceil( L * (sqrtPNext - sqrtP) / Q96 )
+      const numA1 = L * (sqrtPNext - sqrtP);
+      const amount1ToNext = numA1 / PCS_INF_Q96 + (numA1 % PCS_INF_Q96 === 0n ? 0n : 1n);
+
+      if (amount1ToNext > remaining) {
+        // Trade ends inside this range:
+        //   sqrtP_new = sqrtP + remaining * Q96 / L
+        const sqrtPnew = sqrtP + (remaining * PCS_INF_Q96) / L;
+        // SLX out: L * (sqrtPnew - sqrtP) * Q96 / (sqrtPnew * sqrtP)
+        totalOut += (L * (sqrtPnew - sqrtP) * PCS_INF_Q96) / (sqrtPnew * sqrtP);
+        sqrtP = sqrtPnew;
+        remaining = 0n;
+        break;
+      }
+      // Consume the full segment up to sqrtPNext.
+      totalOut += (L * (sqrtPNext - sqrtP) * PCS_INF_Q96) / (sqrtPNext * sqrtP);
+      remaining -= amount1ToNext;
+      sqrtP = sqrtPNext;
+      if (!isBoundary) {
+        warning = warning || "reached MAX_SQRT_RATIO — partial fill";
+        break;
+      }
+      const info = await _pcsInfGetTickInfo(tickNext);
+      L = L + info.liquidityNet; // oneForZero: L += liquidityNet
+      if (L < 0n) { warning = "negative L after crossing " + tickNext + " — partial fill"; L = 0n; break; }
+      tick = tickNext;
+      ticksCrossed++;
+    }
+
+    if (remaining > 0n && !warning) {
+      warning = "maxIter (" + maxIter + ") reached — partial fill";
+    }
+
+    const slxOut = Number(totalOut) / Math.pow(10, dec0);
+    const filledHuman = Number(usdcInRaw - remaining) / Math.pow(10, dec1);
+    const avgPrice = slxOut > 0 ? filledHuman / slxOut : 0;
+    const sqrtPnumInit = Number(sqrtP_initial) / Number(PCS_INF_Q96);
+    const spot = sqrtPnumInit * sqrtPnumInit * Math.pow(10, dec0 - dec1);
+    const priceImpactPct = spot > 0 ? ((avgPrice - spot) / spot) * 100 : 0;
+
+    return {
+      slxOut, priceImpactPct, avgPrice, ticksCrossed,
+      mode: "tick-walked",
+      finalSqrtP: sqrtP.toString(),
+      usdUnfilled: Number(remaining) / Math.pow(10, dec1),
+      warning,
+    };
+  }
+
+  // Adaptive BUY: in-range for small trades, tick walker for larger.
+  // Threshold gate identical to the sell side: if in-range sqrtP move < ~0.3%
+  // we skip the walker and use the cheap formula.
+  async function PancakeSwapInfinityBuyAdaptive(state, usdcInRaw, opts) {
+    if (typeof usdcInRaw !== "bigint") usdcInRaw = BigInt(usdcInRaw);
+    if (usdcInRaw <= 0n) throw new Error("usdcInRaw must be > 0");
+
+    const sqrtP = BigInt(state.state.sqrtPriceX96);
+    const L = BigInt(state.state.liquidity);
+    if (L === 0n) {
+      return PancakeSwapInfinityTickWalkBuy(state, usdcInRaw, opts);
+    }
+    const sqrtNew = sqrtP + (usdcInRaw * PCS_INF_Q96) / L;
+    // Above gate: priceRatio = (sqrtNew/sqrtP)^2. Move > ~0.3% if sqrtNew*1000 > sqrtP*1003.
+    if (sqrtNew * 1000n <= sqrtP * 1003n) {
+      return _pcsInfInRangeBuy(state, usdcInRaw);
+    }
+    return PancakeSwapInfinityTickWalkBuy(state, usdcInRaw, opts);
+  }
+
   // ── UniswapV3 (BSC) ──────────────────────────────────────────────────────
   async function fetchUniswapV3State() {
     const POOL = "0xc7EFB8807071Fa15302dA049E4B2637C23cf9e8A";
@@ -841,6 +1168,40 @@
       midUsd,
       fetchedAt: Date.now(),
     };
+  }
+
+  // BUY side for UniswapV3-BSC. Same V3 math, oneForZero direction:
+  //   sqrtP_new = sqrtP + (usdtIn * Q96) / L
+  //   slxOut_raw = L * (sqrtP_new - sqrtP) * Q96 / (sqrtP_new * sqrtP)
+  // Returns { slxOut, priceImpactPct, avgPrice } — analogous to UniswapV3SellSlippage.
+  function UniswapV3BuySlippage(stateObj, usdtInRaw) {
+    const s = stateObj.state ? stateObj.state : stateObj;
+    const sqrtP = BigInt(s.sqrtPriceX96);
+    const L = BigInt(s.liquidity);
+    const dIn = BigInt(usdtInRaw);
+    if (L === 0n) throw new Error("UniswapV3 in-range liquidity is zero");
+    if (dIn <= 0n) throw new Error("usdtInRaw must be > 0");
+
+    const Q96 = 2n ** 96n;
+    const DEC0 = s.token0Decimals ?? 6;
+    const DEC1 = s.token1Decimals ?? 18;
+
+    const sqrtP_new = sqrtP + (dIn * Q96) / L;
+    const slxOutRaw = (L * (sqrtP_new - sqrtP) * Q96) / (sqrtP_new * sqrtP);
+
+    const slxOut = Number(slxOutRaw) / Math.pow(10, DEC0);
+    const usdInHuman = Number(dIn) / Math.pow(10, DEC1);
+    const avgPrice = slxOut > 0 ? usdInHuman / slxOut : 0;
+
+    const sqrtPnum = Number(sqrtP) / Number(Q96);
+    const sqrtPnewNum = Number(sqrtP_new) / Number(Q96);
+    const decAdj = Math.pow(10, DEC0 - DEC1);
+    const midBefore = sqrtPnum * sqrtPnum * decAdj;
+    const midAfter = sqrtPnewNum * sqrtPnewNum * decAdj;
+    // Buyer slippage: price went UP, paying more per SLX = positive impact.
+    const priceImpactPct = midBefore > 0 ? ((midAfter - midBefore) / midBefore) * 100 : 0;
+
+    return { slxOut, priceImpactPct, avgPrice };
   }
 
   function UniswapV3SellSlippage(stateObj, slxInRaw) {
@@ -925,6 +1286,31 @@
     };
   }
 
+  // BUY side for UniswapV4 (BSC). Same V3 formula.
+  function UniswapV4BuySlippage(stateObj, usdtInRaw) {
+    const s = stateObj.state ? stateObj.state : stateObj;
+    const sqrtP = BigInt(s.sqrtPriceX96);
+    const L = BigInt(s.liquidity);
+    if (L === 0n) {
+      throw new Error("UniswapV4: in-range liquidity is 0; cannot quote buy");
+    }
+    if (typeof usdtInRaw !== "bigint") usdtInRaw = BigInt(usdtInRaw);
+    if (usdtInRaw <= 0n) throw new Error("UniswapV4BuySlippage: usdtInRaw must be > 0");
+
+    const sqrtPnew = sqrtP + (usdtInRaw * V4_Q96) / L;
+    const slxOutRaw = (L * (sqrtPnew - sqrtP) * V4_Q96) / (sqrtPnew * sqrtP);
+
+    const slxOut = Number(slxOutRaw) / Math.pow(10, V4_SLX_DECIMALS);
+    const usdInHuman = Number(usdtInRaw) / Math.pow(10, V4_USDT_DECIMALS);
+    const avgPrice = slxOut > 0 ? usdInHuman / slxOut : 0;
+
+    const midSqrtF = Number(sqrtP) / Number(V4_Q96);
+    const midPrice = midSqrtF * midSqrtF * Math.pow(10, V4_SLX_DECIMALS - V4_USDT_DECIMALS);
+    const priceImpactPct = midPrice > 0 ? ((avgPrice - midPrice) / midPrice) * 100 : 0;
+
+    return { slxOut, priceImpactPct, avgPrice };
+  }
+
   function UniswapV4SellSlippage(stateObj, slxInRaw) {
     const s = stateObj.state ? stateObj.state : stateObj;
     const sqrtP = BigInt(s.sqrtPriceX96);
@@ -991,6 +1377,49 @@
     };
   }
 
+  // Jupiter v6 BUY quote: USDC in → SLX out. Mirror of fetchJupiterQuote with
+  // input/output mints swapped. `usdcSpend` is the USD amount in human units
+  // (e.g. 1000 = $1000).
+  async function fetchJupiterBuyQuote(usdcSpend) {
+    if (!Number.isFinite(usdcSpend) || usdcSpend <= 0) {
+      throw new Error("fetchJupiterBuyQuote: usdcSpend must be positive number");
+    }
+    // USDC on Solana has 6 decimals.
+    const usdcLamports = BigInt(Math.floor(usdcSpend * 1e6));
+    const url =
+      "https://quote-api.jup.ag/v6/quote" +
+      `?inputMint=${USDC_MINT_SOL}` +
+      `&outputMint=${SLX_MINT_SOL}` +
+      `&amount=${usdcLamports.toString()}` +
+      "&slippageBps=50" +
+      "&onlyDirectRoutes=false";
+
+    const res = await fetch(url, { headers: { accept: "application/json" } });
+    if (!res.ok) {
+      throw new Error(`Jupiter buy quote HTTP ${res.status}`);
+    }
+    const j = await res.json();
+    if (!j || !j.outAmount) {
+      throw new Error("Jupiter buy quote: missing outAmount");
+    }
+    const slxOut = Number(j.outAmount) / Math.pow(10, SLX_DECIMALS);
+    // Jupiter returns priceImpactPct as a string fraction; convert to percent.
+    // For a buy, a positive impact still means "worse than spot" → keep sign convention.
+    const priceImpactPct = parseFloat(j.priceImpactPct ?? "0") * 100;
+    const hops = Array.isArray(j.routePlan) ? j.routePlan.length : 0;
+
+    return {
+      venue: "Jupiter",
+      type: "dex_sol",
+      usdcIn: usdcSpend,
+      slxOut,
+      priceImpactPct,
+      hops,
+      avgPrice: slxOut > 0 ? usdcSpend / slxOut : 0,
+      fetchedAt: Date.now(),
+    };
+  }
+
   // ═════════════════════════════════════════════════════════════════════════
   // BSC AMM → cumulative bid-curve adapter
   // ═════════════════════════════════════════════════════════════════════════
@@ -1029,6 +1458,76 @@
       venue: venueName,
       type: "dex_bsc",
       bids,
+      midUsd: state.midUsd,
+      fetchedAt: Date.now(),
+    };
+  }
+
+  // ───── BSC AMM → cumulative ASK-curve adapter ─────────────────────────────
+  // Mirrors _ammToBidCurve, but samples on the USDC-IN axis and reads slxOut
+  // off the buy-slippage function. Each step's marginal price is incUsd / incSlx,
+  // ascending sort = best (cheapest) ask first.
+  //
+  // Sample sizes (USD in): 10, 50, 200, 1k, 5k, 25k, 100k, 500k.
+  function _ammToAskCurve(venueName, state, buyFn) {
+    const SAMPLES_USD = [10, 50, 200, 1_000, 5_000, 25_000, 100_000, 500_000];
+    const dec1 = state.state.token1?.decimals ?? state.state.token1Decimals ?? 18;
+    const asks = [];
+    let prevUsdIn = 0;
+    let prevSlxOut = 0;
+    for (const sampleUsd of SAMPLES_USD) {
+      const raw = BigInt(Math.floor(sampleUsd * Math.pow(10, dec1)));
+      let q;
+      try {
+        q = buyFn(state, raw);
+      } catch (e) {
+        break;
+      }
+      const incUsd = sampleUsd - prevUsdIn;
+      const incSlx = q.slxOut - prevSlxOut;
+      if (incUsd <= 0 || incSlx <= 0) break;
+      const marginalPrice = incUsd / incSlx;
+      asks.push([marginalPrice, incSlx]);
+      prevUsdIn = sampleUsd;
+      prevSlxOut = q.slxOut;
+    }
+    asks.sort((a, b) => a[0] - b[0]);
+    return {
+      venue: venueName,
+      type: "dex_bsc",
+      asks,
+      midUsd: state.midUsd,
+      fetchedAt: Date.now(),
+    };
+  }
+
+  async function _ammToAskCurveAsync(venueName, state, buyFnAsync) {
+    const SAMPLES_USD = [10, 50, 200, 1_000, 5_000, 25_000, 100_000, 500_000];
+    const dec1 = state.state.token1?.decimals ?? state.state.token1Decimals ?? 18;
+    const asks = [];
+    let prevUsdIn = 0;
+    let prevSlxOut = 0;
+    for (const sampleUsd of SAMPLES_USD) {
+      const raw = BigInt(Math.floor(sampleUsd * Math.pow(10, dec1)));
+      let q;
+      try {
+        q = await buyFnAsync(state, raw);
+      } catch (e) {
+        break;
+      }
+      const incUsd = sampleUsd - prevUsdIn;
+      const incSlx = q.slxOut - prevSlxOut;
+      if (incUsd <= 0 || incSlx <= 0) break;
+      const marginalPrice = incUsd / incSlx;
+      asks.push([marginalPrice, incSlx]);
+      prevUsdIn = sampleUsd;
+      prevSlxOut = q.slxOut;
+    }
+    asks.sort((a, b) => a[0] - b[0]);
+    return {
+      venue: venueName,
+      type: "dex_bsc",
+      asks,
       midUsd: state.midUsd,
       fetchedAt: Date.now(),
     };
@@ -1092,21 +1591,39 @@
         ["WEEX", fetchWEEXBids],
       );
     }
-    // Each entry: [name, fetchStateFn, slippageFn, isAsyncSlippage?]
+    // Each entry: [name, fetchStateFn, sellFn, buyFn, isAsync?]
     const bscFns = [
-      ["PancakeSwapInfinity", fetchPancakeSwapInfinityState, PancakeSwapInfinitySellSlippageAdaptive, true],
-      ["UniswapV3-BSC", fetchUniswapV3State, UniswapV3SellSlippage, false],
-      ["UniswapV4", fetchUniswapV4State, UniswapV4SellSlippage, false],
+      ["PancakeSwapInfinity", fetchPancakeSwapInfinityState,
+        PancakeSwapInfinitySellSlippageAdaptive, PancakeSwapInfinityBuyAdaptive, true],
+      ["UniswapV3-BSC", fetchUniswapV3State,
+        UniswapV3SellSlippage, UniswapV3BuySlippage, false],
+      ["UniswapV4", fetchUniswapV4State,
+        UniswapV4SellSlippage, UniswapV4BuySlippage, false],
     ];
 
     const cexPromises = cexFns.map(([name, fn]) =>
       cached(name, CEX_CACHE, CEX_TTL_MS, fn).catch((e) => ({ __error: true, venue: name, error: e.message }))
     );
-    const bscPromises = bscFns.map(([name, fn, slipFn, isAsync]) =>
+    // For each BSC pool, fetch state ONCE then build both the bid curve and
+    // ask curve from it. This keeps the slipage math, RPC traffic, and tick
+    // cache in sync between the two sides.
+    const bscPromises = bscFns.map(([name, fn, sellFn, buyFn, isAsync]) =>
       cached(name, BSC_CACHE, BSC_TTL_MS, fn)
-        .then((state) => isAsync
-          ? _ammToBidCurveAsync(name, state, slipFn)
-          : _ammToBidCurve(name, state, slipFn))
+        .then(async (state) => {
+          const bidRec = isAsync
+            ? await _ammToBidCurveAsync(name, state, sellFn)
+            : _ammToBidCurve(name, state, sellFn);
+          let askRec;
+          try {
+            askRec = isAsync
+              ? await _ammToAskCurveAsync(name, state, buyFn)
+              : _ammToAskCurve(name, state, buyFn);
+          } catch (_e) {
+            askRec = { asks: [] };
+          }
+          bidRec.asks = askRec.asks || [];
+          return bidRec;
+        })
         .catch((e) => ({ __error: true, venue: name, error: e.message }))
     );
 
@@ -1123,7 +1640,7 @@
     return {
       cex: flatten(cexResults),
       bsc: flatten(bscResults),
-      solana: { quote: fetchJupiterQuote },
+      solana: { quote: fetchJupiterQuote, quoteBuy: fetchJupiterBuyQuote },
       errors: [
         ...cexResults
           .map((r) => (r.status === "fulfilled" ? r.value : { __error: true, error: String(r.reason) }))
@@ -1256,6 +1773,135 @@
     };
   }
 
+  // priceBuy(usdSpend, fallbackVenues)
+  //   - fetches all live curves via fetchAllDepth() (provides asks per venue)
+  //   - also fetches a Jupiter buy quote for the full usdSpend and treats it
+  //     as a single ASK level (price = usdSpend/slxOut, size = slxOut)
+  //   - adds estimated ask curves for any fallbackVenues entries
+  //   - merges all ask levels, sorts by price asc (cheapest first), consumes
+  //     greedily
+  //   - tracks per-venue fill totals; labels each fill source
+  //
+  // Returns: { slxReceived, avgPrice, slippagePct, perVenueFill: [...] }
+  //   slippagePct is vs best (cheapest) ask. Buyers paying MORE per SLX than
+  //   best-of-book = positive slippage = bad.
+  async function priceBuy(usdSpend, fallbackVenues) {
+    if (!Number.isFinite(usdSpend) || usdSpend <= 0) {
+      throw new Error("priceBuy: usdSpend must be positive number");
+    }
+    const depth = await fetchAllDepth();
+
+    const curves = [];
+    for (const c of depth.cex) {
+      if (Array.isArray(c.asks) && c.asks.length > 0) {
+        curves.push({ venue: c.venue, type: c.type, asks: c.asks, source: "live" });
+      }
+    }
+    for (const c of depth.bsc) {
+      if (Array.isArray(c.asks) && c.asks.length > 0) {
+        curves.push({ venue: c.venue, type: c.type, asks: c.asks, source: "live" });
+      }
+    }
+
+    // Solana: single-shot Jupiter buy quote for the full usdSpend.
+    try {
+      const jq = await fetchJupiterBuyQuote(usdSpend);
+      if (jq && jq.slxOut > 0) {
+        const px = usdSpend / jq.slxOut;
+        curves.push({
+          venue: "Jupiter",
+          type: "dex_sol",
+          asks: [[px, jq.slxOut]],
+          source: "live",
+        });
+      }
+    } catch (_e) {
+      // Jupiter is best-effort; missing it doesn't block other venues.
+    }
+
+    if (Array.isArray(fallbackVenues)) {
+      for (const spec of fallbackVenues) {
+        if (!spec || !spec.venue) continue;
+        // Reuse the bid-curve heuristic and flip its sign: top-of-book ask is
+        // spot*(1+spread/2), depth grows quadratically the same way.
+        const price = Number(spec.price) > 0 ? Number(spec.price) : 0.2;
+        const spread = Number(spec.spread) > 0 ? Number(spec.spread) : 0.005;
+        const vol24h = Number(spec.vol24h) > 0 ? Number(spec.vol24h) : 0;
+        const depthUsd = vol24h * 0.02;
+        const topPrice = price * (1 + spread / 2);
+        const STEPS = 12;
+        const asks = [];
+        let cumUsd = 0;
+        for (let i = 1; i <= STEPS; i++) {
+          const f = i / STEPS;
+          const stepPrice = topPrice * (1 + (f * f) * spread * 5);
+          const cumUsdHere = depthUsd * f;
+          const stepUsd = cumUsdHere - cumUsd;
+          cumUsd = cumUsdHere;
+          const stepSlx = stepUsd / stepPrice;
+          if (stepSlx > 0 && stepPrice > 0) asks.push([stepPrice, stepSlx]);
+        }
+        asks.sort((a, b) => a[0] - b[0]);
+        if (asks.length > 0) {
+          curves.push({ venue: spec.venue, type: spec.type || "cex", asks, source: "estimated" });
+        }
+      }
+    }
+
+    // Flatten into [price, slx, venue, type, source] levels, sort by price ASC.
+    const levels = [];
+    for (const c of curves) {
+      for (const [p, s] of c.asks) {
+        levels.push([p, s, c.venue, c.type, c.source]);
+      }
+    }
+    levels.sort((a, b) => a[0] - b[0]);
+
+    const perVenue = new Map();
+    let remainingUsd = usdSpend;
+    let totalSlx = 0;
+    let lastPrice = levels.length > 0 ? levels[0][0] : 0;
+
+    for (const [price, sizeSlx, venue, type, source] of levels) {
+      if (remainingUsd <= 0) break;
+      const levelUsd = sizeSlx * price;
+      const takeUsd = Math.min(remainingUsd, levelUsd);
+      const takeSlx = price > 0 ? takeUsd / price : 0;
+      remainingUsd -= takeUsd;
+      totalSlx += takeSlx;
+      lastPrice = price;
+      const key = venue + "::" + source;
+      const cur = perVenue.get(key) || {
+        venue,
+        type,
+        usdSpent: 0,
+        slxReceived: 0,
+        marginalPrice: price,
+        source,
+      };
+      cur.usdSpent += takeUsd;
+      cur.slxReceived += takeSlx;
+      cur.marginalPrice = price; // last (worst) price hit at this venue
+      perVenue.set(key, cur);
+    }
+
+    const usdSpent = usdSpend - remainingUsd;
+    const avgPrice = totalSlx > 0 ? usdSpent / totalSlx : 0;
+    // Slippage vs best (cheapest) ask. Higher price for buyer = bad = positive.
+    const bestPrice = levels.length > 0 ? levels[0][0] : 0;
+    const slippagePct = bestPrice > 0 ? ((avgPrice - bestPrice) / bestPrice) * 100 : 0;
+
+    return {
+      slxReceived: totalSlx,
+      avgPrice,
+      slippagePct,
+      usdSpent,
+      usdUnfilled: remainingUsd,
+      marginalPrice: lastPrice,
+      perVenueFill: Array.from(perVenue.values()),
+    };
+  }
+
   // ═════════════════════════════════════════════════════════════════════════
   // PUBLIC API
   // ═════════════════════════════════════════════════════════════════════════
@@ -1263,7 +1909,9 @@
     window.SLXDepthEngine = {
       fetchAllDepth,
       priceSell,
+      priceBuy,
       fetchJupiterQuote,
+      fetchJupiterBuyQuote,
       SLX_TOTAL_SUPPLY,
       // expose low-level helpers for debugging / dashboards
       _internals: {
@@ -1287,9 +1935,26 @@
         PancakeSwapInfinitySellSlippage,
         PancakeSwapInfinitySellSlippageAdaptive,
         PancakeSwapInfinityTickWalkSell,
+        PancakeSwapInfinityBuyAdaptive,
+        PancakeSwapInfinityTickWalkBuy,
         UniswapV3SellSlippage,
+        UniswapV3BuySlippage,
         UniswapV4SellSlippage,
+        UniswapV4BuySlippage,
       },
+    };
+  }
+
+  // Node compatibility for smoke-testing / CI. The browser export above is the
+  // canonical surface; this is purely additive.
+  if (typeof module !== "undefined" && module.exports) {
+    module.exports = {
+      fetchAllDepth,
+      priceSell,
+      priceBuy,
+      fetchJupiterQuote,
+      fetchJupiterBuyQuote,
+      SLX_TOTAL_SUPPLY,
     };
   }
 })();

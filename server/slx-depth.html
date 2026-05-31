@@ -9,125 +9,413 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png" />
 <style>
 :root {
-  --ink-50: rgb(232, 232, 237);
-  --ink-100: rgb(232, 232, 237);
-  --ink-200: rgb(201, 201, 208);
-  --ink-300: rgb(155, 155, 163);
-  --ink-400: rgb(122, 122, 131);
-  --ink-500: rgb(84, 84, 92);
-  --ink-700: rgb(40, 40, 46);
-  --ink-900: rgb(17, 17, 20);
-  --ink-950: rgb(10, 10, 12);
+  /* Legacy ink scale (kept for inline-style backwards compatibility) */
+  --ink-50:  rgba(255, 255, 255, 0.96);
+  --ink-100: rgba(255, 255, 255, 0.96);
+  --ink-200: rgba(255, 255, 255, 0.80);
+  --ink-300: rgba(255, 255, 255, 0.62);
+  --ink-400: rgba(255, 255, 255, 0.42);
+  --ink-500: rgba(255, 255, 255, 0.32);
+  --ink-700: rgba(255, 255, 255, 0.12);
+  --ink-900: rgba(255, 255, 255, 0.06);
+  --ink-950: #000000;
+
+  /* Design-spec tokens */
+  --bg: #000000;
+  --surface: rgba(255, 255, 255, 0.025);
+  --surface-2: rgba(255, 255, 255, 0.045);
+  --surface-hover: rgba(255, 255, 255, 0.06);
+  --border: rgba(255, 255, 255, 0.06);
+  --border-strong: rgba(255, 255, 255, 0.10);
+  --text-primary: rgba(255, 255, 255, 0.96);
+  --text-secondary: rgba(255, 255, 255, 0.62);
+  --text-muted: rgba(255, 255, 255, 0.42);
+
+  --accent: rgb(252, 211, 77);
+  --accent-hover: rgb(253, 222, 110);
+  --accent-soft: rgba(252, 211, 77, 0.12);
   --accent-200: rgb(253, 230, 138);
   --accent-300: rgb(252, 211, 77);
   --accent-400: rgb(251, 191, 36);
   --accent-500: rgb(245, 158, 11);
-  --good: #86efac;
-  --bad:  #fda4af;
+  --good: #6ee7b7;
+  --good-soft: rgba(110, 231, 183, 0.10);
+  --bad:  #fb7185;
+  --bad-soft: rgba(251, 113, 133, 0.10);
+
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --radius-card: 14px;
+  --radius-card-lg: 16px;
+  --radius-input: 10px;
+  --radius-pill: 999px;
+
+  --tracking-label: 0.14em;
 }
 
 * { box-sizing: border-box; }
-html, body { margin: 0; background: var(--ink-950); color: var(--ink-100);
-             font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-             font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+html, body {
+  margin: 0; background: var(--bg); color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 15px; line-height: 1.5; -webkit-font-smoothing: antialiased;
+  font-feature-settings: 'cv11', 'ss01';
+}
 .tabular { font-variant-numeric: tabular-nums; }
-.display { font-family: "Inter", ui-sans-serif, system-ui; font-weight: 600; letter-spacing: -0.02em; }
-.label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.14em; color: var(--ink-400); }
+.display { font-family: var(--font-sans); font-weight: 600; letter-spacing: -0.02em; }
+.label   { font-size: 11px; text-transform: uppercase; letter-spacing: var(--tracking-label);
+           color: var(--text-muted); font-weight: 600; }
 
-main { max-width: 1100px; margin: 0 auto; padding: 64px 24px; }
-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 40px; }
-.brand { display: flex; align-items: center; gap: 16px; color: var(--ink-300); }
+main { max-width: 1080px; margin: 0 auto; padding: 48px 24px; }
+
+/* ── Header ────────────────────────────────────────────────────────── */
+header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 28px;
+}
+.brand { display: flex; align-items: center; gap: 14px; color: var(--text-secondary); }
 .brand a { color: inherit; text-decoration: none; display: inline-flex; align-items: center; gap: 8px; font-size: 13px; }
-.brand .sep { color: var(--ink-500); }
-.right-links { display: flex; align-items: center; gap: 16px; font-size: 11px; }
-.right-links a { color: var(--ink-500); text-decoration: none; text-transform: uppercase; letter-spacing: 0.14em; transition: color .15s; }
-.right-links a.featured { color: var(--accent-300); }
-.right-links a:hover { color: var(--ink-200); }
-.right-links .sep { color: var(--ink-500); }
+.brand .sep { color: var(--text-muted); }
+.right-links { display: flex; align-items: center; gap: 14px; font-size: 12px; }
+.right-links a {
+  color: var(--text-secondary); text-decoration: none;
+  text-transform: none; letter-spacing: 0.01em;
+  transition: color 120ms ease;
+}
+.right-links a:hover { color: var(--text-primary); }
+.right-links a.featured {
+  color: var(--accent);
+  padding: 6px 12px; border-radius: var(--radius-pill);
+  border: 1px solid rgba(252, 211, 77, 0.35);
+  transition: background 120ms ease, color 120ms ease;
+}
+.right-links a.featured:hover { background: rgba(252, 211, 77, 0.08); color: var(--accent-hover); }
+.right-links .sep {
+  display: inline-block; width: 1px; height: 12px;
+  background: var(--border-strong); color: transparent;
+  text-indent: -9999px; overflow: hidden;
+}
 
+/* ── Section headings ──────────────────────────────────────────────── */
 section { margin-bottom: 28px; }
-section h1 { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 6px; }
-.section-sub { font-size: 12px; color: var(--ink-500); }
+section h1 {
+  font-size: 28px; font-weight: 600; letter-spacing: -0.025em;
+  margin: 0 0 10px; color: var(--text-primary);
+}
+.section-sub {
+  font-size: 13px; color: var(--text-secondary); max-width: 64ch;
+  line-height: 1.55;
+}
 
-.surface { background: rgba(255,255,255,.015); border: 1px solid rgba(255,255,255,.06); border-radius: 16px; overflow: hidden; }
+/* ── Surface (cards) ───────────────────────────────────────────────── */
+.surface {
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.02) inset;
+}
 
-/* Stats banner */
-.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px 32px; padding: 22px 24px; }
-.stat .lbl { font-size: 10px; color: var(--ink-500); text-transform: uppercase; letter-spacing: 0.14em; }
-.stat .v   { font-size: 22px; font-weight: 600; margin-top: 4px; font-variant-numeric: tabular-nums; }
-.stat .v.accent { color: var(--accent-300); }
-.stat .sub { font-size: 11px; color: var(--ink-500); margin-top: 3px; }
+/* ── Stats banner ──────────────────────────────────────────────────── */
+.stats {
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  gap: 0;
+  padding: 0;
+}
+.stat {
+  padding: 24px 28px;
+  border-right: 1px solid var(--border);
+}
+.stat + .stat { border-left: 1px solid var(--border); margin-left: -1px; }
+.stat:last-child { border-right: none; }
+.stat .lbl {
+  font-size: 11px; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.12em; font-weight: 600;
+}
+.stat .v {
+  font-size: 30px; font-weight: 600; margin-top: 10px;
+  font-variant-numeric: tabular-nums; letter-spacing: -0.02em;
+  color: var(--text-primary); line-height: 1.1;
+}
+.stat .v.accent { color: var(--accent); font-size: 32px; }
+.stat .sub {
+  font-size: 12px; color: var(--text-muted); margin-top: 8px;
+  font-variant-numeric: tabular-nums;
+}
 
-/* Controls + table */
-.controls { display: flex; gap: 8px; padding: 14px 20px; align-items: center; flex-wrap: wrap;
-            border-top: 1px solid rgba(255,255,255,.06); }
+/* ── Controls + table ──────────────────────────────────────────────── */
+.controls {
+  display: flex; gap: 12px; padding: 16px 24px; align-items: center; flex-wrap: wrap;
+  border-top: 1px solid var(--border);
+}
 .controls select, .controls input, .controls button {
-  background: rgba(255,255,255,.03); color: var(--ink-100); border: 1px solid rgba(255,255,255,.08);
-  padding: 8px 12px; border-radius: 8px; font: inherit; font-size: 12px; cursor: pointer;
+  background: var(--surface-2); color: var(--text-primary);
+  border: 1px solid var(--border-strong);
+  height: 36px; padding: 0 14px; border-radius: var(--radius-input);
+  font: inherit; font-size: 12.5px; cursor: pointer;
+  transition: border-color 120ms ease, box-shadow 120ms ease, background 120ms ease;
+}
+.controls select {
+  -webkit-appearance: none; appearance: none;
+  padding-right: 30px;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'><path d='M1 1l4 4 4-4' stroke='rgba(255,255,255,0.5)' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
 }
 .controls input { cursor: text; }
+.controls select:focus, .controls input:focus, .controls button:focus {
+  outline: none;
+  border-color: rgba(252, 211, 77, 0.5);
+  box-shadow: 0 0 0 3px rgba(252, 211, 77, 0.08);
+}
 .controls .grow { flex: 1; }
+.controls .source-caption {
+  font-size: 11px; color: var(--text-muted);
+  text-transform: none; letter-spacing: 0; font-weight: 400;
+}
 
-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-th, td { text-align: right; padding: 11px 14px; white-space: nowrap; font-variant-numeric: tabular-nums; }
-th { font-weight: 500; color: var(--ink-400); cursor: pointer; user-select: none; text-transform: uppercase; font-size: 10px; letter-spacing: 0.14em; }
-th.asc::after  { content: ' ▲'; color: var(--accent-300); }
-th.desc::after { content: ' ▼'; color: var(--accent-300); }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td {
+  text-align: right; padding: 14px 16px; white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+thead th { border-bottom: 1px solid var(--border-strong); }
+th {
+  font-weight: 600; color: var(--text-secondary);
+  cursor: pointer; user-select: none;
+  text-transform: uppercase; font-size: 11px; letter-spacing: 0.10em;
+}
+th.asc::after  { content: ' ▴'; color: var(--accent); font-size: 9px; }
+th.desc::after { content: ' ▾'; color: var(--accent); font-size: 9px; }
 td.left, th.left { text-align: left; }
-tbody tr { border-top: 1px solid rgba(255,255,255,.04); transition: background .1s; }
-tbody tr:hover { background: rgba(255,255,255,.015); }
+tbody tr {
+  border-top: 1px solid var(--border);
+  transition: background 100ms ease;
+}
+tbody tr:nth-child(even) { background: rgba(255,255,255,0.008); }
+tbody tr:hover { background: rgba(255,255,255,0.025); }
 
-.venue { font-weight: 500; color: var(--ink-100); }
-.pair  { color: var(--ink-400); font-size: 11px; margin-left: 6px; }
-.tag   { display: inline-block; padding: 2px 7px; border-radius: 999px; font-size: 9.5px;
-         text-transform: uppercase; letter-spacing: 0.06em; border: 1px solid; margin-left: 6px;
-         font-variant-numeric: tabular-nums; vertical-align: 1px; }
-.tag.cex   { color: #c4b5fd; border-color: rgba(196, 181, 253, 0.25); }
-.tag.dex   { color: #86efac; border-color: rgba(134, 239, 172, 0.25); }
-.tag.perp  { color: #fde68a; border-color: rgba(253, 230, 138, 0.25); }
-.tag.stale { color: var(--ink-500); border-color: rgba(255,255,255,.10); }
+.venue { font-weight: 500; color: var(--text-primary); font-size: 13px; }
+.pair  { color: var(--text-muted); font-size: 12px; margin-left: 8px; }
 
-.spread.tight { color: var(--good); }
-.spread.wide  { color: var(--bad); }
+/* Flat filled chips (no border) */
+.tag {
+  display: inline-block; padding: 3px 8px; border-radius: 6px; font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600;
+  margin-left: 6px; font-variant-numeric: tabular-nums; vertical-align: 1px;
+  border: none;
+}
+.tag.cex   { color: #c4b5fd; background: rgba(196, 181, 253, 0.12); }
+.tag.dex   { color: #86efac; background: rgba(134, 239, 172, 0.12); }
+.tag.perp  { color: #fde68a; background: rgba(253, 230, 138, 0.12); }
+.tag.stale { color: var(--text-muted); background: rgba(255,255,255,0.05); }
+
+.spread.tight {
+  color: var(--good);
+  background: var(--good-soft);
+  padding: 2px 8px; border-radius: 6px;
+}
+.spread.wide {
+  color: var(--bad);
+  background: var(--bad-soft);
+  padding: 2px 8px; border-radius: 6px;
+}
 
 .bar-cell { padding: 4px 14px; }
-.bar { background: linear-gradient(90deg, rgba(252,211,77,.18), rgba(252,211,77,.04));
-       border-radius: 3px; height: 4px; margin-top: 2px; }
+.bar-track {
+  position: relative; height: 3px; margin-top: 4px;
+  background: rgba(255,255,255,0.04); border-radius: 2px; overflow: hidden;
+}
+.bar {
+  background: rgba(251, 191, 36, 0.55);
+  border-radius: 2px; height: 100%;
+}
 .bar-row { display: flex; gap: 8px; align-items: baseline; }
-.bar-row .pct { font-size: 10px; color: var(--ink-500); min-width: 36px; text-align: right; }
+.bar-row .pct { font-size: 11px; color: var(--text-muted); min-width: 36px; text-align: right; }
 
-.trade-link { color: var(--ink-400); text-decoration: none; font-size: 11px; }
-.trade-link:hover { color: var(--accent-300); }
+.trade-link {
+  color: var(--text-secondary); text-decoration: none; font-size: 11px;
+  padding: 2px 8px; border-radius: 6px;
+  transition: background 120ms ease, color 120ms ease;
+}
+.trade-link:hover { color: var(--accent); background: rgba(252, 211, 77, 0.08); }
 
-.loading { text-align: center; padding: 40px; color: var(--ink-500); font-size: 13px; }
-.error   { text-align: center; padding: 28px; color: var(--bad); font-size: 12px; }
-.note    { font-size: 11px; color: var(--ink-500); padding: 14px 20px; line-height: 1.6;
-           border-top: 1px solid rgba(255,255,255,.06); }
+.loading {
+  text-align: center; padding: 40px; color: var(--text-secondary); font-size: 13px;
+}
+.loading::before {
+  content: ''; display: inline-block; width: 8px; height: 8px;
+  background: var(--accent); border-radius: 50%; margin-right: 10px;
+  vertical-align: middle; animation: slx-pulse 1.2s ease-in-out infinite;
+}
+@keyframes slx-pulse {
+  0%, 100% { opacity: 0.4; transform: scale(0.85); }
+  50%      { opacity: 1; transform: scale(1.1); }
+}
+.error {
+  text-align: left; padding: 16px 20px; color: var(--bad); font-size: 13px;
+  background: rgba(251, 113, 133, 0.06);
+  border-left: 1px solid rgba(251, 113, 133, 0.4);
+  border-radius: 10px; margin: 16px 24px;
+}
 
-footer { text-align: center; color: var(--ink-500); font-size: 11px; margin-top: 40px; }
+.note {
+  font-size: 12px; color: var(--text-secondary);
+  padding: 18px 24px; line-height: 1.7;
+  border-top: 1px solid var(--border);
+}
+.note strong { color: var(--text-primary); font-weight: 600; }
+.note .info-glyph {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 14px; height: 14px; border-radius: 50%;
+  background: rgba(252, 211, 77, 0.15); color: var(--accent);
+  font-size: 9px; font-weight: 700; font-style: normal;
+  margin-right: 6px; vertical-align: 1px;
+}
 
-/* Mobile (≤767px) */
+footer {
+  text-align: left; color: var(--text-muted); font-size: 12px;
+  margin-top: 56px; padding-top: 24px;
+  border-top: 1px solid var(--border);
+}
+
+/* ── Scenario card sub-elements ────────────────────────────────────── */
+.scenario-header {
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  flex-wrap: wrap;
+}
+.pill-tabs {
+  display: inline-flex; gap: 4px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  padding: 3px;
+}
+.pill-tab {
+  background: transparent; color: var(--text-secondary);
+  border: none; cursor: pointer;
+  font: inherit; font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.10em;
+  padding: 6px 14px; border-radius: var(--radius-pill);
+  transition: background 120ms ease, color 120ms ease;
+}
+.pill-tab:hover { color: var(--text-primary); }
+.pill-tab.active {
+  background: var(--accent);
+  color: #000;
+}
+.scenario-input {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-primary);
+  border: 1px solid var(--border-strong);
+  padding: 12px 14px;
+  border-radius: var(--radius-input);
+  font: inherit; font-size: 14px; width: 100%;
+  font-variant-numeric: tabular-nums;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.scenario-input:focus {
+  outline: none;
+  border-color: rgba(252, 211, 77, 0.5);
+  box-shadow: 0 0 0 3px rgba(252, 211, 77, 0.08);
+}
+
+/* Native range styling */
+.scenario-range {
+  -webkit-appearance: none; appearance: none;
+  width: 100%; height: 4px; margin-top: 18px;
+  background: rgba(255, 255, 255, 0.08); border-radius: 999px;
+  outline: none;
+}
+.scenario-range::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 14px; height: 14px; border-radius: 50%;
+  background: var(--accent); border: none; cursor: pointer;
+  transition: transform 120ms ease;
+}
+.scenario-range::-webkit-slider-thumb:hover { transform: scale(1.15); }
+.scenario-range::-moz-range-thumb {
+  width: 14px; height: 14px; border-radius: 50%;
+  background: var(--accent); border: none; cursor: pointer;
+}
+
+.scenario-spot-tile {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-input);
+  padding: 14px;
+}
+.scenario-spot-tile .spot-value {
+  font-size: 26px; font-weight: 600; color: var(--text-primary);
+  font-variant-numeric: tabular-nums; letter-spacing: -0.02em;
+  border-bottom: 1px solid rgba(252, 211, 77, 0.5);
+  display: inline-block; padding-bottom: 2px;
+}
+
+#scenario-result {
+  padding: 0 24px 24px;
+}
+#scenario-result-panel {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px 22px;
+  padding: 16px 18px;
+}
+#scenario-result-panel .res-lbl {
+  font-size: 11px; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: var(--tracking-label); font-weight: 600;
+}
+#scenario-result-panel .res-val {
+  font-size: 22px; font-weight: 600; margin-top: 6px;
+  font-variant-numeric: tabular-nums; letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+#scenario-result-panel .res-val.bad { color: var(--bad); }
+#scenario-breakdown {
+  margin-top: 14px; font-size: 12px; color: var(--text-secondary);
+  line-height: 1.7;
+}
+#scenario-breakdown > div { padding: 4px 0; }
+#scenario-breakdown .jup-section {
+  margin-top: 12px; padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+/* ── Mobile (≤767px) ──────────────────────────────────────────────── */
 @media (max-width: 767px) {
-  body { font-size: 13px; }
-  main { padding: 18px 14px; max-width: none; }
-  header { flex-direction: column; align-items: flex-start; gap: 10px; margin-bottom: 22px; }
-  .brand { font-size: 11px; }
-  .brand img { height: 24px !important; }
-  .right-links { font-size: 10px; gap: 10px; flex-wrap: wrap; }
-  section { margin-bottom: 18px; }
-  section h1 { font-size: 17px; }
+  body { font-size: 14px; }
+  main { padding: 24px 14px; max-width: none; }
+  header { flex-direction: column; align-items: flex-start; gap: 12px; margin-bottom: 22px; }
+  .brand { font-size: 12px; }
+  .brand img { height: 22px !important; }
+  .right-links { font-size: 11px; gap: 10px; flex-wrap: wrap; }
+  .right-links .sep { display: none; }
+  section { margin-bottom: 20px; }
+  section h1 { font-size: 22px; }
+  .section-sub { font-size: 13px; }
 
   /* Stats banner: 2-col on phone */
-  .stats { grid-template-columns: repeat(2, 1fr); padding: 16px; gap: 14px 20px; }
-  .stat .v { font-size: 17px; }
+  .stats { grid-template-columns: repeat(2, 1fr); }
+  .stat { padding: 18px 18px; border-right: 1px solid var(--border); }
+  .stat:nth-child(2n) { border-right: none; }
+  .stat:nth-child(-n+2) { border-bottom: 1px solid var(--border); }
+  .stat .v { font-size: 20px; }
+  .stat .v.accent { font-size: 22px; }
 
   /* Scenario tool: stack inputs + spot value */
-  #scenario-grid { grid-template-columns: 1fr !important; padding: 16px !important; gap: 14px !important; }
+  .scenario-header { padding: 16px 18px; gap: 10px; }
+  .pill-tab { padding: 5px 12px; font-size: 10px; }
+  #scenario-grid { grid-template-columns: 1fr !important; padding: 18px !important; gap: 16px !important; }
   #scenario-grid > div:last-child { text-align: left !important; }
-  #scenario-result > div:first-child { grid-template-columns: 1fr 1fr !important; }
-  #scenario-result > div:first-child > div:last-child { grid-column: 1 / -1; }
+  #scenario-result { padding: 0 18px 18px; }
+  #scenario-result-panel { grid-template-columns: 1fr 1fr !important; }
+  #scenario-result-panel > div:last-child { grid-column: 1 / -1; }
+  #scenario-result-panel .res-val { font-size: 18px; }
 
-  .controls { padding: 12px 14px; gap: 8px; }
+  .controls { padding: 14px 16px; gap: 10px; }
   .controls > * { width: 100%; }
   .controls .grow { display: none; }
 
@@ -135,19 +423,22 @@ footer { text-align: center; color: var(--ink-500); font-size: 11px; margin-top:
   thead { display: none; }
   tbody, tr, td { display: block; width: 100%; }
   tbody tr {
-    display: grid; grid-template-columns: 1fr auto; gap: 4px 10px;
-    padding: 12px 14px; border-top: 1px solid rgba(255,255,255,.06);
+    display: grid; grid-template-columns: 1fr auto; gap: 6px 10px;
+    padding: 14px 16px; border-top: 1px solid var(--border);
   }
+  tbody tr:nth-child(even) { background: transparent; }
   tbody td { padding: 0; text-align: left; white-space: normal; }
   td.left:nth-child(1) { grid-column: 1 / 2; }   /* venue + pair */
-  tbody td:nth-child(2) { /* type chip */ grid-column: 2; text-align: right; font-size: 10px; color: var(--ink-500); }
-  tbody td:nth-child(3) { /* price */ grid-column: 1; font-size: 12px; color: var(--ink-300); }
-  tbody td:nth-child(3)::before { content: 'Price '; color: var(--ink-500); font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; margin-right: 4px; }
-  tbody td:nth-child(4) { /* 24h volume */ grid-column: 2; text-align: right; font-size: 13px; font-weight: 600; color: var(--accent-300); }
-  tbody td:nth-child(4)::before { content: '24h '; color: var(--ink-500); font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; margin-right: 4px; }
-  tbody td:nth-child(5) { /* spread */ grid-column: 1 / -1; font-size: 11px; }
-  tbody td:nth-child(5)::before { content: 'Spread '; color: var(--ink-500); font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; margin-right: 4px; }
-  tbody td:nth-child(6) { /* trade link */ grid-column: 1 / -1; font-size: 11px; text-align: left; margin-top: 4px; }
+  tbody td:nth-child(2) { /* type chip */ grid-column: 2; text-align: right; font-size: 10px; color: var(--text-muted); }
+  tbody td:nth-child(3) { /* price */ grid-column: 1; font-size: 13px; color: var(--text-secondary); }
+  tbody td:nth-child(3)::before { content: 'Price '; color: var(--text-muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.10em; margin-right: 4px; font-weight: 600; }
+  tbody td:nth-child(4) { /* 24h volume */ grid-column: 2; text-align: right; font-size: 14px; font-weight: 600; color: var(--accent); }
+  tbody td:nth-child(4)::before { content: '24h '; color: var(--text-muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.10em; margin-right: 4px; font-weight: 600; }
+  tbody td:nth-child(5) { /* spread */ grid-column: 1 / -1; font-size: 12px; }
+  tbody td:nth-child(5)::before { content: 'Spread '; color: var(--text-muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.10em; margin-right: 4px; font-weight: 600; }
+  tbody td:nth-child(6) { /* trade link */ grid-column: 1 / -1; font-size: 12px; text-align: left; margin-top: 4px; }
+
+  footer { margin-top: 36px; }
 }
 </style>
 </head>
@@ -175,57 +466,58 @@ footer { text-align: center; color: var(--ink-500); font-size: 11px; margin-top:
   </header>
 
   <section>
-    <h1 class="display">SLX liquidity depth</h1>
-    <div class="section-sub">Where SLX trades right now — across every CEX and DEX listed on CoinGecko. Use the spread % and 24h volume to gauge how much depth each venue can absorb.</div>
+    <h1 class="display">SLX liquidity depth
+      <span class="has-hover-tip" data-tip="Where SLX trades right now — across every CEX and DEX listed on CoinGecko. Use the spread % and 24h volume to gauge how much depth each venue can absorb." style="color: var(--text-muted); font-size: 14px; margin-left: 8px; cursor: help; vertical-align: middle;">ⓘ</span>
+    </h1>
   </section>
 
-  <!-- ── Sell scenario ─────────────────────────────────────────────────── -->
+  <!-- ── Sell / Buy scenario ───────────────────────────────────────────── -->
   <section>
     <div class="surface" id="scenario-card">
-      <div style="padding:20px 24px; border-bottom: 1px solid rgba(255,255,255,.06);">
-        <div style="display:flex; align-items:baseline; justify-content:space-between; gap:14px; flex-wrap:wrap;">
-          <div>
-            <div class="label" style="margin-bottom:4px;">Sell scenario</div>
-            <div class="section-sub">Estimate slippage if you market-sold this amount across all <strong>spot</strong> venues at once. Perp futures don't directly absorb spot sells — excluded.</div>
-          </div>
-          <a href="#" id="scenario-jupiter-link" target="_blank" rel="noopener noreferrer" style="font-size:11px; color:var(--ink-500); text-decoration:underline dotted;">Jupiter live quote ↗</a>
+      <div class="scenario-header">
+        <div class="label" id="scenario-title">Sell scenario
+          <span class="has-hover-tip" id="scenario-tip" data-tip="Estimate slippage if you market-sold this amount across all spot venues at once. Perp futures don't directly absorb spot sells — excluded." style="color: var(--text-muted); font-size: 10px; margin-left: 6px; cursor: help;">ⓘ</span>
+        </div>
+        <div class="pill-tabs" role="tablist" aria-label="Scenario mode">
+          <button type="button" class="pill-tab active" data-mode="sell" role="tab" aria-selected="true">Sell</button>
+          <button type="button" class="pill-tab" data-mode="buy" role="tab" aria-selected="false">Buy</button>
         </div>
       </div>
-      <div id="scenario-grid" style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:16px; padding:20px 24px;">
+      <div id="scenario-grid" style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:24px; padding:24px;">
         <div>
-          <label class="label" style="font-size:9.5px; margin-bottom:6px; display:block;">Sell amount (SLX)</label>
-          <input id="scenario-amount" type="text" value="1,000,000" inputmode="decimal"
-                 style="background:rgba(255,255,255,.03); color:var(--ink-100); border:1px solid rgba(255,255,255,.1); padding:10px 12px; border-radius:8px; font:inherit; font-size:13px; width:100%;" />
-          <div style="font-size:10px; color:var(--ink-500); margin-top:4px;" id="scenario-pct-hint">— of 1B supply</div>
+          <label class="label" style="margin-bottom:8px; display:block;" id="scenario-amount-label">Sell amount (SLX)</label>
+          <input id="scenario-amount" class="scenario-input" type="text" value="1,000,000" inputmode="decimal" />
+          <div style="font-size:11px; color:var(--text-muted); margin-top:6px; font-variant-numeric:tabular-nums;" id="scenario-pct-hint">— of 1B supply</div>
         </div>
         <div>
-          <label class="label" style="font-size:9.5px; margin-bottom:6px; display:block;">% of supply</label>
-          <input id="scenario-pct" type="range" min="0" max="100" step="0.1" value="40"
-                 style="width:100%; margin-top:8px;" />
-          <div style="font-size:10px; color:var(--ink-500); margin-top:4px;"><span id="scenario-pct-val">0.100</span>% · log scale (0.001 → 100%)</div>
+          <label class="label" style="margin-bottom:8px; display:block;" id="scenario-slider-label">% of supply</label>
+          <input id="scenario-pct" class="scenario-range" type="range" min="0" max="100" step="0.1" value="40" />
+          <div style="font-size:11px; color:var(--text-muted); margin-top:12px; font-variant-numeric:tabular-nums;" id="scenario-slider-hint"><span id="scenario-pct-val">0.100</span>% · log scale (0.001 → 100%)</div>
         </div>
         <div style="text-align:right;">
-          <div class="label" style="font-size:9.5px; margin-bottom:4px;">Value at spot</div>
-          <div style="font-size:20px; font-weight:600; color:var(--accent-300); font-variant-numeric:tabular-nums;" id="scenario-value-spot">—</div>
-          <div style="font-size:10px; color:var(--ink-500); margin-top:2px;" id="scenario-spot-sub"></div>
+          <div class="scenario-spot-tile" style="display:inline-block; text-align:left; min-width:140px;">
+            <div class="label" style="margin-bottom:8px;" id="scenario-spot-label">Value at spot</div>
+            <div class="spot-value" id="scenario-value-spot">—</div>
+            <div style="font-size:11px; color:var(--text-muted); margin-top:6px; font-variant-numeric:tabular-nums;" id="scenario-spot-sub"></div>
+          </div>
         </div>
       </div>
-      <div id="scenario-result" style="padding:0 24px 22px; display:none;">
-        <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:14px 22px; padding:14px 16px; background:rgba(252,211,77,.04); border:1px solid rgba(252,211,77,.18); border-radius:10px;">
+      <div id="scenario-result" style="display:none;">
+        <div id="scenario-result-panel">
           <div>
-            <div class="label" style="font-size:9.5px;">Est. USD received</div>
-            <div style="font-size:17px; font-weight:600; margin-top:4px; font-variant-numeric:tabular-nums;" id="scenario-received">—</div>
+            <div class="res-lbl" id="scenario-received-label">Est. USD received</div>
+            <div class="res-val" id="scenario-received">—</div>
           </div>
           <div>
-            <div class="label" style="font-size:9.5px;">Avg fill price</div>
-            <div style="font-size:17px; font-weight:600; margin-top:4px; font-variant-numeric:tabular-nums;" id="scenario-avgprice">—</div>
+            <div class="res-lbl" id="scenario-avgprice-label">Avg fill price</div>
+            <div class="res-val" id="scenario-avgprice">—</div>
           </div>
           <div>
-            <div class="label" style="font-size:9.5px;">Slippage from spot</div>
-            <div style="font-size:17px; font-weight:600; margin-top:4px; font-variant-numeric:tabular-nums; color:var(--bad);" id="scenario-slippage">—</div>
+            <div class="res-lbl">Slippage from spot</div>
+            <div class="res-val" id="scenario-slippage">—</div>
           </div>
         </div>
-        <div style="margin-top:14px; font-size:11px; color:var(--ink-500); line-height:1.7;" id="scenario-breakdown"></div>
+        <div id="scenario-breakdown"></div>
       </div>
     </div>
   </section>
@@ -267,25 +559,21 @@ footer { text-align: center; color: var(--ink-500); font-size: 11px; margin-top:
         </select>
         <input id="search" placeholder="Filter by venue name…" autocomplete="off" />
         <span class="grow"></span>
-        <span class="label" style="color:var(--ink-500); font-size:10px;">Source: CoinGecko</span>
+        <span class="source-caption">Source: CoinGecko
+          <span class="has-hover-tip" data-tip="Sort by 24h Volume to see where most flow is. Spread approximates how much you'd pay in slippage on a small market trade — tighter is better. Stale tickers (no fresh trades in the last hour) are hidden by default. Click any venue to open its trade page." style="margin-left: 4px; cursor: help;">ⓘ</span>
+        </span>
       </div>
 
       <div id="table-host">
         <div class="loading" id="loading">Loading SLX tickers…</div>
       </div>
 
-      <div class="note">
-        <strong>How to read this:</strong> Sort by 24h Volume to see where most flow is.
-        <strong>Spread</strong> approximates how much you'd pay in slippage on a small market trade — tighter is better. Stale tickers (no fresh trades in the last hour) are hidden by default.
-        Click any venue to open its trade page.
-      </div>
     </div>
   </section>
-
-  <footer>
-    Live data from CoinGecko's tickers API · Refresh the page to refetch
-  </footer>
 </main>
+
+<!-- Hover/tap tooltip for .has-hover-tip elements -->
+<div id="hover-tooltip" style="position:fixed; pointer-events:none; z-index:9999; background:rgba(15,17,22,0.96); border:1px solid rgba(255,255,255,.12); border-radius:8px; padding:10px 14px; font-size:12px; color:var(--text-primary); max-width:340px; line-height:1.5; box-shadow:0 8px 24px rgba(0,0,0,.4); opacity:0; transition:opacity .08s;"></div>
 
 <script src="slx-depth-engine.js"></script>
 <script>
@@ -417,7 +705,7 @@ function renderTable() {
   function volBar(v) {
     const pct = MAX_VOL > 0 ? (v / MAX_VOL * 100) : 0;
     return `<div class="bar-row"><span>${fmtUsd(v)}</span><span class="pct">${pct.toFixed(0)}%</span></div>
-            <div class="bar" style="width:${Math.max(2, pct)}%"></div>`;
+            <div class="bar-track"><div class="bar" style="width:${Math.max(2, pct)}%"></div></div>`;
   }
 
   const tbody = rows.map(t => `
@@ -505,15 +793,72 @@ function _fallbackPerVenueSlippage(tradeUsd, vol24h, spreadPct) {
   return base + dynamic;
 }
 
-// Log-scale slider math: maps slider 0..100 → 0.001%..100% of supply.
+// Log-scale slider math (Sell): maps slider 0..100 → 0.001%..100% of supply.
 const SLIDER_MIN_PCT = 0.001;
 const SLIDER_MAX_PCT = 100;
 const SLIDER_LOG_RATIO = Math.log(SLIDER_MAX_PCT / SLIDER_MIN_PCT);
 const sliderToPct = v => SLIDER_MIN_PCT * Math.exp((v / 100) * SLIDER_LOG_RATIO);
 const pctToSlider = p => (Math.log(Math.max(p, SLIDER_MIN_PCT) / SLIDER_MIN_PCT) / SLIDER_LOG_RATIO) * 100;
 
+// Log-scale slider math (Buy): maps slider 0..100 → $100..$10M of USD spend.
+const SLIDER_MIN_USD = 100;
+const SLIDER_MAX_USD = 10_000_000;
+const SLIDER_USD_LOG_RATIO = Math.log(SLIDER_MAX_USD / SLIDER_MIN_USD);
+const sliderToUsd = v => SLIDER_MIN_USD * Math.exp((v / 100) * SLIDER_USD_LOG_RATIO);
+const usdToSlider = u => (Math.log(Math.max(u, SLIDER_MIN_USD) / SLIDER_MIN_USD) / SLIDER_USD_LOG_RATIO) * 100;
+
+// Active scenario mode: 'sell' or 'buy'. Toggled via pill tabs.
+let SCENARIO_MODE = 'sell';
+const SELL_DEFAULT_SLX = 1_000_000;
+const BUY_DEFAULT_USD  = 100_000;
+
 // Guard so overlapping async renderScenario calls don't clobber each other.
 let RENDER_TOKEN = 0;
+
+function applyScenarioModeUi() {
+  const isBuy = SCENARIO_MODE === 'buy';
+  document.getElementById('scenario-title').firstChild.nodeValue =
+    isBuy ? 'Buy scenario ' : 'Sell scenario ';
+  document.getElementById('scenario-tip').setAttribute(
+    'data-tip',
+    isBuy
+      ? "Estimate how many SLX you'd receive market-buying with this USD across all spot venues. Perp futures don't directly fill spot buys — excluded."
+      : "Estimate slippage if you market-sold this amount across all spot venues at once. Perp futures don't directly absorb spot sells — excluded."
+  );
+  document.getElementById('scenario-amount-label').textContent =
+    isBuy ? 'USD to spend' : 'Sell amount (SLX)';
+  document.getElementById('scenario-slider-label').textContent =
+    isBuy ? 'USD scale' : '% of supply';
+  document.getElementById('scenario-spot-label').textContent =
+    isBuy ? 'SLX at spot' : 'Value at spot';
+  document.getElementById('scenario-received-label').textContent =
+    isBuy ? 'SLX received' : 'Est. USD received';
+  document.getElementById('scenario-avgprice-label').textContent =
+    isBuy ? 'Avg cost per SLX' : 'Avg fill price';
+
+  // Pill active state
+  document.querySelectorAll('.pill-tab[data-mode]').forEach(btn => {
+    const active = btn.dataset.mode === SCENARIO_MODE;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
+}
+
+function setScenarioMode(mode) {
+  if (mode !== 'sell' && mode !== 'buy') return;
+  if (mode === SCENARIO_MODE) return;
+  SCENARIO_MODE = mode;
+  // Reset input to a sensible default for the new mode.
+  const amtEl = document.getElementById('scenario-amount');
+  if (mode === 'sell') {
+    amtEl.value = SELL_DEFAULT_SLX.toLocaleString('en-US');
+  } else {
+    amtEl.value = BUY_DEFAULT_USD.toLocaleString('en-US');
+  }
+  applyScenarioModeUi();
+  renderScenario();
+  refreshJupQuote();
+}
 
 async function renderScenario() {
   if (!TICKERS.length) return;
@@ -525,23 +870,46 @@ async function renderScenario() {
   let spot = 0;
   for (const t of live) spot += t.price * (t.volume / Math.max(totalSpotVol, 1));
 
+  const isBuy = SCENARIO_MODE === 'buy';
   const amtEl = document.getElementById('scenario-amount');
   const pctEl = document.getElementById('scenario-pct');
-  const slx = parseFloat(amtEl.value.replace(/[,\s]/g, '')) || 0;
-  const pct = slx / SLX_TOTAL_SUPPLY * 100;
-  document.getElementById('scenario-pct-hint').textContent = pct.toFixed(4) + '% of 1B supply';
-  document.getElementById('scenario-pct-val').textContent = pct.toFixed(3);
-  pctEl.value = pctToSlider(pct).toFixed(2);
+  const rawAmt = parseFloat(amtEl.value.replace(/[,\s$]/g, '')) || 0;
 
-  const valueSpot = slx * spot;
-  document.getElementById('scenario-value-spot').textContent = fmtUsd(valueSpot);
+  // Mode-specific inputs + sync slider + hint.
+  let slx, usdSpend, valueSpot;
+  if (isBuy) {
+    usdSpend = rawAmt;
+    slx = spot > 0 ? usdSpend / spot : 0;
+    valueSpot = usdSpend;
+    // Slider tracks the USD spend on log scale.
+    pctEl.value = usdToSlider(usdSpend).toFixed(2);
+    document.getElementById('scenario-pct-hint').textContent =
+      spot > 0
+        ? '≈ ' + Math.round(slx).toLocaleString('en-US') + ' SLX at spot'
+        : '—';
+    document.getElementById('scenario-slider-hint').innerHTML =
+      '<span id="scenario-pct-val">' + fmtUsd(usdSpend) +
+      '</span> · log scale ($100 → $10M)';
+  } else {
+    slx = rawAmt;
+    usdSpend = slx * spot;
+    valueSpot = usdSpend;
+    const pct = slx / SLX_TOTAL_SUPPLY * 100;
+    pctEl.value = pctToSlider(pct).toFixed(2);
+    document.getElementById('scenario-pct-hint').textContent =
+      pct.toFixed(4) + '% of 1B supply';
+    document.getElementById('scenario-slider-hint').innerHTML =
+      '<span id="scenario-pct-val">' + pct.toFixed(3) +
+      '</span>% · log scale (0.001 → 100%)';
+  }
+
+  document.getElementById('scenario-value-spot').textContent =
+    isBuy
+      ? (spot > 0 ? Math.round(slx).toLocaleString('en-US') + ' SLX' : '—')
+      : fmtUsd(valueSpot);
   document.getElementById('scenario-spot-sub').textContent = '@ $' + spot.toFixed(4) + '/SLX';
 
-  // Jupiter trade-page deep link for the configured size.
-  document.getElementById('scenario-jupiter-link').href =
-    `https://jup.ag/swap/SLX-USDC?inputAmount=${slx.toFixed(2)}`;
-
-  if (slx <= 0) {
+  if (rawAmt <= 0) {
     document.getElementById('scenario-result').style.display = 'none';
     return;
   }
@@ -563,61 +931,106 @@ async function renderScenario() {
   let result = null;
   let liveError = null;
   try {
-    result = await window.SLXDepthEngine.priceSell(slx, fallbackVenues);
+    if (isBuy) {
+      result = await window.SLXDepthEngine.priceBuy(usdSpend, fallbackVenues);
+    } else {
+      result = await window.SLXDepthEngine.priceSell(slx, fallbackVenues);
+    }
   } catch (e) {
     liveError = e && e.message ? e.message : String(e);
   }
   if (myToken !== RENDER_TOKEN) return; // a newer render is in flight
 
-  if (result && result.usdReceived > 0) {
-    const usdReceived = result.usdReceived;
-    const avgPrice = result.avgPrice;
-    // Slippage vs spot (the value the user sees in the "Value at spot" tile),
-    // not the engine's vs-best-bid number — keeps continuity with the UI label.
-    const slipVsSpot = valueSpot > 0 ? ((valueSpot - usdReceived) / valueSpot) * 100 : 0;
+  // Helpers shared by both paths.
+  const typeClass = t => (t === 'cex' || t === 'dex') ? t : 'dex';
+  const typeLabel = t => {
+    if (t === 'cex') return 'CEX';
+    if (t === 'dex_bsc') return 'BSC';
+    if (t === 'dex_sol') return 'SOL';
+    if (t === 'dex') return 'DEX';
+    return (t || '').toUpperCase();
+  };
 
-    document.getElementById('scenario-received').textContent = fmtUsd(usdReceived);
-    document.getElementById('scenario-avgprice').textContent = '$' + avgPrice.toFixed(4);
-    document.getElementById('scenario-slippage').textContent =
+  const liveOk = result && (
+    isBuy ? (result.slxReceived > 0) : (result.usdReceived > 0)
+  );
+
+  if (liveOk) {
+    // ── Live engine path ────────────────────────────────────────────────
+    let primaryText, avgPriceText, slipVsSpot;
+    if (isBuy) {
+      const slxReceived = result.slxReceived;
+      const avgCost = result.avgPrice; // USD per SLX
+      // Slippage: how much worse the avg cost is vs spot.
+      slipVsSpot = spot > 0 ? ((avgCost - spot) / spot) * 100 : 0;
+      primaryText = Math.round(slxReceived).toLocaleString('en-US') + ' SLX';
+      avgPriceText = '$' + avgCost.toFixed(4);
+    } else {
+      const usdReceived = result.usdReceived;
+      const avgPrice = result.avgPrice;
+      // Slippage: how much USD is lost vs spot value.
+      slipVsSpot = valueSpot > 0 ? ((valueSpot - usdReceived) / valueSpot) * 100 : 0;
+      primaryText = fmtUsd(usdReceived);
+      avgPriceText = '$' + avgPrice.toFixed(4);
+    }
+
+    document.getElementById('scenario-received').textContent = primaryText;
+    document.getElementById('scenario-avgprice').textContent = avgPriceText;
+    const slipEl = document.getElementById('scenario-slippage');
+    slipEl.textContent =
       (slipVsSpot >= 0 ? '−' : '+') + Math.abs(slipVsSpot).toFixed(2) + '%';
+    // Red only when slippage is meaningfully bad (>1% worse than spot).
+    slipEl.classList.toggle('bad', slipVsSpot > 1);
 
-    // Per-venue breakdown — top 8 by usdReceived
-    const sorted = (result.perVenueFill || []).slice().sort((a, b) => b.usdReceived - a.usdReceived);
-    const totalFillUsd = sorted.reduce((s, b) => s + b.usdReceived, 0) || 1;
+    // Per-venue breakdown — top 8 by primary fill metric.
+    const sorted = (result.perVenueFill || []).slice().sort((a, b) =>
+      isBuy ? (b.slxReceived || b.slxFilled || 0) - (a.slxReceived || a.slxFilled || 0)
+            : b.usdReceived - a.usdReceived
+    );
+    const totalFillKey = sorted.reduce((s, b) =>
+      s + (isBuy ? (b.slxReceived || b.slxFilled || 0) : b.usdReceived), 0) || 1;
     const top = sorted.slice(0, 8);
-    const typeClass = t => (t === 'cex' || t === 'dex') ? t : 'dex';
-    const typeLabel = t => {
-      if (t === 'cex') return 'CEX';
-      if (t === 'dex_bsc') return 'BSC';
-      if (t === 'dex_sol') return 'SOL';
-      if (t === 'dex') return 'DEX';
-      return (t || '').toUpperCase();
-    };
     const bdHtml = top.map(b => {
-      const share = b.usdReceived / totalFillUsd * 100;
+      const fillAmt = isBuy ? (b.slxReceived || b.slxFilled || 0) : b.usdReceived;
+      const share = fillAmt / totalFillKey * 100;
       const badge = b.source === 'live'
-        ? '<span class="tag" style="color:var(--good); border-color:rgba(134,239,172,.3);">live</span>'
+        ? '<span class="tag" style="color:var(--good); background:var(--good-soft);">live</span>'
         : '<span class="tag stale">est.</span>';
+      const venueUsd = b.usdSpent != null ? b.usdSpent : b.usdReceived;
+      const venueSlx = b.slxReceived != null ? b.slxReceived : b.slxFilled;
+      const venuePrice = (venueUsd || 0) / Math.max(venueSlx || 0, 1e-9);
+      const rightText = isBuy
+        ? share.toFixed(1) + '% of fill → ' + Math.round(venueSlx).toLocaleString('en-US') +
+          ' SLX for ' + fmtUsd(venueUsd) + ' @ avg $' + venuePrice.toFixed(4)
+        : share.toFixed(1) + '% of fill → ' + fmtUsd(venueUsd) +
+          ' @ avg $' + venuePrice.toFixed(4);
       return `<div style="display:flex; justify-content:space-between; gap:14px;">
-         <span><span style="color:var(--ink-300);">${b.venue}</span>
+         <span><span style="color:var(--text-primary);">${b.venue}</span>
                <span class="tag ${typeClass(b.type)}">${typeLabel(b.type)}</span>
                ${badge}</span>
-         <span>${share.toFixed(1)}% of fill → ${fmtUsd(b.usdReceived)}
-               @ avg $${(b.usdReceived / Math.max(b.slxFilled, 1e-9)).toFixed(4)}</span>
+         <span>${rightText}</span>
        </div>`;
     }).join('');
 
     let unfilledNote = '';
-    if (result.slxUnfilled > 0.01) {
-      unfilledNote = `<div style="margin-top:6px; color:var(--bad);">
-        Unfilled: ${Math.round(result.slxUnfilled).toLocaleString('en-US')} SLX exceeded available depth.
-      </div>`;
+    if (isBuy) {
+      if (result.usdUnspent > 1) {
+        unfilledNote = `<div style="margin-top:8px; color:var(--bad);">
+          Unspent: ${fmtUsd(result.usdUnspent)} exceeded available ask-side depth.
+        </div>`;
+      }
+    } else {
+      if (result.slxUnfilled > 0.01) {
+        unfilledNote = `<div style="margin-top:8px; color:var(--bad);">
+          Unfilled: ${Math.round(result.slxUnfilled).toLocaleString('en-US')} SLX exceeded available depth.
+        </div>`;
+      }
     }
 
     let jupNote = '';
-    if (LAST_JUP_RESULT) {
-      jupNote = `<div style="margin-top:10px; padding-top:10px; border-top:1px dashed rgba(255,255,255,.06);">
-        <strong style="color:var(--ink-300);">Jupiter aggregator (Solana only)</strong>:
+    if (LAST_JUP_RESULT && !isBuy) {
+      jupNote = `<div class="jup-section">
+        <strong style="color:var(--text-primary);">Jupiter aggregator (Solana only)</strong>:
         ${LAST_JUP_RESULT.priceImpactPct.toFixed(2)}% price impact on ${fmtUsd(LAST_JUP_RESULT.outAmount)} received
         (${LAST_JUP_RESULT.hops} hop${LAST_JUP_RESULT.hops === 1 ? '' : 's'})
       </div>`;
@@ -629,6 +1042,8 @@ async function renderScenario() {
   }
 
   // ── Fallback: live engine failed entirely. Use the old quadratic model. ──
+  // Quadratic-from-volume model is symmetric in trade USD, so we reuse it for
+  // both buy and sell — only the labels change.
   const totalVol = live.reduce((s, t) => s + t.volume, 0);
   const breakdown = live.map(t => {
     const share = t.volume / totalVol;
@@ -637,28 +1052,41 @@ async function renderScenario() {
     return { venue: t.venue, type: t.type, share, tradeUsd, slip: slipPct };
   });
   const aggSlip = breakdown.reduce((s, b) => s + b.slip * b.share, 0);
-  const usdReceived = valueSpot * (1 - aggSlip / 100);
-  const avgPrice = usdReceived / slx;
 
-  document.getElementById('scenario-received').textContent = fmtUsd(usdReceived);
-  document.getElementById('scenario-avgprice').textContent = '$' + avgPrice.toFixed(4);
-  document.getElementById('scenario-slippage').textContent =
+  let primaryText, avgPriceText;
+  if (isBuy) {
+    const avgCost = spot * (1 + aggSlip / 100);
+    const slxReceived = avgCost > 0 ? usdSpend / avgCost : 0;
+    primaryText = Math.round(slxReceived).toLocaleString('en-US') + ' SLX';
+    avgPriceText = '$' + avgCost.toFixed(4);
+  } else {
+    const usdReceived = valueSpot * (1 - aggSlip / 100);
+    const avgPrice = slx > 0 ? usdReceived / slx : 0;
+    primaryText = fmtUsd(usdReceived);
+    avgPriceText = '$' + avgPrice.toFixed(4);
+  }
+
+  document.getElementById('scenario-received').textContent = primaryText;
+  document.getElementById('scenario-avgprice').textContent = avgPriceText;
+  const slipEl2 = document.getElementById('scenario-slippage');
+  slipEl2.textContent =
     (aggSlip >= 0 ? '−' : '+') + Math.abs(aggSlip).toFixed(2) + '%';
+  slipEl2.classList.toggle('bad', aggSlip > 1);
 
   const top = breakdown.slice().sort((a, b) => b.share - a.share).slice(0, 8);
   const bdHtml = top.map(b =>
     `<div style="display:flex; justify-content:space-between; gap:14px;">
-       <span><span style="color:var(--ink-300);">${b.venue}</span>
+       <span><span style="color:var(--text-primary);">${b.venue}</span>
              <span class="tag ${b.type}">${b.type.toUpperCase()}</span>
              <span class="tag stale">est.</span></span>
        <span>${(b.share*100).toFixed(1)}% of flow → ~${b.slip.toFixed(2)}% slip on ${fmtUsd(b.tradeUsd)}</span>
      </div>`).join('');
   const unavailNote =
-    `<div style="margin-top:10px; color:var(--ink-500);">
+    `<div style="margin-top:10px; color:var(--text-muted);">
        Live depth unavailable${liveError ? ` (${liveError})` : ''} — showing quadratic estimate from 24h volume.
      </div>`;
   let jupNote = '';
-  if (LAST_JUP_RESULT) {
+  if (LAST_JUP_RESULT && !isBuy) {
     jupNote = `<div style="margin-top:10px; padding-top:10px; border-top:1px dashed rgba(255,255,255,.06);">
       <strong style="color:var(--ink-300);">Jupiter aggregator (Solana only)</strong>:
       ${LAST_JUP_RESULT.priceImpactPct.toFixed(2)}% price impact on ${fmtUsd(LAST_JUP_RESULT.outAmount)} received
@@ -671,11 +1099,16 @@ async function renderScenario() {
 
 // Debounced Jupiter quote — runs when the user pauses typing.
 // Engine's fetchJupiterQuote returns {slxIn, outAmount, priceImpactPct, hops, avgPrice}.
+// Only meaningful in Sell mode (it quotes selling SLX → USDC on Solana).
 let jupDebounce = null;
 function refreshJupQuote() {
   clearTimeout(jupDebounce);
+  if (SCENARIO_MODE !== 'sell') {
+    LAST_JUP_RESULT = null;
+    return;
+  }
   jupDebounce = setTimeout(async () => {
-    const slx = parseFloat(document.getElementById('scenario-amount').value.replace(/[,\s]/g, '')) || 0;
+    const slx = parseFloat(document.getElementById('scenario-amount').value.replace(/[,\s$]/g, '')) || 0;
     if (slx <= 0 || !SOLANA_LIVE_AVAILABLE) { LAST_JUP_RESULT = null; renderScenario(); return; }
     try {
       LAST_JUP_RESULT = await window.SLXDepthEngine.fetchJupiterQuote(slx);
@@ -687,24 +1120,75 @@ function refreshJupQuote() {
   }, 450);
 }
 
-document.getElementById('scenario-amount').addEventListener('input', (e) => {
+document.getElementById('scenario-amount').addEventListener('input', () => {
   renderScenario();
   refreshJupQuote();
 });
 document.getElementById('scenario-amount').addEventListener('blur', (e) => {
-  const n = parseFloat(e.target.value.replace(/[,\s]/g, ''));
+  const n = parseFloat(e.target.value.replace(/[,\s$]/g, ''));
   if (isFinite(n) && n > 0) e.target.value = Math.round(n).toLocaleString('en-US');
   renderScenario();
 });
 document.getElementById('scenario-pct').addEventListener('input', (e) => {
-  const pct = sliderToPct(parseFloat(e.target.value));
-  const slx = pct / 100 * SLX_TOTAL_SUPPLY;
-  document.getElementById('scenario-amount').value = Math.round(slx).toLocaleString('en-US');
+  const v = parseFloat(e.target.value);
+  if (SCENARIO_MODE === 'buy') {
+    const usd = sliderToUsd(v);
+    document.getElementById('scenario-amount').value = Math.round(usd).toLocaleString('en-US');
+  } else {
+    const pct = sliderToPct(v);
+    const slx = pct / 100 * SLX_TOTAL_SUPPLY;
+    document.getElementById('scenario-amount').value = Math.round(slx).toLocaleString('en-US');
+  }
   renderScenario();
   refreshJupQuote();
 });
 
+// Pill toggle wiring.
+document.querySelectorAll('.pill-tab[data-mode]').forEach(btn => {
+  btn.addEventListener('click', () => setScenarioMode(btn.dataset.mode));
+});
+applyScenarioModeUi();
+
 load();
+
+// Hover/tap tooltip for .has-hover-tip elements
+(function initHoverTip() {
+  const tip = document.getElementById('hover-tooltip');
+  if (!tip) return;
+  function showAt(text, x, y) {
+    tip.textContent = text;
+    tip.style.left = (x + 14) + 'px';
+    tip.style.top = (y + 14) + 'px';
+    tip.style.opacity = '1';
+    const r = tip.getBoundingClientRect();
+    if (r.right > window.innerWidth - 8) tip.style.left = (x - r.width - 14) + 'px';
+    if (r.bottom > window.innerHeight - 8) tip.style.top = (y - r.height - 14) + 'px';
+  }
+  function showFromRect(text, rect) {
+    tip.textContent = text;
+    tip.style.left = Math.max(8, rect.left) + 'px';
+    tip.style.top = (rect.bottom + 6) + 'px';
+    tip.style.opacity = '1';
+    const r = tip.getBoundingClientRect();
+    if (r.right > window.innerWidth - 8) tip.style.left = (window.innerWidth - r.width - 8) + 'px';
+  }
+  document.addEventListener('mousemove', (e) => {
+    const t = e.target.closest('.has-hover-tip');
+    if (!t) { tip.style.opacity = '0'; return; }
+    const text = t.getAttribute('data-tip');
+    if (text) showAt(text, e.clientX, e.clientY);
+  });
+  document.addEventListener('mouseleave', () => { tip.style.opacity = '0'; });
+  document.addEventListener('click', (e) => {
+    const t = e.target.closest('.has-hover-tip');
+    if (!t) { tip.style.opacity = '0'; return; }
+    const text = t.getAttribute('data-tip');
+    if (!text) return;
+    e.preventDefault();
+    e.stopPropagation();
+    showFromRect(text, t.getBoundingClientRect());
+  }, true);
+})();
 </script>
 
 </body>
