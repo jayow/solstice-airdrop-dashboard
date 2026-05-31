@@ -1017,15 +1017,22 @@ async function renderScenario() {
 
     let unfilledNote = '';
     if (isBuy) {
-      if (result.usdUnspent > 1) {
-        unfilledNote = `<div style="margin-top:8px; color:var(--bad);">
-          Unspent: ${fmtUsd(result.usdUnspent)} exceeded available ask-side depth.
+      // Engine returns usdUnfilled (NOT usdUnspent — older field name).
+      const unfilled = Number(result.usdUnfilled || result.usdUnspent || 0);
+      if (unfilled > 1) {
+        const requested = unfilled + Number(result.usdSpent || 0);
+        const pct = requested > 0 ? (unfilled / requested * 100) : 0;
+        unfilledNote = `<div style="margin-top:10px; padding:10px 12px; background:var(--bad-soft); border:1px solid rgba(251,113,133,0.25); border-radius:8px; color:var(--bad); font-size:11.5px;">
+          <strong>Depth exhausted:</strong> only ${fmtUsd(result.usdSpent)} of ${fmtUsd(requested)} (${(100-pct).toFixed(0)}%) could be filled before running out of ask-side liquidity we can see. Slippage % shown is for the filled portion only — true price impact would be larger.
         </div>`;
       }
     } else {
-      if (result.slxUnfilled > 0.01) {
-        unfilledNote = `<div style="margin-top:8px; color:var(--bad);">
-          Unfilled: ${Math.round(result.slxUnfilled).toLocaleString('en-US')} SLX exceeded available depth.
+      const unfilledSlx = Number(result.slxUnfilled || 0);
+      if (unfilledSlx > 0.01) {
+        const totalSlx = unfilledSlx + Number(result.slxFilled || 0);
+        const pct = totalSlx > 0 ? (unfilledSlx / totalSlx * 100) : 0;
+        unfilledNote = `<div style="margin-top:10px; padding:10px 12px; background:var(--bad-soft); border:1px solid rgba(251,113,133,0.25); border-radius:8px; color:var(--bad); font-size:11.5px;">
+          <strong>Depth exhausted:</strong> only ${Math.round(result.slxFilled || 0).toLocaleString('en-US')} of ${Math.round(totalSlx).toLocaleString('en-US')} SLX (${(100-pct).toFixed(0)}%) could be filled before running out of bid-side liquidity. Slippage % shown is for the filled portion only — true price impact would be larger.
         </div>`;
       }
     }
