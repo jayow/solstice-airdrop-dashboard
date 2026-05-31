@@ -3,15 +3,12 @@
 // Vanilla browser module. No imports, no bundler. Exposes window.SLXDepthEngine.
 //
 // Live venues (assembled 2026-05-31, all individually verified):
-//   CEX (CORS-confirmed): Bitget, BitMart, Kraken, Hotcoin
-//   BSC on-chain:         PancakeSwapInfinity (CLPoolManager singleton),
-//                         UniswapV3-BSC pool 0xc7EFB8...,
-//                         UniswapV4 pool 0xfb58b9... (StateView wrapper)
-//   Solana:               Jupiter v6 quote API
-//
-// Dropped from live set:
-//   Ourbit — endpoint healthy but CORS not confirmed (no explicit ACAO header).
-//            Caller can still pass it in via fallbackVenues to get an estimated curve.
+//   CEX (CORS-confirmed):  Bitget, BitMart, Kraken, Hotcoin, DigiFinex, KCEX
+//   CEX (via Vercel proxy): MEXC, Gate, LBank, OrangeX, BingX, Toobit, Ourbit, WEEX
+//   BSC on-chain:           PancakeSwapInfinity (CLPoolManager singleton),
+//                           UniswapV3-BSC pool 0xc7EFB8...,
+//                           UniswapV4 pool 0xfb58b9... (StateView wrapper)
+//   Solana:                 Jupiter v6 quote API
 //
 // SLX decimals: 6 on BSC (verified on-chain), 6 on Solana.
 
@@ -248,6 +245,107 @@
     };
   }
 
+  // Fetches SLX/USDT bids from DigiFinex spot v3 REST.
+  // CORS is fully open (Access-Control-Allow-Origin: *).
+  // Response: { code:0, date:<unix>, bids:[[price,qty],...], asks:[...] }
+  // bids are numeric pairs (not strings), pre-sorted descending by price.
+  async function fetchDigiFinexBids() {
+    const url = "https://openapi.digifinex.com/v3/order_book?symbol=slx_usdt&limit=100";
+    const res = await fetch(url, { headers: { accept: "application/json" } });
+    if (!res.ok) {
+      throw new Error(`DigiFinex depth HTTP ${res.status}`);
+    }
+    const json = await res.json();
+    if (json && typeof json.code === "number" && json.code !== 0) {
+      throw new Error(`DigiFinex depth code=${json.code}`);
+    }
+    const rawBids = json && Array.isArray(json.bids) ? json.bids : null;
+    if (!rawBids || rawBids.length === 0) {
+      throw new Error("DigiFinex returned no bids for slx_usdt");
+    }
+    const bids = [];
+    for (const entry of rawBids) {
+      let priceRaw, sizeRaw;
+      if (Array.isArray(entry)) {
+        priceRaw = entry[0];
+        sizeRaw = entry[1];
+      } else if (entry && typeof entry === "object") {
+        priceRaw = entry.price ?? entry.p ?? entry[0];
+        sizeRaw = entry.size ?? entry.amount ?? entry.quantity ?? entry.q ?? entry[1];
+      } else {
+        continue;
+      }
+      const price = parseFloat(priceRaw);
+      const size = parseFloat(sizeRaw);
+      if (!Number.isFinite(price) || !Number.isFinite(size) || price <= 0 || size <= 0) continue;
+      bids.push([price, size]);
+    }
+    if (bids.length === 0) {
+      throw new Error("DigiFinex bids parsed to empty array");
+    }
+    bids.sort((a, b) => b[0] - a[0]);
+    return {
+      venue: "DigiFinex",
+      type: "cex",
+      bids,
+      midUsd: bids[0][0],
+      fetchedAt: Date.now(),
+    };
+  }
+
+  // Fetches SLX/USDT bids from KCEX web-frontend depth endpoint.
+  // CORS is open (Access-Control-Allow-Origin: *) on www.kcex.com (the api.kcex.com
+  // host is CloudFront-WAF-blocked). Response shape is doubly-nested:
+  //   { code:200, data:{ data:{ bids:[{p,q}], asks:[{p,q}] } } }
+  // Bid entries are objects, not [price, qty] tuples — _parseLevelPair-style handling
+  // is inlined here to keep the fetcher self-contained alongside the other direct ones.
+  async function fetchKCEXBids() {
+    const url = "https://www.kcex.com/api/platform/spot/market/depth?symbol=SLX_USDT&depth=20";
+    const res = await fetch(url, { headers: { accept: "application/json" } });
+    if (!res.ok) {
+      throw new Error(`KCEX depth HTTP ${res.status}`);
+    }
+    const json = await res.json();
+    if (json && typeof json.code === "number" && json.code !== 200 && json.code !== 0) {
+      throw new Error(`KCEX depth code=${json.code} msg=${json.msg || "unknown"}`);
+    }
+    const rawBids =
+      (json && json.data && json.data.data && Array.isArray(json.data.data.bids))
+        ? json.data.data.bids
+        : null;
+    if (!rawBids || rawBids.length === 0) {
+      throw new Error("KCEX returned no bids for SLX_USDT");
+    }
+    const bids = [];
+    for (const entry of rawBids) {
+      let priceRaw, sizeRaw;
+      if (entry && typeof entry === "object" && !Array.isArray(entry)) {
+        priceRaw = entry.p ?? entry.price ?? entry[0];
+        sizeRaw = entry.q ?? entry.size ?? entry.quantity ?? entry.amount ?? entry[1];
+      } else if (Array.isArray(entry)) {
+        priceRaw = entry[0];
+        sizeRaw = entry[1];
+      } else {
+        continue;
+      }
+      const price = parseFloat(priceRaw);
+      const size = parseFloat(sizeRaw);
+      if (!Number.isFinite(price) || !Number.isFinite(size) || price <= 0 || size <= 0) continue;
+      bids.push([price, size]);
+    }
+    if (bids.length === 0) {
+      throw new Error("KCEX bids parsed to empty array");
+    }
+    bids.sort((a, b) => b[0] - a[0]);
+    return {
+      venue: "KCEX",
+      type: "cex",
+      bids,
+      midUsd: bids[0][0],
+      fetchedAt: Date.now(),
+    };
+  }
+
   // ═════════════════════════════════════════════════════════════════════════
   // PROXIED CEX FETCHERS (via /api/cex-depth — CORS-blocked upstreams)
   // ═════════════════════════════════════════════════════════════════════════
@@ -360,6 +458,22 @@
   async function fetchToobitBids() {
     const j = await _proxyFetch("toobit");
     return _finishCexBids("Toobit", j && (j.b || j.bids));
+  }
+
+  // Ourbit — Binance-clone shape: { bids: [[price_str, qty_str]], asks: [...] }
+  async function fetchOurbitBids() {
+    const j = await _proxyFetch("ourbit");
+    return _finishCexBids("Ourbit", j && j.bids);
+  }
+
+  // WEEX — Binance-style: { lastUpdateId, bids: [[price_str, qty_str]], asks: [...] }
+  // Surfaces upstream error codes (e.g. -1142 for bad `limit`) as fetcher errors.
+  async function fetchWEEXBids() {
+    const j = await _proxyFetch("weex");
+    if (j && typeof j.code === "number" && j.code !== 0 && j.code !== 200) {
+      throw new Error(`WEEX code=${j.code} msg=${j.msg || "unknown"}`);
+    }
+    return _finishCexBids("WEEX", j && j.bids);
   }
 
   // ═════════════════════════════════════════════════════════════════════════
@@ -963,6 +1077,8 @@
       ["BitMart", fetchBitMartBids],
       ["Kraken", fetchKrakenBids],
       ["Hotcoin", fetchHotcoinBids],
+      ["DigiFinex", fetchDigiFinexBids],
+      ["KCEX", fetchKCEXBids],
     ];
     if (PROXIED_CEX_ENABLED) {
       cexFns.push(
@@ -972,6 +1088,8 @@
         ["OrangeX", fetchOrangeXBids],
         ["BingX", fetchBingXBids],
         ["Toobit", fetchToobitBids],
+        ["Ourbit", fetchOurbitBids],
+        ["WEEX", fetchWEEXBids],
       );
     }
     // Each entry: [name, fetchStateFn, slippageFn, isAsyncSlippage?]
@@ -1153,12 +1271,16 @@
         fetchBitMartBids,
         fetchKrakenBids,
         fetchHotcoinBids,
+        fetchDigiFinexBids,
+        fetchKCEXBids,
         fetchMEXCBids,
         fetchGateBids,
         fetchLBankBids,
         fetchOrangeXBids,
         fetchBingXBids,
         fetchToobitBids,
+        fetchOurbitBids,
+        fetchWEEXBids,
         fetchPancakeSwapInfinityState,
         fetchUniswapV3State,
         fetchUniswapV4State,

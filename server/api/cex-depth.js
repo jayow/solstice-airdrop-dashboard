@@ -7,7 +7,8 @@
 // Access-Control-Allow-Origin or actively reject preflights. Curl works fine,
 // so a thin server-side passthrough is enough.
 //
-// Verified upstream (2026-05-31): mexc, gate, lbank, orangex, toobit.
+// Verified upstream (2026-05-31): mexc, gate, lbank, orangex, toobit,
+// ourbit, weex.
 // BingX is included for forward-compatibility but currently returns
 // `symbol is not found` — fetcher will surface that as an upstream error.
 //
@@ -38,6 +39,17 @@ const VENUES = {
   },
   toobit: {
     url: "https://api.toobit.com/quote/v1/depth?symbol=SOLSTICEUSDT&limit=100",
+  },
+  ourbit: {
+    // Binance-clone shape: { bids: [[price_str, qty_str]], asks: [...] }.
+    // Cloudflare-fronted but no challenge; needs a real-looking UA.
+    url: "https://api.ourbit.com/api/v3/depth?symbol=SLXUSDT&limit=100",
+    headers: { "user-agent": "Mozilla/5.0" },
+  },
+  weex: {
+    // Binance-style spot depth. `limit` is strict — only 200 (and a few other
+    // sizes) accepted; smaller values return code -1142.
+    url: "https://api-spot.weex.com/api/v3/market/depth?symbol=SLXUSDT&limit=200",
   },
 };
 
@@ -76,6 +88,8 @@ export default async function handler(req, res) {
         accept: "application/json",
         // Some CEXes (notably BingX, MEXC) reject default fetch UA.
         "user-agent": "solstice-flares-proxy/1.0",
+        // Per-venue header overrides (e.g. ourbit wants a browser-style UA).
+        ...(spec.headers || {}),
       },
       signal: controller.signal,
     });
