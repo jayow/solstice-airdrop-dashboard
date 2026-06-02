@@ -9,6 +9,7 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png" />
 <style>
 :root {
+  /* Legacy ink/accent scale retained for share-card + tooltip back-compat */
   --ink-50: rgb(232, 232, 237);
   --ink-100: rgb(232, 232, 237);
   --ink-200: rgb(201, 201, 208);
@@ -22,70 +23,461 @@
   --accent-300: rgb(252, 211, 77);
   --accent-400: rgb(251, 191, 36);
   --accent-500: rgb(245, 158, 11);
+
+  /* Stocks-app tokens */
+  --bg: #0a0a0b;
+  --bg-elev: #131316;
+  --hairline: rgba(255,255,255,.08);
+  --hairline-strong: rgba(255,255,255,.12);
+  --text: #f5f5f7;
+  --text-2: #a1a1a6;
+  --text-3: #6e6e73;
+  --accent: #fcd34d;
+  --accent-2: #fbbf24;
+  --accent-warm: #eb6237;
+  --up: #30d158;
+  --down: #ff453a;
+  --pill-up-bg: rgba(48,209,88,.15);
+  --pill-down-bg: rgba(255,69,58,.15);
+  --chip-underline: rgba(255,255,255,.22);
+  --ease: cubic-bezier(.4,0,.2,1);
+  --dur: .18s;
 }
 
 * { box-sizing: border-box; }
-html, body { margin: 0; background: var(--ink-950); color: var(--ink-100);
-             font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-             font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
-.tabular { font-variant-numeric: tabular-nums; }
-.display { font-family: "Inter", ui-sans-serif, system-ui; font-weight: 600; letter-spacing: -0.02em; }
-.label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.14em; color: var(--ink-400); }
-
-main { max-width: 960px; margin: 0 auto; padding: 64px 24px; }
-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 40px; }
-.brand { display: flex; align-items: center; gap: 16px; color: var(--ink-300); }
-.brand a { color: inherit; text-decoration: none; transition: color .15s; display: inline-flex; align-items: center; gap: 8px; font-size: 13px; }
-.brand a:hover { color: var(--ink-50); }
-.brand .sep { color: var(--ink-500); }
-.right-links { display: flex; align-items: center; gap: 16px; font-size: 11px; }
-.right-links a { color: var(--ink-500); text-decoration: none; text-transform: uppercase; letter-spacing: 0.14em; transition: color .15s; }
-.right-links a.featured { color: var(--accent-300); }
-.right-links a:hover { color: var(--ink-200); }
-.right-links a.featured:hover { color: var(--accent-200); }
-.right-links .sep { color: var(--ink-500); }
-
-.surface { background: rgba(255,255,255,.015); border: 1px solid rgba(255,255,255,.06); border-radius: 16px; padding: 28px; }
-section { margin-bottom: 32px; }
-section h1 { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 6px; }
-.section-sub { font-size: 12px; color: var(--ink-500); }
-
-input[type=text], input[type=date] {
-  background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.1); color: var(--ink-100);
-  padding: 10px 12px; border-radius: 8px; font: inherit; font-size: 14px; width: 100%;
+html, body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font-family: ui-sans-serif, -apple-system, "SF Pro Text", system-ui, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 15px; line-height: 1.5; -webkit-font-smoothing: antialiased;
 }
-input[type=text]:focus, input[type=date]:focus { outline: 1px solid var(--accent-400); border-color: var(--accent-400); }
-.field-label { font-size: 10px; color: var(--ink-500); text-transform: uppercase; letter-spacing: 0.14em; margin-bottom: 6px; display: block; }
+/* .mono and .tabular now both just enable tabular figures while keeping
+   the body sans-serif. Wallet address input overrides this explicitly. */
+.tabular, .mono {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+.eyebrow { font-size: 11px; line-height: 14px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-2); font-weight: 600; }
+.label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--text-2); }
+.display { font-weight: 600; letter-spacing: -0.02em; }
 
-.btn-primary { background: rgba(124,92,255,.18); border: 1px solid rgba(124,92,255,.4); color: var(--ink-100);
-               padding: 10px 18px; border-radius: 8px; cursor: pointer; font: inherit; font-size: 12px; font-weight: 600; }
-.btn-primary:hover { background: rgba(124,92,255,.28); }
+/* ── Ticker bar ────────────────────────────────────────────────────────── */
+/* ── Layout ───────────────────────────────────────────────────────────── */
+main { max-width: 1200px; margin: 0 auto; padding: 24px 24px 64px; }
+header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 40px;
+}
 
-.result-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px;
-               padding: 18px 20px; background: rgba(124,92,255,.04); border: 1px solid rgba(124,92,255,.18);
-               border-radius: 12px; margin-bottom: 20px; }
-.result-grid .lbl { font-size: 10px; color: var(--ink-500); text-transform: uppercase; letter-spacing: 0.14em; }
-.result-grid .v { font-size: 17px; font-weight: 600; color: var(--ink-100); margin-top: 4px; font-variant-numeric: tabular-nums; }
-.result-grid .v.accent { color: var(--accent-300); }
+/* Two-column body at wide viewports: tabbed form panel | scenarios.
+   Wallet row + caption sit above (full-width), share CTA + disclosures below.
+   Collapses to single column under 960px. */
+.calc-body {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 28px;
+  margin-top: 36px;
+}
+@media (min-width: 960px) {
+  .calc-body {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 56px;
+    align-items: start;
+  }
+  .calc-body > * { min-width: 0; }
+  /* drop top margin so the panels align at the top of the grid */
+  .calc-body > .tabbed-panel { margin-top: 0; }
+  .calc-body > .fdv-section { margin-top: 0; }
+}
+.brand { display: flex; align-items: center; gap: 16px; color: var(--text-2); }
+.brand a { color: inherit; text-decoration: none; transition: color .15s; display: inline-flex; align-items: center; gap: 8px; font-size: 13px; }
+.brand a:hover { color: var(--text); }
+.brand .sep { color: var(--text-3); }
+.right-links { display: flex; align-items: center; gap: 16px; font-size: 11px; }
+.right-links a { color: var(--text-3); text-decoration: none; text-transform: uppercase; letter-spacing: 0.12em; transition: color .15s; }
+.right-links a.featured { color: var(--accent); }
+.right-links a:hover { color: var(--text); }
+.right-links a.featured:hover { color: var(--accent-2); }
+.right-links .sep { color: var(--text-3); }
 
-.fdv-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.fdv-table th { font-size: 10px; color: var(--ink-500); text-transform: uppercase; letter-spacing: 0.1em;
-                font-weight: 500; padding: 8px 14px; text-align: right; }
-.fdv-table th.left { text-align: left; }
-.fdv-table tbody tr { border-top: 1px dashed rgba(255,255,255,.06); }
-.fdv-table td { padding: 10px 14px; text-align: right; font-variant-numeric: tabular-nums; }
-.fdv-table td.fdv-label { text-align: left; color: var(--ink-300); font-weight: 600; }
-.fdv-table td.fdv-price { color: var(--ink-500); }
-.fdv-table td.fdv-usd { color: var(--accent-300); font-weight: 600; }
-.fdv-table td.fdv-roi { color: var(--ink-300); font-size: 12px; }
-.fdv-table td.fdv-roi.pos { color: #86efac; }
-.fdv-table td.fdv-roi.neg { color: #fda4af; }
+/* ── Hero ─────────────────────────────────────────────────────────────── */
+.hero { margin: 12px 0 22px; }
+.hero .eyebrow { margin-bottom: 14px; display: block; }
+.hero-line {
+  display: flex; align-items: baseline; flex-wrap: wrap; gap: 14px;
+}
+.hero-num {
+  font-size: 72px; line-height: 76px; letter-spacing: -1.5px;
+  font-variant-numeric: tabular-nums; font-weight: 600;
+  color: var(--text); display: inline-block;
+}
+.hero-num .unit { font-size: 28px; color: var(--text-2); margin-left: 10px; letter-spacing: -0.02em; }
+/* Breakeven hero callout — inline next to the SLX hero number, baseline-aligned. */
+.hero-breakeven {
+  display: inline-flex; align-items: baseline; gap: 8px;
+  font-variant-numeric: tabular-nums;
+}
+.hero-breakeven[hidden] { display: none; }
+.hero-breakeven__label {
+  font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--text-3); font-weight: 600;
+}
+.hero-breakeven__fdv {
+  font-size: 24px; font-weight: 700; color: var(--text);
+  font-variant-numeric: tabular-nums; letter-spacing: -0.01em;
+}
+.hero-breakeven__sep { color: var(--text-3); opacity: 0.55; font-size: 24px; font-weight: 400; }
+.hero-breakeven__price {
+  font-size: 15px; font-weight: 600; color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.hero-breakeven__sub {
+  font-size: 13px; color: var(--text-3);
+  margin-left: auto;
+}
+.hero-breakeven__sub .mono { color: var(--text-2); font-weight: 600; }
 
-/* Reuse the dashboard's hover-tip pattern for the cost-basis tooltip. */
+/* ── Projection assumptions panel — labeled rows + native dropdowns ────── */
+.assumptions {
+  margin: 24px 0 28px;
+}
+.assumptions__header {
+  font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--text-3); font-weight: 600;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--hairline);
+  margin-bottom: 4px;
+}
+.assumptions__rows {
+  display: flex; flex-direction: column;
+}
+.assumptions__row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--hairline);
+  gap: 16px;
+}
+.assumptions__label {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-2);
+  letter-spacing: 0.005em;
+}
+.assumptions__control {
+  appearance: none; -webkit-appearance: none;
+  box-sizing: border-box;
+  background-color: rgba(252,211,77,0.10);
+  border: 1px solid rgba(252,211,77,0.36);
+  color: #fbbf24;
+  font-family: ui-sans-serif, -apple-system, "SF Pro Text", system-ui, sans-serif;
+  font-size: 15px; font-weight: 600;
+  padding: 8px 32px 8px 14px;
+  border-radius: 8px;
+  cursor: pointer; outline: none;
+  font-variant-numeric: tabular-nums;
+  min-width: 168px;
+  text-align: left;
+  transition: background-color var(--dur) var(--ease),
+              border-color var(--dur) var(--ease),
+              color var(--dur) var(--ease);
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path stroke='%23fcd34d' stroke-width='1.4' fill='none' stroke-linecap='round' stroke-linejoin='round' d='M1 1l4 4 4-4'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+}
+.assumptions__control:hover,
+.assumptions__control:focus {
+  background-color: rgba(252,211,77,0.18);
+  border-color: rgba(252,211,77,0.72);
+  color: #fde68a;
+}
+input[type=date].assumptions__control {
+  min-width: 168px; width: 168px;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='13' height='13' viewBox='0 0 14 14' fill='none'><rect x='1.5' y='2.5' width='11' height='10' rx='1.5' stroke='%23fcd34d' stroke-width='1.2'/><path stroke='%23fcd34d' stroke-width='1.2' stroke-linecap='round' d='M1.5 5h11M4.5 1v2M9.5 1v2'/></svg>");
+  position: relative;
+}
+input[type=date].assumptions__control::-webkit-calendar-picker-indicator {
+  opacity: 0; position: absolute; right: 0; width: 100%; height: 100%; cursor: pointer;
+}
+.assumptions__control option { background: var(--bg-elev); color: var(--text); }
+.assumptions__control option:checked { color: #fbbf24; }
+
+/* Text-type inputs styled as assumption controls (e.g. Your total flares in
+   Manual entry) should NOT show the dropdown chevron — they're free-form. */
+input[type=text].assumptions__control {
+  background-image: none;
+  padding-right: 14px;
+}
+
+/* Computed-values readout below the form (you/share/days) */
+.assumptions__readout {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  padding: 18px 0 0;
+  margin-top: 4px;
+}
+.assumptions__stat {
+  display: flex; flex-direction: column; gap: 6px;
+}
+.assumptions__stat-label {
+  font-size: 11px; letter-spacing: 0.10em; text-transform: uppercase;
+  color: var(--text-3); font-weight: 600;
+}
+.assumptions__stat-value {
+  font-size: 17px; font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+/* Variant for 3-stat readouts (Simulate panel) */
+.assumptions__readout--3col { grid-template-columns: repeat(3, 1fr); }
+
+/* ── Tabbed panel (Projection assumptions / Simulate new deposit) ───── */
+.tabbed-panel { display: flex; flex-direction: column; }
+.tabbed-panel__tabs {
+  display: flex; gap: 0;
+  border-bottom: 1px solid var(--hairline);
+  margin-bottom: 4px;
+}
+.tabbed-panel__tab {
+  appearance: none; background: transparent; border: 0;
+  color: var(--text-3);
+  font: inherit;
+  font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase;
+  font-weight: 600;
+  padding: 12px 0;
+  margin-right: 28px;
+  cursor: pointer; position: relative;
+  transition: color var(--dur) var(--ease);
+}
+.tabbed-panel__tab:hover { color: var(--text-2); }
+.tabbed-panel__tab.is-active { color: var(--accent); }
+.tabbed-panel__tab.is-active::after {
+  content: ""; position: absolute; left: 0; right: 28px; bottom: -1px;
+  height: 2px; background: var(--accent); border-radius: 1px;
+}
+.tabbed-panel__pane[hidden] { display: none; }
+
+/* ── Wallet row ───────────────────────────────────────────────────────── */
+.wallet-row {
+  display: flex; align-items: center; gap: 10px;
+  height: 48px; padding: 0 12px;
+  background: var(--bg-elev); border: 1px solid var(--hairline);
+  border-radius: 10px;
+}
+.wallet-row .mag { color: var(--text-3); font-size: 14px; line-height: 1; }
+.wallet-row input[type=text] {
+  flex: 1 1 auto; min-width: 0;
+  background: transparent; border: 0; outline: 0; padding: 0;
+  color: var(--text); font: inherit;
+  font-size: 14px;
+}
+.wallet-row input[type=text]::placeholder { color: var(--text-3); }
+.btn-ghost {
+  appearance: none; background: transparent;
+  border: 1px solid var(--hairline-strong); color: var(--text-2);
+  padding: 6px 14px; border-radius: 8px;
+  font: inherit; font-size: 13px; font-weight: 500; cursor: pointer;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.btn-ghost:hover { background: rgba(255,255,255,.04); color: var(--text); border-color: rgba(255,255,255,.20); }
+.wallet-caption {
+  font-size: 15px; line-height: 22px; color: var(--text-2);
+  margin-top: 10px; padding-left: 2px;
+  display: flex; align-items: center; gap: 8px; min-height: 22px;
+}
+.wallet-caption .amber-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); display: none; }
+.wallet-caption.active .amber-dot { display: inline-block; }
+
+/* ── FDV scenario list (styled table) ─────────────────────────────────── */
+.fdv-section { margin: 24px 0 8px; }
+.fdv-section .label { display: block; margin-bottom: 6px; }
+
+.fdv-table { width: 100%; border-collapse: collapse; font-size: 15px; display: block; }
+.fdv-table thead { display: none; }
+.fdv-table tbody { display: block; }
+/* Each row is a 3-col grid: label | usd | roi-pill, all vertically centered.
+   This way the breakeven row's 2-line label doesn't push the USD/ROI off-center. */
+.fdv-table tbody tr {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 14px;
+  border-top: 1px solid var(--hairline);
+  position: relative;
+}
+.fdv-table td {
+  padding: 0;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  font-size: 17px;
+  color: var(--text);
+  display: block;
+}
+.fdv-table td.fdv-label {
+  text-align: left;
+  color: var(--text); font-weight: 600;
+  font-family: ui-sans-serif, -apple-system, "SF Pro Text", system-ui, sans-serif;
+  font-size: 15px;
+}
+.fdv-table td.fdv-price { display: none; }
+.fdv-table td.fdv-usd { color: var(--text); font-weight: 600; font-size: 17px; text-align: right; white-space: nowrap; }
+.fdv-table td.fdv-roi {
+  margin: 0;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 12px; font-weight: 600;
+  font-family: ui-sans-serif, -apple-system, system-ui, sans-serif;
+  background: rgba(255,255,255,.06);
+  color: var(--text-2);
+  border: 0;
+  text-align: center;
+  min-width: 52px;
+  white-space: nowrap;
+}
+.fdv-table td.fdv-roi.pos { background: var(--pill-up-bg); color: var(--up); }
+.fdv-table td.fdv-roi.neg { background: var(--pill-down-bg); color: var(--down); }
+/* Breakeven row gets amber left-rule (the inline yellow-tint bg from JS is
+   used as a selector hook — we override and replace with a clean left-rule). */
+.fdv-table tbody tr[style*="background"] {
+  background: transparent !important;
+  padding-left: 18px;
+}
+.fdv-table tbody tr[style*="background"]::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 12px; bottom: 12px;
+  width: 2px; background: var(--accent);
+  border-radius: 1px;
+}
+.fdv-table tbody tr[style*="background"] td.fdv-label > div:first-child { color: var(--accent); }
+
+/* Live "Current FDV" row — sourced from Jupiter, sorted inline by FDV value
+   so it lands at its natural position among the projected scenarios. */
+.fdv-table tbody tr.fdv-live-row td.fdv-label {
+  display: flex; align-items: center; gap: 10px;
+}
+.fdv-table tbody tr.fdv-live-row td.fdv-usd { color: var(--text); font-weight: 700; }
+
+/* No-basis state — collapse the ROI column entirely. The row grid becomes
+   2-col instead of 3-col, ROI cells hidden. Applies in Manual entry mode
+   (where there's no cost basis to compare against) or when no wallet is loaded. */
+.fdv-table.no-basis tbody tr { grid-template-columns: 1fr auto; }
+.fdv-table.no-basis td.fdv-roi { display: none; }
+.fdv-now-pill {
+  display: inline-flex; align-items: center;
+  padding: 2px 7px;
+  background: rgba(34,197,94,0.16);
+  color: rgb(74,222,128);
+  border: 1px solid rgba(34,197,94,0.42);
+  border-radius: 999px;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Disclosure rows ──────────────────────────────────────────────────── */
+.disclosure {
+  border-top: 1px solid var(--hairline);
+  margin: 0;
+}
+.disclosure:last-of-type { border-bottom: 1px solid var(--hairline); }
+.disclosure summary {
+  list-style: none; cursor: pointer;
+  display: flex; align-items: center; gap: 10px;
+  padding: 18px 4px;
+  font-size: 15px; color: var(--text);
+  user-select: none;
+}
+.disclosure summary::-webkit-details-marker { display: none; }
+.disclosure summary::before {
+  content: "›";
+  display: inline-block;
+  color: var(--text-3); font-size: 18px;
+  transition: transform var(--dur) var(--ease);
+  width: 12px; text-align: center;
+}
+.disclosure[open] summary::before { transform: rotate(90deg); color: var(--accent); }
+.disclosure summary .arrow-after { margin-left: auto; color: var(--text-3); font-size: 13px; }
+.disclosure-body { padding: 4px 4px 22px 26px; }
+
+/* ── YT helper (inside disclosure) ────────────────────────────────────── */
+.form-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; padding: 12px 0;
+  border-top: 1px solid var(--hairline);
+}
+.form-row:first-child { border-top: 0; }
+.form-row > label { font-size: 14px; color: var(--text-2); flex: 0 0 auto; }
+.form-row .ctrl { flex: 1 1 auto; max-width: 60%; text-align: right; }
+.form-row input[type=text], .form-row input[type=date], .form-row select {
+  width: 100%;
+  background: transparent; border: 0; padding: 6px 0;
+  color: var(--text); font: inherit; font-size: 15px; text-align: right;
+  font-variant-numeric: tabular-nums;
+  outline: none;
+}
+.form-row select { appearance: none; padding-right: 2px; cursor: pointer; color: var(--text); }
+.form-row input[type=text]:focus, .form-row input[type=date]:focus { color: var(--accent); }
+.yt-out {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 14px;
+  margin-top: 12px; padding: 12px 14px;
+  background: var(--bg-elev); border: 1px solid var(--hairline);
+  border-radius: 10px;
+  font-size: 13px; color: var(--text-2); font-variant-numeric: tabular-nums;
+}
+.yt-out .lbl { font-size: 10px; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.08em; }
+.yt-out .v { color: var(--text); font-weight: 600; margin-top: 4px; display: block; }
+.yt-out .v.accent { color: var(--accent); }
+
+/* ── Segmented controls ──────────────────────────────────────────────── */
+.segmented {
+  display: inline-flex; padding: 2px; gap: 0;
+  background: var(--bg-elev); border: 1px solid var(--hairline);
+  border-radius: 10px;
+}
+.segmented button {
+  appearance: none; background: transparent; border: 0;
+  color: var(--text-2); padding: 6px 12px;
+  font: inherit; font-size: 13px; font-weight: 500;
+  border-radius: 8px; cursor: pointer;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+  font-variant-numeric: tabular-nums;
+}
+.segmented button:hover { color: var(--text); }
+.segmented button[aria-pressed="true"] {
+  background: rgba(255,255,255,.10); color: var(--text);
+}
+
+/* ── Cost-basis caption styling (overrides inline styles applied by JS) ─ */
+#calc-cost-basis {
+  background: transparent !important;
+  border: 0 !important;
+  padding: 0 !important;
+  margin-top: 6px !important;
+  font-size: 13px !important;
+  color: var(--text-2) !important;
+  line-height: 18px !important;
+  border-radius: 0 !important;
+}
+/* The three legacy hint spans are kept in the DOM (JS writes data-tip into
+   them), but the wallet caption now surfaces a single consolidated ⓘ glyph
+   via #wallet-info-ico. Hide originals to avoid the triple-ⓘ pile-up. */
+#calc-cost-basis,
+#calc-prefill-hint-ico,
+#calc-sys-hint-ico { display: none !important; }
+#wallet-info-ico {
+  color: var(--text-3); font-size: 11px; cursor: default;
+}
+
+/* ── Source + error captions ─────────────────────────────────────────── */
+#calc-source { font-size: 12px; color: var(--text-3); margin-top: 4px; }
+#calc-error { color: var(--down); font-size: 13px; margin-top: 8px; }
+
+/* ── Hover tip (preserved from original) ─────────────────────────────── */
 #hover-tooltip {
   position: fixed; pointer-events: none; z-index: 9999;
-  background: rgba(15, 17, 22, 0.96); border: 1px solid rgba(255,255,255,.12);
-  border-radius: 8px; padding: 8px 12px; font-size: 12px; color: var(--ink-100);
+  background: rgba(15, 17, 22, 0.96); border: 1px solid var(--hairline-strong);
+  border-radius: 8px; padding: 8px 12px; font-size: 12px; color: var(--text);
   font-variant-numeric: tabular-nums; white-space: pre-line;
   box-shadow: 0 8px 24px rgba(0,0,0,.4);
   opacity: 0; transition: opacity .08s;
@@ -93,73 +485,125 @@ input[type=text]:focus, input[type=date]:focus { outline: 1px solid var(--accent
 #hover-tooltip.visible { opacity: 1; }
 .has-hover-tip { cursor: default; }
 
-.note { font-size: 11px; color: var(--ink-500); margin-top: 16px; line-height: 1.6; }
-.error { color: #fda4af; font-size: 12px; margin-top: 10px; }
-.source { font-size: 11px; color: var(--ink-500); margin-top: 8px; }
+/* ── Primary Share CTA ───────────────────────────────────────────────── */
+.share-cta-wrap { margin-top: 28px; }
+#share-card-trigger.share-cta {
+  appearance: none; display: block; width: 100%;
+  height: 52px; padding: 0 18px;
+  border: 0; border-radius: 12px;
+  background: var(--accent); color: #0a0a0b;
+  font: inherit; font-family: ui-sans-serif, -apple-system, system-ui, sans-serif;
+  font-size: 16px; font-weight: 700; letter-spacing: 0.01em;
+  cursor: pointer;
+  margin: 0;
+  text-decoration: none;
+  text-align: center;
+  line-height: 52px;
+  transition: background var(--dur) var(--ease), transform 80ms ease;
+}
+#share-card-trigger.share-cta:hover {
+  background: var(--accent-warm); color: #fff;
+  border: 0;
+}
+#share-card-trigger.share-cta:active { transform: translateY(1px); }
 
-footer { text-align: center; color: var(--ink-500); font-size: 11px; margin-top: 40px; }
+/* Interactive chips (selects + date) — AMBER pill, same family as breakeven
+   and CTA, so the calculator has one accent color (less visual noise). */
+select.chip, input[type=date].chip, input[type=text].chip {
+  appearance: none; -webkit-appearance: none;
+  box-sizing: border-box;
+  background-color: rgba(252,211,77,0.10);
+  border: 1px solid rgba(252,211,77,0.36);
+  color: #fbbf24; font: inherit; font-weight: 600;
+  padding: 1px 24px 1px 10px;
+  margin: 0 2px;
+  border-radius: 7px;
+  cursor: pointer; outline: none;
+  font-variant-numeric: tabular-nums;
+  position: relative;
+  vertical-align: baseline;
+  line-height: 22px;
+  transition: background-color var(--dur) var(--ease),
+              border-color var(--dur) var(--ease),
+              color var(--dur) var(--ease),
+              transform var(--dur) var(--ease);
+  /* Chevron — amber to match the chip */
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path stroke='%23fcd34d' stroke-width='1.4' fill='none' stroke-linecap='round' stroke-linejoin='round' d='M1 1l4 4 4-4'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+}
+select.chip:hover, input[type=date].chip:hover,
+select.chip:focus, input[type=date].chip:focus {
+  background-color: rgba(252,211,77,0.20);
+  border-color: rgba(252,211,77,0.72);
+  color: #fde68a;
+  transform: translateY(-1px);
+}
+/* Date chip: wider so the full year shows; calendar glyph instead of chevron */
+input[type=date].chip {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='13' height='13' viewBox='0 0 14 14' fill='none'><rect x='1.5' y='2.5' width='11' height='10' rx='1.5' stroke='%23fcd34d' stroke-width='1.2'/><path stroke='%23fcd34d' stroke-width='1.2' stroke-linecap='round' d='M1.5 5h11M4.5 1v2M9.5 1v2'/></svg>");
+  background-position: right 8px center;
+  padding-right: 28px;
+  min-width: 162px;
+  width: 162px;
+}
+input[type=date].chip::-webkit-calendar-picker-indicator {
+  opacity: 0; position: absolute; right: 0; width: 100%; height: 100%; cursor: pointer;
+}
+select.chip option { background: var(--bg-elev); color: var(--text); }
+select.chip option:checked { color: #fbbf24; }
 
-@media (max-width: 720px) {
-  .result-grid { grid-template-columns: repeat(2, 1fr); }
-  .input-row { grid-template-columns: 1fr !important; }
+/* Read-only value chips — same vertical rhythm as the editable ones */
+.projection .chip:not(select):not(input) {
+  vertical-align: baseline;
+  line-height: 22px;
+  padding: 1px 8px;
 }
 
-/* ─── Mobile (phone, ≤767px) ────────────────────────────────────────────── */
-@media (max-width: 767px) {
-  body { font-size: 13px; }
-  main { padding: 18px 14px; max-width: none; }
+footer { text-align: center; color: var(--text-3); font-size: 11px; margin-top: 40px; }
 
-  /* Header: stack brand + links vertically */
-  header { flex-direction: column; align-items: flex-start; gap: 10px; margin-bottom: 24px; }
+/* ── Mobile ──────────────────────────────────────────────────────────── */
+@media (max-width: 767px) {
+  body { font-size: 14px; }
+  main { padding: 18px 14px 80px; max-width: none; }
+  header { flex-direction: column; align-items: flex-start; gap: 10px; height: auto; margin-bottom: 20px; }
   .brand { flex-wrap: wrap; gap: 8px; }
-  .brand img { height: 24px !important; }
-  .brand .display { font-size: 11px !important; }
+  .brand img { height: 22px !important; }
   .right-links { font-size: 10px; gap: 10px; flex-wrap: wrap; width: 100%; }
 
-  /* Section titles + surface padding tighter */
-  section { margin-bottom: 22px; }
-  section h1 { font-size: 18px; }
-  .section-sub { font-size: 11px; }
-  .surface { padding: 16px; border-radius: 12px; }
-
-  /* Wallet input row: stack input above button */
-  .surface > div[style*="1fr auto"] { grid-template-columns: 1fr !important; }
-  #calc-wallet { font-size: 11px !important; }
-  .btn-primary { padding: 12px 18px !important; font-size: 13px !important; width: 100%; }
-
-  /* Input rows: 1 col stack (already at 720px, reinforced here) */
-  .input-row { grid-template-columns: 1fr !important; gap: 14px !important; }
-  .field-label { min-height: auto !important; }
-  input[type=text], input[type=date], select { font-size: 13px !important; padding: 10px 12px !important; }
-
-  /* Result summary grid: 2 cols on mobile (override inline 4-col style) */
-  .result-grid {
-    grid-template-columns: repeat(2, 1fr) !important;
-    gap: 12px 16px !important;
-    padding: 14px 16px !important;
+  .hero-num { font-size: 56px; line-height: 60px; letter-spacing: -1.2px; }
+  .hero-num .unit { display: block; font-size: 18px; margin: 4px 0 0; }
+  .assumptions__row {
+    flex-direction: column; align-items: stretch; gap: 6px;
+    padding: 12px 0;
   }
-  .result-grid .lbl { font-size: 9.5px; }
-  .result-grid .v { font-size: 15px; line-height: 1.3; word-break: break-word; }
+  .assumptions__label { font-size: 12px; }
+  .assumptions__control { width: 100%; min-width: 0; font-size: 15px; }
+  input[type=date].assumptions__control { width: 100%; min-width: 0; }
+  .assumptions__readout { grid-template-columns: 1fr 1fr; gap: 10px 16px; }
 
-  /* FDV table: tighter padding, smaller font, no horizontal overflow */
-  .fdv-table { font-size: 11px; }
-  .fdv-table th, .fdv-table td { padding: 8px 6px; }
-  .fdv-table td.fdv-label { font-size: 12px; }
-  .fdv-table td.fdv-usd { font-size: 12px; }
+  .fdv-table td { padding: 14px 0; font-size: 16px; }
+  .fdv-table td.fdv-label { font-size: 14px; padding-right: 8px; }
+  .fdv-table td.fdv-usd { font-size: 16px; }
+  .fdv-table tbody tr { display: grid; grid-template-columns: 1fr; gap: 4px; padding: 12px 4px; }
+  .fdv-table tbody tr td { padding: 0; text-align: left; }
+  .fdv-table tbody tr td.fdv-usd { text-align: left; }
+  .fdv-table tbody tr td.fdv-roi { margin-left: 0; margin-top: 4px; }
+  .fdv-table tbody tr[style*="background"] td:first-child { padding-left: 10px; }
 
-  /* Notes + footer */
-  .note { font-size: 10.5px; }
-  footer { font-size: 10px; }
+  .form-row { flex-direction: column; align-items: stretch; gap: 4px; }
+  .form-row .ctrl { max-width: none; text-align: left; }
+  .form-row input[type=text], .form-row input[type=date], .form-row select { text-align: left; }
 
-  /* Cost-basis YT card: tighter padding */
-  #calc-cost-basis { padding: 10px 12px !important; font-size: 12px !important; }
+  .yt-out { grid-template-columns: 1fr 1fr; }
+  .yt-out > div:nth-child(3) { grid-column: 1 / -1; }
 
-  /* YT projection helper: stack inputs vertically; button full-width below */
-  #yt-helper-grid { grid-template-columns: 1fr 1fr !important; gap: 8px !important; }
-  #yt-helper-grid > button { grid-column: 1 / -1; padding: 12px !important; }
-  #yt-helper-out { grid-template-columns: 1fr 1fr !important; gap: 10px 12px !important; font-size: 11px !important; }
-  #yt-helper-out > div:nth-child(3) { grid-column: 1 / -1; }
+  .share-cta {
+    position: sticky; bottom: 16px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.5);
+  }
 }
+
 </style>
 </head>
 <body>
@@ -173,9 +617,9 @@ footer { text-align: center; color: var(--ink-500); font-size: 11px; margin-top:
         <img src="logos/solstice-text.svg" alt="Solstice" style="height: 28px; display:block; filter: invert(1);" />
       </a>
       <span class="sep">·</span>
-      <span class="display" style="font-size: 12px; color: var(--ink-400);">
+      <span class="display" style="font-size: 12px; color: var(--text-2);">
         S2 Calculator by
-        <a href="https://hanyon.app" target="_blank" rel="noopener noreferrer" style="color: var(--ink-200); text-decoration: underline dotted; text-underline-offset: 3px;">Hanyon Analytics</a>
+        <a href="https://hanyon.app" target="_blank" rel="noopener noreferrer" style="color: var(--text); text-decoration: underline dotted; text-underline-offset: 3px;">Hanyon Analytics</a>
       </span>
     </div>
     <div class="right-links">
@@ -187,152 +631,229 @@ footer { text-align: center; color: var(--ink-500); font-size: 11px; margin-top:
     </div>
   </header>
 
-  <section>
-    <h1 class="display">SLX projection calculator</h1>
-    <div class="section-sub">Estimate your SLX allocation. Paste a wallet to autofill, or enter your own projected flares at end date.</div>
-  </section>
-
-  <section>
-    <div class="surface">
-      <div style="display:grid; grid-template-columns: 1fr auto; gap: 10px; margin-bottom: 22px;">
-        <input id="calc-wallet" type="text" placeholder="Wallet address — paste to autofill"
-               autocomplete="off" onkeydown="if(event.key==='Enter') calcLoadWallet()"
-               style="font-family:ui-monospace,monospace; font-size:13px;" />
-        <button class="btn-primary" onclick="calcLoadWallet()">Load wallet</button>
-      </div>
-
-      <!-- ── YT projection helper for new joiners ──────────────────────── -->
-      <div id="yt-helper" style="margin-bottom:22px; padding:14px 16px; background:rgba(124,92,255,.04); border:1px solid rgba(124,92,255,.18); border-radius:10px;">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; gap:10px; flex-wrap:wrap;">
-          <div class="label">New to Solstice? Project YT flares
-            <span class="has-hover-tip" data-tip="Live YT prices from Exponent. Projection caps at S2 end (Aug 1)." style="color:var(--ink-500); font-size:10px; margin-left:4px;">ⓘ</span>
-          </div>
-          <a href="https://app.exponent.finance/markets" target="_blank" rel="noopener noreferrer"
-             style="font-size:11px; color:var(--ink-500); text-decoration:underline dotted; text-underline-offset:3px;">Exponent ↗</a>
-        </div>
-        <div id="yt-helper-grid" style="display:grid; grid-template-columns: 1fr 1fr auto; gap:10px; align-items:end;">
-          <div>
-            <label class="field-label" for="yt-deposit">Deposit amount</label>
-            <input id="yt-deposit" type="text" value="100" inputmode="decimal"
-                   placeholder="e.g. 100 or 5K"
-                   oninput="onYtInput()" onblur="onAmountBlur(this)" onfocus="onAmountFocus(this)"
-                   style="font-size:13px;" />
-          </div>
-          <div>
-            <label class="field-label" for="yt-market">YT market</label>
-            <select id="yt-market" onchange="onYtInput()" style="width:100%; padding:10px 12px; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.1); border-radius:8px; color:var(--ink-100); font-size:13px;">
-              <option value="">Loading…</option>
-            </select>
-          </div>
-          <button class="btn-primary" onclick="ytHelperApply()" style="padding:10px 14px; white-space:nowrap;">Use in calc ↑</button>
-        </div>
-        <div id="yt-helper-out" style="margin-top:12px; display:grid; grid-template-columns: repeat(3, 1fr); gap:8px 14px; font-size:12px; color:var(--ink-300); font-variant-numeric:tabular-nums;">
-          <div><span style="color:var(--ink-500); font-size:10px; text-transform:uppercase; letter-spacing:0.06em;">YT received</span><br><span id="yt-out-yt">—</span></div>
-          <div><span style="color:var(--ink-500); font-size:10px; text-transform:uppercase; letter-spacing:0.06em;">Daily flares</span><br><span id="yt-out-daily">—</span></div>
-          <div><span style="color:var(--ink-500); font-size:10px; text-transform:uppercase; letter-spacing:0.06em;">Total to S2 end</span><br><span id="yt-out-total" style="color:var(--accent-300); font-weight:600;">—</span></div>
-        </div>
-      </div>
-      <div id="calc-error" class="error" style="display:none;"></div>
-      <div id="calc-source" class="source"></div>
-      <div id="calc-cost-basis" style="display:none; margin-top:14px; padding:12px 16px; background:rgba(252,211,77,.04); border:1px solid rgba(252,211,77,.18); border-radius:10px; font-size:13px;"></div>
-
-      <div class="input-row" style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-top: 20px;">
-        <div>
-          <label class="field-label" for="calc-total">Your total flares at end date
-            <span id="calc-prefill-hint-ico" class="has-hover-tip" data-tip="" style="display:none; color:var(--ink-500); font-size:10px; margin-left:4px;">ⓘ</span>
-          </label>
-          <input id="calc-total" type="text" value="0" inputmode="decimal"
-                 placeholder="e.g. 5,000,000 or 5M"
-                 oninput="onUserTotalEdit(this)" onblur="onUserTotalBlur(this)" onfocus="onAmountFocus(this)" />
-        </div>
-        <div>
-          <label class="field-label" for="calc-sys-total">System total at end date
-            <span id="calc-sys-hint-ico" class="has-hover-tip" data-tip="" style="display:none; color:var(--ink-500); font-size:10px; margin-left:4px;">ⓘ</span>
-          </label>
-          <input id="calc-sys-total" type="text" value="0" inputmode="decimal"
-                 placeholder="e.g. 60,000,000,000 or 60B"
-                 oninput="onSysTotalEdit(this)" onblur="onSysTotalBlur(this)" onfocus="onAmountFocus(this)" />
-        </div>
-        <div>
-          <label class="field-label" for="calc-end">End date</label>
-          <input id="calc-end" type="date" value="2026-08-01" min="2026-04-13" max="2026-12-31"
-                 onchange="onEndDateChange()" />
-        </div>
-      </div>
-
-      <div class="input-row" style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-top: 16px;">
-        <div style="display:flex; flex-direction:column;">
-          <label class="field-label" for="calc-your-mult" style="min-height:36px; display:block;">Your loyalty multiplier
-            <span class="has-hover-tip" data-tip="Applied to your S2 flares at end of season." style="color:var(--ink-500); font-size:10px; margin-left:4px;">ⓘ</span>
-          </label>
-          <select id="calc-your-mult" onchange="onLoyaltyChange()" style="width:100%; padding:8px 12px; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.1); border-radius:8px; color:var(--ink-100); font-size:14px;">
-            <option value="1.4">1.4x — Full Loyalty (TVL ≥ 100% of TWA)</option>
-            <option value="1.3">1.3x — Reduced (50-99% of TWA)</option>
-            <option value="1.2">1.2x — Minimum (20-49% of TWA)</option>
-            <option value="1.0">1.0x — No multiplier (below 20%)</option>
-          </select>
-        </div>
-        <div style="display:flex; flex-direction:column;">
-          <label class="field-label" for="calc-avg-mult" style="min-height:36px; display:block;">Assumed average loyalty across all participants
-            <span class="has-hover-tip" data-tip="If others have lower mult than you, your share grows by (your_mult / avg)." style="color:var(--ink-500); font-size:10px; margin-left:4px;">ⓘ</span>
-          </label>
-          <select id="calc-avg-mult" onchange="onLoyaltyChange()" style="width:100%; padding:8px 12px; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.1); border-radius:8px; color:var(--ink-100); font-size:14px;">
-            <option value="1.4">1.4x — Everyone Full Loyalty (neutral, no change to share)</option>
-            <option value="1.3" selected>1.3x — Mostly retaining</option>
-            <option value="1.2">1.2x — Mixed</option>
-            <option value="1.1">1.1x — Many dropped</option>
-            <option value="1.0">1.0x — Few retained TVL</option>
-          </select>
-        </div>
-        <div style="display:flex; flex-direction:column;">
-          <label class="field-label" for="calc-airdrop-pct" style="min-height:36px; display:block;">S2 SLX allocation
-            <span class="has-hover-tip" data-tip="Solstice Dynamic Distribution can raise this as TVL grows." style="color:var(--ink-500); font-size:10px; margin-left:4px;">ⓘ</span>
-          </label>
-          <select id="calc-airdrop-pct" onchange="onAnyInput()" style="width:100%; padding:8px 12px; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.1); border-radius:8px; color:var(--ink-100); font-size:14px;">
-            <option value="0.03" selected>3.00% — 30M SLX (current docs anchor)</option>
-            <option value="0.0325">3.25% — 32.5M SLX (rumored bump)</option>
-            <option value="0.035">3.50% — 35M SLX (further upside)</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="result-grid" style="margin-top: 24px; grid-template-columns: repeat(4, 1fr);">
-        <div><div class="lbl">Days ahead</div><div class="v tabular" id="calc-days">—</div></div>
-        <div><div class="lbl">You at end</div><div class="v tabular" id="calc-you">—</div></div>
-        <div><div class="lbl">Your share</div><div class="v tabular accent" id="calc-share">—</div></div>
-        <div><div class="lbl">SLX allocation</div><div class="v tabular" id="calc-slx">—</div></div>
-      </div>
-
-      <div class="label" style="margin-bottom: 8px;">USD value by FDV</div>
-      <table class="fdv-table">
-        <thead>
-          <tr><th class="left">FDV</th><th>SLX price</th><th>Your USD value</th><th id="calc-fdv-roi-head">vs YT cost</th></tr>
-        </thead>
-        <tbody id="calc-fdv-rows"></tbody>
-      </table>
-
-      <div class="note">
-        System total at end date is pre-projected from <strong>Solstice's officially published daily delta</strong> (7-day average) — same source the dashboard's "Solstice (official)" chart uses.
-        Changing the end date refreshes the projection.
-        The "S2 SLX allocation" dropdown picks the campaign share — current docs anchor is 3% (30M SLX), with rumored bumps to 3.25% / 3.5% if Dynamic Distribution kicks in.
-        <br><br>
-        <strong>S2 loyalty multiplier (1.4x):</strong> Solstice applies a final multiplier once at end of S2 based on your retained TVL vs your S1 TWA baseline.
-        Full Loyalty (TVL ≥ 100% of TWA) = 1.4x · Reduced (50-99%) = 1.3x · Minimum (20-49%) = 1.2x · Below 20% = 1.0x.
-        <em>If everyone receives the same multiplier, it cancels in the share ratio (your_flares ÷ total_flares), so SLX projection is unchanged.</em>
-        If you maintain 1.4x but average loyalty across all participants is lower (say 1.2x), your relative share — and SLX — would be roughly 1.4 ÷ 1.2 ≈ 17% higher than shown.
-      </div>
+  <!-- ── Hero: SLX allocation + breakeven scenario ──────────────────────── -->
+  <section class="hero" aria-label="Your SLX allocation">
+    <span class="eyebrow">Your allocation</span>
+    <div class="hero-line">
+      <span class="hero-num tabular" id="calc-slx">—</span>
+      <span class="hero-breakeven" id="hero-breakeven" hidden>
+        <span class="hero-breakeven__sep">/</span>
+        <span class="hero-breakeven__fdv mono" id="hero-breakeven-fdv">—</span>
+        <span class="hero-breakeven__label">breakeven</span>
+      </span>
     </div>
   </section>
 
-  <footer>
-    Data refreshed daily at 00:00 UTC · <a href="index.html" style="color:inherit; text-decoration:underline dotted;">← back to dashboard</a>
-  </footer>
+  <!-- ── Two-column body (wide) / stacked (narrow) ─────────────────────── -->
+  <div class="calc-body">
+
+  <!-- ── Tabbed form panel: Projection assumptions / Simulate new deposit ── -->
+  <div class="tabbed-panel">
+    <div class="tabbed-panel__tabs">
+      <button class="tabbed-panel__tab is-active" type="button" data-pane="assumptions">Load wallet</button>
+      <button class="tabbed-panel__tab" type="button" data-pane="simulate">Simulate new deposit</button>
+      <button class="tabbed-panel__tab" type="button" data-pane="manual">Manual entry</button>
+    </div>
+
+    <div class="tabbed-panel__pane" data-pane="assumptions">
+      <div class="assumptions">
+        <div class="wallet-row">
+          <span class="mag" aria-hidden="true">⌕</span>
+          <input id="calc-wallet" type="text" placeholder="Paste wallet address"
+                 autocomplete="off"
+                 onkeydown="if(event.key==='Enter') calcLoadWallet()" />
+          <button class="btn-ghost" onclick="calcLoadWallet()">Load</button>
+        </div>
+        <div class="wallet-caption" id="wallet-caption-row">
+          <span class="amber-dot" aria-hidden="true"></span>
+          <span id="calc-source"></span>
+          <span id="wallet-info-ico" class="has-hover-tip" data-tip="" style="display:none;">ⓘ</span>
+          <span id="calc-error" style="display:none;"></span>
+          <span id="calc-cost-basis"></span>
+          <span id="calc-prefill-hint-ico" class="has-hover-tip" data-tip=""></span>
+          <span id="calc-sys-hint-ico" class="has-hover-tip" data-tip=""></span>
+        </div>
+        <div class="assumptions__rows">
+          <div class="assumptions__row">
+            <label class="assumptions__label" for="calc-end">End date</label>
+            <input type="date" id="calc-end" class="assumptions__control"
+                   value="2026-08-01" min="2026-04-13" max="2026-12-31"
+                   onchange="onEndDateChange()" />
+          </div>
+          <div class="assumptions__row">
+            <label class="assumptions__label" for="calc-your-mult">Your loyalty</label>
+            <select id="calc-your-mult" class="assumptions__control" onchange="onLoyaltyChange()">
+              <option value="1.4">1.4× — Full</option>
+              <option value="1.3">1.3× — Reduced</option>
+              <option value="1.2">1.2× — Minimum</option>
+              <option value="1.0">1.0× — None</option>
+            </select>
+          </div>
+          <div class="assumptions__row">
+            <label class="assumptions__label" for="calc-avg-mult">Avg system loyalty</label>
+            <select id="calc-avg-mult" class="assumptions__control" onchange="onLoyaltyChange()">
+              <option value="1.4">1.4×</option>
+              <option value="1.3" selected>1.3×</option>
+              <option value="1.2">1.2×</option>
+              <option value="1.1">1.1×</option>
+              <option value="1.0">1.0×</option>
+            </select>
+          </div>
+          <div class="assumptions__row">
+            <label class="assumptions__label" for="calc-airdrop-pct">SLX bucket</label>
+            <select id="calc-airdrop-pct" class="assumptions__control" onchange="onAnyInput()">
+              <option value="0.03" selected>3.00% — 30M SLX</option>
+              <option value="0.0325">3.25% — 32.5M SLX</option>
+              <option value="0.035">3.50% — 35M SLX</option>
+            </select>
+          </div>
+        </div>
+        <div class="assumptions__readout">
+          <div class="assumptions__stat">
+            <span class="assumptions__stat-label">YT Cost Basis</span>
+            <span class="assumptions__stat-value mono" id="hero-breakeven-basis">—</span>
+          </div>
+          <div class="assumptions__stat">
+            <span class="assumptions__stat-label">You at end</span>
+            <span class="assumptions__stat-value mono" id="calc-you">—</span>
+          </div>
+          <div class="assumptions__stat">
+            <span class="assumptions__stat-label">Your share</span>
+            <span class="assumptions__stat-value mono" id="calc-share">—</span>
+          </div>
+          <div class="assumptions__stat">
+            <span class="assumptions__stat-label">Days ahead</span>
+            <span class="assumptions__stat-value mono"><span id="calc-days">—</span> Days</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tabbed-panel__pane" data-pane="simulate" hidden>
+      <div class="assumptions" id="yt-helper">
+        <div class="assumptions__rows" id="yt-helper-grid">
+          <div class="assumptions__row">
+            <label class="assumptions__label" for="yt-deposit">Deposit amount</label>
+            <input id="yt-deposit" type="text" inputmode="decimal" class="assumptions__control"
+                   value="100" placeholder="e.g. 100 or 5K"
+                   oninput="onYtInput()" onblur="onAmountBlur(this)" onfocus="onAmountFocus(this)" />
+          </div>
+          <div class="assumptions__row">
+            <label class="assumptions__label" for="yt-market">YT market
+              <span class="has-hover-tip" data-tip="Live YT prices from Exponent. Projection caps at S2 end (Aug 1)." style="color:var(--text-3); font-size:11px; margin-left:4px;">ⓘ</span>
+            </label>
+            <select id="yt-market" class="assumptions__control" onchange="onYtInput()">
+              <option value="">Loading…</option>
+            </select>
+          </div>
+          <div class="assumptions__row">
+            <button class="btn-ghost" onclick="ytHelperApply()" style="width: 100%;">Simulate</button>
+          </div>
+        </div>
+        <div id="yt-helper-out" class="assumptions__readout">
+          <div class="assumptions__stat">
+            <span class="assumptions__stat-label">YT received</span>
+            <span class="assumptions__stat-value mono" id="yt-out-yt">—</span>
+          </div>
+          <div class="assumptions__stat">
+            <span class="assumptions__stat-label">Daily flares</span>
+            <span class="assumptions__stat-value mono" id="yt-out-daily">—</span>
+          </div>
+          <div class="assumptions__stat">
+            <span class="assumptions__stat-label">Duration</span>
+            <span class="assumptions__stat-value mono" id="yt-out-duration">—</span>
+          </div>
+          <div class="assumptions__stat">
+            <span class="assumptions__stat-label">Total to S2 end</span>
+            <span class="assumptions__stat-value mono" id="yt-out-total" style="color: var(--accent);">—</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tabbed-panel__pane" data-pane="manual" hidden>
+      <div class="assumptions">
+        <div class="assumptions__rows">
+          <div class="assumptions__row">
+            <label class="assumptions__label" for="calc-total">Your total flares</label>
+            <input id="calc-total" type="text" value="0" inputmode="decimal" class="assumptions__control" placeholder="e.g. 327M"
+                   oninput="onUserTotalEdit(this)" onblur="onUserTotalBlur(this)" onfocus="onAmountFocus(this)" />
+          </div>
+          <div class="assumptions__row">
+            <label class="assumptions__label" for="calc-sys-total">System total flares</label>
+            <input id="calc-sys-total" type="text" value="0" inputmode="decimal" class="assumptions__control" placeholder="e.g. 170B"
+                   oninput="onSysTotalEdit(this)" onblur="onSysTotalBlur(this)" onfocus="onAmountFocus(this)" />
+          </div>
+          <div class="assumptions__row">
+            <label class="assumptions__label" for="calc-airdrop-pct-m">SLX bucket</label>
+            <select id="calc-airdrop-pct-m" class="assumptions__control">
+              <option value="0.03" selected>3.00% — 30M SLX</option>
+              <option value="0.0325">3.25% — 32.5M SLX</option>
+              <option value="0.035">3.50% — 35M SLX</option>
+            </select>
+          </div>
+        </div>
+        <div class="assumptions__readout assumptions__readout--3col">
+          <div class="assumptions__stat">
+            <span class="assumptions__stat-label">You at end</span>
+            <span class="assumptions__stat-value mono" id="m-you">—</span>
+          </div>
+          <div class="assumptions__stat">
+            <span class="assumptions__stat-label">Your share</span>
+            <span class="assumptions__stat-value mono" id="m-share">—</span>
+          </div>
+          <div class="assumptions__stat">
+            <span class="assumptions__stat-label">Days ahead</span>
+            <span class="assumptions__stat-value mono"><span id="m-days">—</span> Days</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── FDV scenarios (Watchlist style) ────────────────────────────────── -->
+  <div class="fdv-section">
+    <span class="label">Scenarios</span>
+    <table class="fdv-table">
+      <thead>
+        <tr><th class="left">FDV</th><th>SLX price</th><th>Your USD value</th><th id="calc-fdv-roi-head">vs YT cost</th></tr>
+      </thead>
+      <tbody id="calc-fdv-rows"></tbody>
+    </table>
+  </div>
+
+  </div>
+
+  <!-- ── Primary CTA ────────────────────────────────────────────────────── -->
+  <div class="share-cta-wrap">
+    <a id="share-card-trigger" class="share-cta" href="https://twitter.com/jayowtrades" target="_blank" rel="noopener noreferrer">Follow @jayowtrades to support</a>
+  </div>
+
+  <!-- ── Disclosure: About these numbers ───────────────────────────────── -->
+  <details class="disclosure">
+    <summary>About these numbers</summary>
+    <div class="disclosure-body" style="font-size: 13px; line-height: 20px; color: var(--text-2);">
+      <p style="margin: 0 0 12px;">
+        System total at end date is pre-projected from <strong style="color: var(--text);">Solstice's officially published daily delta</strong> (7-day average) — same source the dashboard's "Solstice (official)" chart uses.
+        Changing the end date refreshes the projection.
+      </p>
+      <p style="margin: 0 0 12px;">
+        The "S2 SLX allocation" picker selects the campaign share — current docs anchor is 3% (30M SLX), with rumored bumps to 3.25% / 3.5% if Dynamic Distribution kicks in.
+      </p>
+      <p style="margin: 0;">
+        <strong style="color: var(--text);">S2 loyalty multiplier (1.4×):</strong> Solstice applies a final multiplier once at end of S2 based on your retained TVL vs your S1 TWA baseline.
+        Full Loyalty (TVL ≥ 100% of TWA) = 1.4× · Reduced (50–99%) = 1.3× · Minimum (20–49%) = 1.2× · Below 20% = 1.0×.
+        If everyone receives the same multiplier, it cancels in the share ratio, so SLX projection is unchanged.
+      </p>
+    </div>
+  </details>
+
 </main>
 
 <script>
 const SLX_TOTAL_SUPPLY = 1_000_000_000;
 const S2_AIRDROP_PCT   = 0.03;
-const FDV_SCENARIOS_M  = [30, 50, 100, 150, 200, 300, 400, 500];
+const FDV_SCENARIOS_M  = [50, 100, 150, 200, 300, 400, 500];
 // SLX SPL mint — used to fetch live spot price from Jupiter.
 const SLX_MINT         = 'SLXdx4BUt2v9uJQNzWqSfzTJ9UKLUDsvxHFMEEdrfgq';
 let LIVE_SLX = null;   // { price, fdvM, change24h, ts }
@@ -351,15 +872,36 @@ let WALLET_CONTEXT = null;   // { current_flares, yt_daily, nonyt_daily, cost_ba
 // ── KMB-aware number parser/formatter (geo-universal: always en-US commas) ──
 function parseAmount(s) {
   if (s == null) return NaN;
-  // Strip commas, spaces, narrow no-break spaces (some locales), and underscores.
-  const cleaned = String(s).replace(/[,\s_  ]/g, '').toLowerCase().trim();
-  if (cleaned === '' || cleaned === '-') return NaN;
-  const m = cleaned.match(/^([+-]?\d*\.?\d+)\s*([kmbt])?$/);
+  // Locale-agnostic: handles US '1,000.5' AND EU '1.000,5'. K/M/B/T suffixes.
+  let raw = String(s).replace(/[\s_  ]/g, '').trim().toLowerCase();
+  if (raw === '' || raw === '-') return NaN;
+  let sign = 1;
+  if (raw[0] === '-') { sign = -1; raw = raw.slice(1); }
+  else if (raw[0] === '+') raw = raw.slice(1);
+  let suffix = '';
+  if (/[kmbt]$/.test(raw)) { suffix = raw.slice(-1); raw = raw.slice(0, -1); }
+  // Disambiguate '.' vs ',' as decimal vs thousands separator.
+  const dots = (raw.match(/\./g) || []).length;
+  const commas = (raw.match(/,/g) || []).length;
+  if (dots > 0 && commas > 0) {
+    // Mixed - the LAST separator is decimal, the other is thousands.
+    if (raw.lastIndexOf('.') > raw.lastIndexOf(',')) raw = raw.replace(/,/g, '');
+    else raw = raw.replace(/\./g, '').replace(',', '.');
+  } else if (dots > 1) {
+    raw = raw.replace(/\./g, '');
+  } else if (commas > 1) {
+    raw = raw.replace(/,/g, '');
+  } else if (commas === 1) {
+    // Single comma, no dot - ambiguous. 3 digits after = thousands, else decimal.
+    const after = raw.slice(raw.indexOf(',') + 1);
+    raw = /^\d{3}$/.test(after) ? raw.replace(',', '') : raw.replace(',', '.');
+  }
+  const m = raw.match(/^(\d*\.?\d+)$/);
   if (!m) return NaN;
   const n = parseFloat(m[1]);
   if (!isFinite(n)) return NaN;
-  const mult = { k: 1e3, m: 1e6, b: 1e9, t: 1e12 }[m[2] || ''] || 1;
-  return n * mult;
+  const mult = { k: 1e3, m: 1e6, b: 1e9, t: 1e12 }[suffix] || 1;
+  return sign * n * mult;
 }
 function formatAmount(n) {
   if (!isFinite(n) || n == null) return '';
@@ -372,6 +914,14 @@ function formatFdvM(m) {
   if (m >= 100)  return m.toFixed(1) + 'M';
   if (m >= 10)   return m.toFixed(1) + 'M';
   return m.toFixed(2) + 'M';
+}
+function formatKMB(n) {
+  if (!isFinite(n) || n == null) return '—';
+  const abs = Math.abs(n);
+  if (abs >= 1e9) return (n/1e9).toFixed(2) + 'B';
+  if (abs >= 1e6) return (n/1e6).toFixed(2) + 'M';
+  if (abs >= 1e3) return (n/1e3).toFixed(2) + 'K';
+  return Math.round(n).toString();
 }
 
 let SYS_TOTAL_USER_EDITED = false;   // sticky once the user types into the system field
@@ -433,27 +983,57 @@ function refreshUserProjection() {
 function onAnyInput() { renderResults(); }
 
 // ── Tooltip ⓘ helpers for the now-hidden hint texts ──────────────────────
+// The three legacy spans (calc-cost-basis, calc-prefill-hint-ico, calc-sys-
+// hint-ico) are kept as data-tip carriers. The visible ⓘ in the wallet
+// caption is a single consolidator span (#wallet-info-ico) populated by
+// syncWalletInfoIco() — called from each setter below.
 function setPrefillTip(text) {
   const ico = document.getElementById('calc-prefill-hint-ico');
   if (!ico) return;
   if (text && text.trim()) {
     ico.setAttribute('data-tip', text);
-    ico.style.display = 'inline';
   } else {
     ico.removeAttribute('data-tip');
-    ico.style.display = 'none';
   }
+  syncWalletInfoIco();
 }
 function setSysTip(text) {
   const ico = document.getElementById('calc-sys-hint-ico');
   if (!ico) return;
   if (text && text.trim()) {
     ico.setAttribute('data-tip', text);
-    ico.style.display = 'inline';
   } else {
     ico.removeAttribute('data-tip');
-    ico.style.display = 'none';
   }
+  syncWalletInfoIco();
+}
+function syncWalletInfoIco() {
+  const target = document.getElementById('wallet-info-ico');
+  if (!target) return;
+  const cb = document.getElementById('calc-cost-basis');
+  const pf = document.getElementById('calc-prefill-hint-ico');
+  const sy = document.getElementById('calc-sys-hint-ico');
+  // Cost-basis tip lives inside an inner .has-hover-tip span; pull data-tip
+  // and visible-label count from it when present.
+  let cbTip = '', cbLabel = '';
+  if (cb) {
+    const inner = cb.querySelector('.has-hover-tip');
+    if (inner) {
+      cbTip   = inner.getAttribute('data-tip') || '';
+      cbLabel = (inner.textContent || '').replace(/^ⓘ\s*/, '').trim();
+    }
+  }
+  const pfTip = pf ? (pf.getAttribute('data-tip') || '') : '';
+  const syTip = sy ? (sy.getAttribute('data-tip') || '') : '';
+  const parts = [cbTip, pfTip, syTip].filter(t => t && t.trim());
+  if (!parts.length) {
+    target.removeAttribute('data-tip');
+    target.style.display = 'none';
+    return;
+  }
+  target.setAttribute('data-tip', parts.join('\n\n'));
+  target.textContent = cbLabel ? ('ⓘ ' + cbLabel) : 'ⓘ';
+  target.style.display = 'inline';
 }
 
 // ── Loyalty-aware input handling ──────────────────────────────────────────
@@ -639,7 +1219,7 @@ function renderResults() {
   document.getElementById('calc-days').textContent = days.toLocaleString('en-US');
   // "You at end" tile shows boosted flares — the actual number Solstice
   // credits to the user at end of season for share calc.
-  document.getElementById('calc-you').textContent = formatAmount(boostedUser) + ' flares';
+  document.getElementById('calc-you').textContent = formatKMB(boostedUser) + ' flares';
   document.getElementById('calc-share').textContent = (share * 100).toFixed(4) + '%';
   document.getElementById('calc-slx').textContent = formatAmount(slx) + ' SLX';
 
@@ -650,47 +1230,78 @@ function renderResults() {
 
   const rows = [];
 
-  // Breakeven FDV row — the FDV needed so projected USD allocation equals
-  // the user's deposit. Shown whenever both basis and slx are positive.
+  // Breakeven scenario — surfaced in the hero (#hero-breakeven) directly
+  // under the SLX allocation, not as a row in the FDV table. The FDV needed
+  // so projected USD allocation equals the user's deposit.
+  const heroBe = document.getElementById('hero-breakeven');
+  const cbEl   = document.getElementById('hero-breakeven-basis');
   if (basis > 0 && slx > 0) {
     const breakevenPrice = basis / slx;
     const breakevenFdvM = (breakevenPrice * SLX_TOTAL_SUPPLY) / 1e6;
-    rows.push(`<tr style="background:rgba(252,211,77,.06);">
-      <td class="fdv-label">
-        <div style="color:var(--accent-300);">$${formatFdvM(breakevenFdvM)}</div>
-        <div style="font-size:10px; color:var(--ink-400); font-weight:500; margin-top:2px;">Breakeven FDV for your $${formatAmount(basis)} deposit</div>
-      </td>
-      <td class="fdv-price">$${breakevenPrice.toFixed(4)}/SLX</td>
-      <td class="fdv-usd">$${formatAmount(basis)}</td>
-      <td class="fdv-roi" style="color:var(--ink-300);">1.00×</td>
-    </tr>`);
+    document.getElementById('hero-breakeven-fdv').textContent = '$' + formatFdvM(breakevenFdvM) + ' FDV';
+    if (heroBe) heroBe.hidden = false;
+  } else {
+    if (heroBe) heroBe.hidden = true;
   }
+  // YT Cost Basis stat (lives in assumptions readout, left side) — always
+  // reflects current basis regardless of slx allocation state.
+  if (cbEl) cbEl.textContent = basis > 0 ? '$' + formatAmount(basis) : '—';
 
-  // (Live spot row removed per user feedback — only the breakeven row matters
-  //  here. Jupiter fetch retained in case we surface live price elsewhere.)
-  for (const fdvM of FDV_SCENARIOS_M) {
-    const price = (fdvM * 1e6) / SLX_TOTAL_SUPPLY;
-    const usd = slx * price;
-    let roiCell;
+  // Build an ordered scenario list — sort the "NOW" live row inline by FDV
+  // value so it lands between the projected scenarios at its natural spot.
+  const scenarios = FDV_SCENARIOS_M.map(fdvM => ({ fdvM, isLive: false }));
+  if (LIVE_SLX && LIVE_SLX.price > 0 && slx > 0) {
+    const liveFdvM = LIVE_SLX.fdvM || (LIVE_SLX.price * SLX_TOTAL_SUPPLY / 1e6);
+    scenarios.push({ fdvM: liveFdvM, isLive: true, livePrice: LIVE_SLX.price });
+  }
+  scenarios.sort((a, b) => a.fdvM - b.fdvM);
+
+  for (const sc of scenarios) {
+    const price = sc.isLive ? sc.livePrice : (sc.fdvM * 1e6) / SLX_TOTAL_SUPPLY;
+    const usd   = slx * price;
+    let roiCell = '';
     if (basis > 0) {
       const mult = usd / basis;
-      const cls = mult >= 1 ? 'pos' : 'neg';
+      const cls  = mult >= 1 ? 'pos' : 'neg';
       roiCell = `<td class="fdv-roi ${cls}">${mult.toFixed(2)}×</td>`;
-    } else {
-      roiCell = `<td class="fdv-roi" style="color:var(--ink-500);">—</td>`;
     }
-    rows.push(`<tr>
-      <td class="fdv-label">$${fdvM}M</td>
-      <td class="fdv-price">$${price.toFixed(3)}/SLX</td>
+    const labelHTML = sc.isLive
+      ? `<span class="fdv-now-pill">NOW</span> $${formatFdvM(sc.fdvM)}`
+      : `$${sc.fdvM}M`;
+    const priceHTML = sc.isLive
+      ? `$${price.toFixed(4)}/SLX`
+      : `$${price.toFixed(3)}/SLX`;
+    rows.push(`<tr${sc.isLive ? ' class="fdv-live-row"' : ''}>
+      <td class="fdv-label">${labelHTML}</td>
+      <td class="fdv-price">${priceHTML}</td>
       <td class="fdv-usd">$${formatAmount(usd)}</td>
       ${roiCell}
     </tr>`);
   }
   document.getElementById('calc-fdv-rows').innerHTML = rows.join('');
-  // Update the column header to reflect basis state.
+  // Toggle the no-basis class so the ROI column collapses entirely when
+  // there's no cost basis (the user is in Manual entry mode, or no wallet
+  // is loaded). Hides the ROI <th> + cells via CSS instead of showing "—".
+  const tbl = document.querySelector('.fdv-table');
+  if (tbl) tbl.classList.toggle('no-basis', !(basis > 0));
   const head = document.getElementById('calc-fdv-roi-head');
-  if (head) head.textContent = basis > 0 ? 'vs YT cost' : '—';
+  if (head) head.textContent = basis > 0 ? 'vs YT cost' : '';
 }
+
+// Manual-entry tab: secondary allocation dropdown stays in sync with the
+// primary one in the Load wallet tab. Bidirectional — changing either
+// updates the other and triggers a recompute.
+(function syncAllocationDropdowns() {
+  const a = document.getElementById('calc-airdrop-pct');
+  const b = document.getElementById('calc-airdrop-pct-m');
+  if (!a || !b) return;
+  b.value = a.value;
+  a.addEventListener('change', () => { b.value = a.value; });
+  b.addEventListener('change', () => {
+    a.value = b.value;
+    if (typeof onAnyInput === 'function') onAnyInput();
+  });
+})();
 
 // Global hover-tooltip handler — mirrors the dashboard's pattern.
 (function initHoverTip() {
@@ -815,11 +1426,13 @@ async function calcLoadWallet() {
     setPrefillTip('Pre-filled: ' + formatAmount(current) + ' today + projected '
       + formatAmount(projected - current) + ' across ' + days + ' days.' + ytNote
       + ' Edit to override.');
-    src.innerHTML = 'Loaded <span style="font-family:ui-monospace,monospace;">' + addr.slice(0, 6) + '…' + addr.slice(-6) + '</span>'
+    src.innerHTML = 'Loaded <span>' + addr.slice(0, 6) + '…' + addr.slice(-6) + '</span>'
       + ' · <a href="index.html#w/' + encodeURIComponent(addr) + '" style="color:var(--accent-300); text-decoration:underline dotted;">View on dashboard ↗</a>';
 
     // Show cost basis chip — YT only (other partners are capital-preserved
-    // and their USD-deposited isn't "at risk").
+    // and their USD-deposited isn't "at risk"). The visible ⓘ is rendered
+    // by #wallet-info-ico; we still stash the data-tip + label inside
+    // #calc-cost-basis so the consolidator can read it.
     if (cbInfo) {
       if (costBasis.total > 0) {
         const tip = (costBasis.breakdown
@@ -828,16 +1441,12 @@ async function calcLoadWallet() {
           .join('\n')
           + '\n\nOnly YT positions count toward cost basis — YT decays to $0 at maturity. LP/Kamino/Loopscale/CLMM positions are capital-preserved (stablecoins withdrawable any time).'
         ).replace(/"/g, '&quot;');
-        cbInfo.innerHTML = `<span class="has-hover-tip" data-tip="${tip}">
-          <span style="color:var(--ink-500);">YT cost basis (USD at risk):</span>
-          <strong style="color:var(--accent-300); font-variant-numeric:tabular-nums;">$${formatAmount(costBasis.total)}</strong>
-          <span style="color:var(--ink-500); font-size:10px; margin-left:4px;">ⓘ ${costBasis.breakdown.length} YT market${costBasis.breakdown.length===1?'':'s'}</span>
-        </span>`;
-        cbInfo.style.display = 'block';
+        cbInfo.innerHTML = `<span class="has-hover-tip" data-tip="${tip}">ⓘ ${costBasis.breakdown.length} YT market${costBasis.breakdown.length===1?'':'s'}</span>`;
       } else {
-        cbInfo.style.display = 'none';
+        cbInfo.innerHTML = '';
       }
     }
+    syncWalletInfoIco();
     renderResults();
   } catch (e) {
     err.textContent = 'No data found for ' + addr + '. Check the address — it must be a wallet that appears in our dashboard.';
@@ -932,7 +1541,7 @@ function onYtInput() {
   const market = YT_MARKETS.find(m => m.key === key);
   const out = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
   if (!isFinite(dep) || dep <= 0 || !market) {
-    out('yt-out-yt', '—'); out('yt-out-daily', '—'); out('yt-out-total', '—');
+    out('yt-out-yt', '—'); out('yt-out-daily', '—'); out('yt-out-duration', '—'); out('yt-out-total', '—');
     return;
   }
   const yt = dep / market.ytPrice;
@@ -941,17 +1550,19 @@ function onYtInput() {
   const fmt = n => n >= 1e9 ? (n/1e9).toFixed(2)+'B' : n >= 1e6 ? (n/1e6).toFixed(2)+'M' : n >= 1e3 ? (n/1e3).toFixed(2)+'K' : Math.round(n).toLocaleString();
   out('yt-out-yt', fmt(yt) + ' YT');
   // Daily-rate cell: show split when there's both a boost and a base period.
+  // Duration is rendered in its own tile.
   const daysTotal = proj.daysBoost + proj.daysBase;
   if (proj.daysBoost > 0 && proj.daysBase > 0) {
     const dailyBoost = yt * proj.boostMult;
     const dailyBase  = yt * proj.baseMult;
     out('yt-out-daily',
-      `${fmt(dailyBoost)}/d <span style="color:var(--ink-500); font-size:10px;">× ${proj.daysBoost.toFixed(0)}d boost</span>
-       <br><span style="color:var(--ink-400);">${fmt(dailyBase)}/d</span> <span style="color:var(--ink-500); font-size:10px;">× ${proj.daysBase.toFixed(0)}d base (post-Jun 2)</span>`);
+      `${fmt(dailyBoost)}/Day <span style="color:var(--ink-500); font-size:10px;">boost</span>
+       <br><span style="color:var(--ink-400);">${fmt(dailyBase)}/Day</span> <span style="color:var(--ink-500); font-size:10px;">base (post-Jun 2)</span>`);
   } else {
     const daily = yt * (proj.daysBoost > 0 ? proj.boostMult : proj.baseMult);
-    out('yt-out-daily', fmt(daily) + '/d <span style="color:var(--ink-500); font-size:10px;">over ' + daysTotal.toFixed(0) + 'd</span>');
+    out('yt-out-daily', fmt(daily) + '/Day');
   }
+  out('yt-out-duration', daysTotal.toFixed(0) + ' Days');
   out('yt-out-total', fmt(proj.totalFlares));
 }
 
@@ -1032,6 +1643,38 @@ async function init() {
 }
 
 init();
+
+// Tabbed panel — swap Load wallet / Simulate new deposit / Manual entry
+(function panelTabs() {
+  const tabs = document.querySelectorAll('.tabbed-panel__tab');
+  const panes = document.querySelectorAll('.tabbed-panel__pane');
+  if (!tabs.length) return;
+  tabs.forEach(t => t.addEventListener('click', () => {
+    const which = t.getAttribute('data-pane');
+    tabs.forEach(o => o.classList.toggle('is-active', o === t));
+    panes.forEach(p => { p.hidden = p.getAttribute('data-pane') !== which; });
+  }));
+})();
+
+// Manual-entry tab mirror — keep the duplicate readout in sync with the
+// primary readout in the Load wallet pane. One MutationObserver per source
+// node; we observe characterData + subtree so any textContent rewrite
+// propagates without touching the existing producer JS.
+(function manualMirror() {
+  const pairs = [
+    ['calc-you',             'm-you'],
+    ['calc-share',           'm-share'],
+    ['calc-days',            'm-days'],
+  ];
+  pairs.forEach(([srcId, dstId]) => {
+    const src = document.getElementById(srcId);
+    const dst = document.getElementById(dstId);
+    if (!src || !dst) return;
+    const copy = () => { dst.textContent = src.textContent; };
+    copy();
+    new MutationObserver(copy).observe(src, { childList: true, characterData: true, subtree: true });
+  });
+})();
 </script>
 
 </body>
