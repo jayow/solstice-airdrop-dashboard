@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "api/perp-oi.js": {
+      "regions": ["hnd1"]
+    }
+  }
+}

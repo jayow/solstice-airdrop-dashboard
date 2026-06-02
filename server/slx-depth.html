@@ -570,6 +570,46 @@ footer {
 
     </div>
   </section>
+
+  <!-- ────────────── PERPETUAL FUTURES OI + FUNDING ────────────── -->
+  <section>
+    <div class="surface">
+      <div class="stats" id="perp-stats">
+        <div class="stat">
+          <div class="lbl">Total perp OI</div>
+          <div class="v accent" id="perp-total-oi">—</div>
+          <div class="sub" id="perp-venues-sub">across venues</div>
+        </div>
+        <div class="stat">
+          <div class="lbl">Avg funding</div>
+          <div class="v" id="perp-avg-funding">—</div>
+          <div class="sub" id="perp-funding-sub">OI-weighted</div>
+        </div>
+        <div class="stat">
+          <div class="lbl">Position bias</div>
+          <div class="v" id="perp-bias">—</div>
+          <div class="sub" id="perp-bias-sub">consensus across venues</div>
+        </div>
+        <div class="stat">
+          <div class="lbl">OI / spot ratio</div>
+          <div class="v" id="perp-oi-ratio">—</div>
+          <div class="sub">leverage vs available spot depth</div>
+        </div>
+      </div>
+
+      <div class="controls">
+        <span style="font-size:13px; color:var(--text-muted);">Perpetual futures positioning
+          <span class="has-hover-tip" data-tip="Each row shows a venue's open interest (total notional of open perp positions) and funding rate. Negative funding = shorts pay longs = short-crowded. Positive = longs pay shorts = long-crowded. Daily cost shows what shorts pay per day to hold position at current funding rate. Cycle column shows funding interval (Gate uses 4h, others 8h). Refreshes on every page load — no cache." style="margin-left: 4px; cursor: help;">ⓘ</span>
+        </span>
+        <span class="grow"></span>
+        <span class="source-caption" id="perp-source-caption">Direct from venue APIs · refreshed on page load</span>
+      </div>
+
+      <div id="perp-host">
+        <div class="loading" id="perp-loading">Loading perpetual futures data…</div>
+      </div>
+    </div>
+  </section>
 </main>
 
 <!-- Hover/tap tooltip for .has-hover-tip elements -->
@@ -764,7 +804,8 @@ document.getElementById('search').addEventListener('input', renderTable);
 // Anything in TICKERS not matching one of these gets passed as a fallback estimate.
 // Keep this list in sync with the cexFns array in fetchAllDepth() inside the engine.
 const ENGINE_LIVE_HINTS = [
-  // Direct CORS CEX (6)
+  // Direct CORS CEX (8 — added Bithumb + Upbit on 2026-06-01; OKX has perp only, no spot)
+  'bithumb', 'upbit',
   'bitget', 'bitmart', 'kraken', 'hotcoin', 'digifinex', 'kcex',
   // Proxied CEX (7)
   'mexc', 'gate', 'lbank', 'orangex', 'toobit', 'ourbit', 'weex',
@@ -1199,6 +1240,145 @@ load();
     showFromRect(text, t.getBoundingClientRect());
   }, true);
 })();
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Perpetual futures OI + funding — refreshes on every page load (no cache).
+// ═══════════════════════════════════════════════════════════════════════════
+function fmtPctSigned(p) {
+  if (!isFinite(p) || p == null) return '—';
+  return (p >= 0 ? '+' : '') + p.toFixed(2) + '%';
+}
+function fundingClass(daily_pct) {
+  if (!isFinite(daily_pct)) return '';
+  if (daily_pct <= -1.0) return 'fund-very-neg';   // shorts extremely crowded
+  if (daily_pct <= -0.1) return 'fund-neg';
+  if (daily_pct >= +0.1) return 'fund-pos';        // longs crowded
+  return 'fund-neutral';
+}
+
+function renderPerpSection(rows) {
+  const host = document.getElementById('perp-host');
+  if (!host) return;
+  const ok = rows.filter(r => !r.error);
+  const failed = rows.filter(r => r.error);
+  const total_oi = ok.reduce((s, r) => s + (r.oi_usd || 0), 0);
+  const venues_with_oi = ok.filter(r => r.oi_usd && r.oi_usd > 0).length;
+
+  // OI-weighted funding (using daily-equivalent so cycles normalize)
+  let oi_weighted_daily = 0; let oi_weight_total = 0;
+  for (const r of ok) {
+    if (r.oi_usd && r.oi_usd > 0 && isFinite(r.funding_rate)) {
+      const cycles_per_day = 24 / (r.funding_cycle_hours || 8);
+      const daily = r.funding_rate * cycles_per_day * 100;
+      oi_weighted_daily += daily * r.oi_usd;
+      oi_weight_total += r.oi_usd;
+    }
+  }
+  const avg_funding_daily = oi_weight_total > 0 ? oi_weighted_daily / oi_weight_total : 0;
+
+  // Position bias label
+  let bias_label = '⚪ neutral';
+  let bias_color = 'var(--text-primary)';
+  if (avg_funding_daily <= -1.0)     { bias_label = '🔴 SHORTS extreme';  bias_color = '#ef4444'; }
+  else if (avg_funding_daily <= -0.1){ bias_label = '🔴 short-crowded';   bias_color = '#fb923c'; }
+  else if (avg_funding_daily >= +1.0){ bias_label = '🟢 LONGS extreme';   bias_color = '#22c55e'; }
+  else if (avg_funding_daily >= +0.1){ bias_label = '🟢 long-crowded';    bias_color = '#22c55e'; }
+
+  // Update stats card
+  document.getElementById('perp-total-oi').textContent = fmtUsd(total_oi);
+  document.getElementById('perp-venues-sub').textContent = venues_with_oi + ' of ' + ok.length + ' venues report OI';
+  document.getElementById('perp-avg-funding').textContent = fmtPctSigned(avg_funding_daily) + '/day';
+  document.getElementById('perp-funding-sub').textContent = 'OI-weighted avg';
+  const biasEl = document.getElementById('perp-bias');
+  biasEl.textContent = bias_label;
+  biasEl.style.color = bias_color;
+  document.getElementById('perp-bias-sub').textContent = avg_funding_daily < 0 ? 'shorts pay longs' : (avg_funding_daily > 0 ? 'longs pay shorts' : 'balanced');
+
+  // OI vs spot ratio — use TICKERS spot volume as proxy denominator
+  try {
+    const total_spot_vol = (TICKERS || []).reduce((s, t) => s + (t.vol_usd || 0), 0);
+    if (total_spot_vol > 0) {
+      const ratio = total_oi / total_spot_vol;
+      document.getElementById('perp-oi-ratio').textContent = (ratio * 100).toFixed(1) + '%';
+    }
+  } catch (e) {}
+
+  // Sort by OI desc, errors at bottom
+  const sorted = ok.slice().sort((a, b) => (b.oi_usd || 0) - (a.oi_usd || 0)).concat(failed);
+
+  // Find max OI for proportional bar widths
+  const max_oi = Math.max(...ok.map(r => r.oi_usd || 0), 1);
+
+  let html = `<table style="width:100%; border-collapse:collapse; font-size:13px;">
+    <thead><tr style="border-bottom:1px solid rgba(255,255,255,.08); text-align:left;">
+      <th style="padding:10px 12px;">Venue</th>
+      <th style="padding:10px 12px; text-align:right;">OI USD</th>
+      <th style="padding:10px 12px;">OI bar</th>
+      <th style="padding:10px 12px; text-align:right;">Funding</th>
+      <th style="padding:10px 12px;">Cycle</th>
+      <th style="padding:10px 12px; text-align:right;">Daily cost (shorts)</th>
+      <th style="padding:10px 12px; text-align:right;">Per 7d</th>
+    </tr></thead><tbody>`;
+
+  for (const r of sorted) {
+    if (r.error) {
+      html += `<tr style="border-bottom:1px solid rgba(255,255,255,.03); color:var(--text-muted);">
+        <td style="padding:8px 12px;">${r.venue}</td>
+        <td colspan="6" style="padding:8px 12px; color:#ef4444; font-size:12px;">⚠ ${r.error}</td>
+      </tr>`;
+      continue;
+    }
+    const cycles_per_day = 24 / (r.funding_cycle_hours || 8);
+    const daily = r.funding_rate * cycles_per_day * 100;
+    const weekly = daily * 7;
+    const oi_str = (r.oi_usd === null || r.oi_usd === undefined) ? '<span style="color:var(--text-muted);">n/r</span>' : fmtUsd(r.oi_usd);
+    const bar_pct = r.oi_usd ? (r.oi_usd / max_oi * 100) : 0;
+    const fc = fundingClass(daily);
+    const fund_color = fc === 'fund-very-neg' ? '#ef4444' : (fc === 'fund-neg' ? '#fb923c' : (fc === 'fund-pos' ? '#22c55e' : 'var(--text-primary)'));
+    const cap_marker = (r.funding_rate != null && Math.abs(r.funding_rate) >= 0.019) ? ' <span style="color:#ef4444; font-weight:700; font-size:10px;">CAP</span>' : '';
+    const oi_cg_marker = r.source === 'coingecko' ? ' <span style="color:var(--text-muted); font-size:10px; font-weight:500;" title="OI value from CoinGecko aggregate (reliable). Venue does not expose a public funding API — funding rate omitted to avoid misleading values.">CG</span>' : '';
+    const funding_display = r.funding_rate == null
+      ? '<span style="color:var(--text-muted);">—</span>'
+      : `${(r.funding_rate*100).toFixed(4)}%${cap_marker}`;
+    const daily_display = r.funding_rate == null
+      ? '<span style="color:var(--text-muted);">—</span>'
+      : `<span style="color:${fund_color}; font-weight:500;">${fmtPctSigned(daily)}</span>`;
+    const weekly_display = r.funding_rate == null
+      ? '<span style="color:var(--text-muted);">—</span>'
+      : fmtPctSigned(weekly);
+    html += `<tr style="border-bottom:1px solid rgba(255,255,255,.03);">
+      <td style="padding:8px 12px; font-weight:500;">${r.venue}</td>
+      <td style="padding:8px 12px; text-align:right; font-variant-numeric:tabular-nums;">${oi_str}${oi_cg_marker}</td>
+      <td style="padding:8px 12px; width:120px;">
+        <div style="width:120px; height:6px; background:rgba(255,255,255,.05); border-radius:3px; overflow:hidden;">
+          <div style="height:100%; width:${bar_pct}%; background:var(--accent);"></div>
+        </div>
+      </td>
+      <td style="padding:8px 12px; text-align:right; font-variant-numeric:tabular-nums; color:${fund_color};">${funding_display}</td>
+      <td style="padding:8px 12px; color:var(--text-muted); font-size:12px;">${r.funding_rate == null ? '—' : r.funding_cycle_hours + 'h'}</td>
+      <td style="padding:8px 12px; text-align:right; font-variant-numeric:tabular-nums;">${daily_display}</td>
+      <td style="padding:8px 12px; text-align:right; font-variant-numeric:tabular-nums; color:var(--text-muted);">${weekly_display}</td>
+    </tr>`;
+  }
+  html += '</tbody></table>';
+  host.innerHTML = html;
+}
+
+async function loadPerps() {
+  try {
+    if (!window.SLXDepthEngine || !window.SLXDepthEngine.fetchAllPerpOI) {
+      document.getElementById('perp-loading').textContent = 'Engine not loaded';
+      return;
+    }
+    const rows = await window.SLXDepthEngine.fetchAllPerpOI();
+    renderPerpSection(rows);
+  } catch (e) {
+    document.getElementById('perp-loading').textContent = 'Failed: ' + e.message;
+  }
+}
+
+// Fire on page load — explicitly no cache. Runs in parallel with the spot fetch.
+loadPerps();
 </script>
 
 </body>

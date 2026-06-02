@@ -480,6 +480,98 @@
     };
   }
 
+  // ── KRW → USD conversion (cached per session) ────────────────────────────
+  // Korean exchanges (Bithumb, Upbit) quote in KRW. Convert via Upbit's own
+  // USDT-KRW ticker (no auth, CORS-friendly). Cached for the session — KRW/USD
+  // moves slowly relative to crypto volatility so a single fetch is fine.
+  let _krwUsdRateCache = { rate: null, ts: 0 };
+  async function _getKrwToUsdRate() {
+    const now = Date.now();
+    if (_krwUsdRateCache.rate && (now - _krwUsdRateCache.ts) < 10 * 60_000) {
+      return _krwUsdRateCache.rate;
+    }
+    try {
+      // Upbit lists USDT as KRW-USDT (KRW is the quote in their naming).
+      // trade_price is "how many KRW per 1 USDT" → invert for KRW→USD.
+      const res = await fetch("https://api.upbit.com/v1/ticker?markets=KRW-USDT", {
+        headers: { accept: "application/json" },
+      });
+      const j = await res.json();
+      const trade_price = j && j[0] && parseFloat(j[0].trade_price);
+      if (!Number.isFinite(trade_price) || trade_price < 500 || trade_price > 3000) {
+        throw new Error("KRW-USDT out of range");
+      }
+      _krwUsdRateCache = { rate: 1 / trade_price, ts: now };
+      return _krwUsdRateCache.rate;
+    } catch (e) {
+      return 1 / 1470;   // fallback to a recent typical rate (KRW-USDT ~1470 on 2026-06-01)
+    }
+  }
+
+  // OKX intentionally NOT included for spot: as of 2026-06-01 OKX has only
+  // SLX-USDT-SWAP (perp). No spot pair exists. Add a fetcher here only when
+  // OKX lists SLX-USDT spot.
+
+  // ── Bithumb spot SLX/KRW (Korean — newly listed 2026-06-01) ──────────────
+  // Uses Bithumb's v1 (Upbit-style) endpoint since the legacy /public/orderbook
+  // path returns "not a listed coin" for new listings.
+  async function fetchBithumbBids() {
+    const url = "https://api.bithumb.com/v1/orderbook?markets=KRW-SLX";
+    const res = await fetch(url, { headers: { accept: "application/json" } });
+    if (!res.ok) throw new Error(`Bithumb depth HTTP ${res.status}`);
+    const json = await res.json();
+    if (!Array.isArray(json) || !json[0]) {
+      throw new Error("Bithumb malformed response");
+    }
+    const units = json[0].orderbook_units || [];
+    const totalBidSize = parseFloat(json[0].total_bid_size || 0);
+    const totalAskSize = parseFloat(json[0].total_ask_size || 0);
+    if (units.length === 0 || (totalBidSize === 0 && totalAskSize === 0)) {
+      throw new Error("Bithumb orderbook empty (listing not yet trading)");
+    }
+    const krwToUsd = await _getKrwToUsdRate();
+    const bids = [];
+    const asks = [];
+    for (const u of units) {
+      const bp = parseFloat(u.bid_price), bs = parseFloat(u.bid_size);
+      const ap = parseFloat(u.ask_price), as = parseFloat(u.ask_size);
+      if (Number.isFinite(bp) && Number.isFinite(bs) && bp > 0 && bs > 0) bids.push([bp * krwToUsd, bs]);
+      if (Number.isFinite(ap) && Number.isFinite(as) && ap > 0 && as > 0) asks.push([ap * krwToUsd, as]);
+    }
+    bids.sort((a, b) => b[0] - a[0]);
+    asks.sort((a, b) => a[0] - b[0]);
+    if (bids.length === 0) throw new Error("Bithumb returned no bids");
+    return { venue: "Bithumb", type: "cex", bids, asks, midUsd: bids[0][0], fetchedAt: Date.now() };
+  }
+
+  // ── Upbit spot SLX/KRW (Korean — triple-listed 2026-06-01) ───────────────
+  async function fetchUpbitBids() {
+    const url = "https://api.upbit.com/v1/orderbook?markets=KRW-SLX";
+    const res = await fetch(url, { headers: { accept: "application/json" } });
+    if (!res.ok) throw new Error(`Upbit depth HTTP ${res.status}`);
+    const json = await res.json();
+    if (!Array.isArray(json) || !json[0] || !Array.isArray(json[0].orderbook_units)) {
+      throw new Error("Upbit malformed response");
+    }
+    const krwToUsd = await _getKrwToUsdRate();
+    const bids = [];
+    const asks = [];
+    for (const u of json[0].orderbook_units) {
+      const bp = parseFloat(u.bid_price), bs = parseFloat(u.bid_size);
+      const ap = parseFloat(u.ask_price), as = parseFloat(u.ask_size);
+      if (Number.isFinite(bp) && Number.isFinite(bs) && bp > 0 && bs > 0) {
+        bids.push([bp * krwToUsd, bs]);
+      }
+      if (Number.isFinite(ap) && Number.isFinite(as) && ap > 0 && as > 0) {
+        asks.push([ap * krwToUsd, as]);
+      }
+    }
+    bids.sort((a, b) => b[0] - a[0]);
+    asks.sort((a, b) => a[0] - b[0]);
+    if (bids.length === 0) throw new Error("Upbit returned no bids");
+    return { venue: "Upbit", type: "cex", bids, asks, midUsd: bids[0][0], fetchedAt: Date.now() };
+  }
+
   // ═════════════════════════════════════════════════════════════════════════
   // PROXIED CEX FETCHERS (via /api/cex-depth — CORS-blocked upstreams)
   // ═════════════════════════════════════════════════════════════════════════
@@ -1572,6 +1664,8 @@
   // ═════════════════════════════════════════════════════════════════════════
   async function fetchAllDepth() {
     const cexFns = [
+      ["Upbit", fetchUpbitBids],        // NEW 2026-06-01 (Korean KRW-SLX, live + deep)
+      ["Bithumb", fetchBithumbBids],    // NEW 2026-06-01 (Korean — listed, awaiting trading start)
       ["Bitget", fetchBitgetBids],
       ["BitMart", fetchBitMartBids],
       ["Kraken", fetchKrakenBids],
@@ -1903,11 +1997,54 @@
   }
 
   // ═════════════════════════════════════════════════════════════════════════
+  // PERPETUAL FUTURES OI + FUNDING — via Vercel proxy (CORS-blocked upstreams)
+  // ═════════════════════════════════════════════════════════════════════════
+  // All venue endpoints proxied through /api/perp-oi (uniform interface, no
+  // CORS issues, no caching — refreshes on every call).
+  //
+  // Returns array of:
+  //   { venue, oi_usd, funding_rate, funding_cycle_hours, mark, error? }
+  //
+  // Funding direction convention:
+  //   negative funding = shorts pay longs = SHORT-crowded
+  //   positive funding = longs pay shorts = LONG-crowded
+  async function fetchAllPerpOI() {
+    const VENUE_KEYS = [
+      // Direct-API venues (live OI + funding from venue itself)
+      "gate", "okx", "binance_futures", "bingx", "bitget", "bitmart", "mexc",
+      // CoinGecko-sourced fallback venues (OI + volume reliable; funding unverified)
+      "lbank", "ourbit", "hotcoin", "kcex", "weex", "orangex_perp",
+    ];
+    const VENUE_LABELS = {
+      gate: "Gate", okx: "OKX", binance_futures: "Binance Futures",
+      bingx: "BingX", bitget: "Bitget", bitmart: "BitMart", mexc: "MEXC",
+      lbank: "LBank", ourbit: "Ourbit", hotcoin: "Hotcoin", kcex: "KCEX",
+      weex: "WEEX", orangex_perp: "OrangeX Perp",
+    };
+
+    async function _one(key) {
+      try {
+        const res = await fetch(`/api/perp-oi?venue=${key}`, { cache: "no-store" });
+        const j = await res.json();
+        if (!res.ok || j.error) {
+          return { venue: VENUE_LABELS[key], error: (j && j.error) || `HTTP ${res.status}` };
+        }
+        return j;
+      } catch (e) {
+        return { venue: VENUE_LABELS[key], error: String((e && e.message) || e).slice(0, 100) };
+      }
+    }
+
+    return await Promise.all(VENUE_KEYS.map(_one));
+  }
+
+  // ═════════════════════════════════════════════════════════════════════════
   // PUBLIC API
   // ═════════════════════════════════════════════════════════════════════════
   if (typeof window !== "undefined") {
     window.SLXDepthEngine = {
       fetchAllDepth,
+      fetchAllPerpOI,
       priceSell,
       priceBuy,
       fetchJupiterQuote,
