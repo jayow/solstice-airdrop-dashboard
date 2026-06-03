@@ -24,6 +24,7 @@ cd "$(dirname "$0")/.."
 SRC="${SRC:-data/solstice.db}"
 DST="${DST:-data/solstice.slim.db}"
 VERBOSE=0
+SLIM_MINIMAL="${SLIM_MINIMAL:-0}"
 
 for arg in "$@"; do
   case "$arg" in
@@ -47,10 +48,14 @@ rm -f "$DST" "$DST-journal" "$DST-wal" "$DST-shm" "$DST.gz"
 SRC_SIZE=$(du -h "$SRC" | cut -f1)
 echo "Source: $SRC ($SRC_SIZE)"
 echo "Dest:   $DST"
-echo "Excluding: wallet_txs (+ its indexes)"
+if [ "$SLIM_MINIMAL" = "1" ]; then
+  echo "Excluding: wallet_txs, rpc_cache_responses (+ their indexes) [SLIM_MINIMAL=1]"
+else
+  echo "Excluding: wallet_txs (+ its indexes)"
+fi
 echo
 
-export SRC DST VERBOSE
+export SRC DST VERBOSE SLIM_MINIMAL
 python3 <<'PY'
 import os
 import sqlite3
@@ -61,7 +66,9 @@ SRC = os.environ["SRC"]
 DST = os.environ["DST"]
 VERBOSE = os.environ.get("VERBOSE") == "1"
 
-EXCLUDE_TABLE = "wallet_txs"
+EXCLUDE = {"wallet_txs"}
+if os.environ.get("SLIM_MINIMAL") == "1":
+    EXCLUDE.add("rpc_cache_responses")
 
 # Open source read-only via URI so we can't accidentally mutate it.
 src_uri = f"file:{SRC}?mode=ro"
@@ -88,7 +95,7 @@ row_counts = {}
 total_rows = 0
 t0 = time.time()
 for tname, tsql in tables:
-    if tname == EXCLUDE_TABLE:
+    if tname in EXCLUDE:
         if VERBOSE:
             print(f"  [skip] {tname}")
         continue
@@ -122,14 +129,15 @@ for tname, tsql in tables:
     if VERBOSE:
         print(f" {n:,} rows")
 
-# --- 2. Copy all indexes EXCEPT those on wallet_txs ---
+# --- 2. Copy all indexes EXCEPT those on excluded tables ---
+excl_placeholders = ",".join(["?"] * len(EXCLUDE))
 indexes = src.execute(
     "SELECT name, tbl_name, sql FROM sqlite_master "
     "WHERE type='index' AND sql IS NOT NULL "
-    "  AND tbl_name != ? "
+    f"  AND tbl_name NOT IN ({excl_placeholders}) "
     "  AND name NOT LIKE 'sqlite_%' "
     "ORDER BY name",
-    (EXCLUDE_TABLE,),
+    tuple(EXCLUDE),
 ).fetchall()
 for iname, itbl, isql in indexes:
     if VERBOSE:
@@ -145,9 +153,9 @@ for typ in ("view", "trigger"):
         "ORDER BY name"
     ).fetchall()
     for oname, otbl, osql in objs:
-        if otbl == EXCLUDE_TABLE:
+        if otbl in EXCLUDE:
             if VERBOSE:
-                print(f"  [skip {typ}] {oname} (on {EXCLUDE_TABLE})")
+                print(f"  [skip {typ}] {oname} (on {otbl})")
             continue
         if VERBOSE:
             print(f"  [{typ}] {oname}")

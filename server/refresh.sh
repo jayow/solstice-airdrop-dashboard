@@ -15,6 +15,19 @@ cd "$(dirname "$0")/.."
 mkdir -p /tmp/walker_logs
 
 START=$(date +%s)
+REFRESH_START_TS=$(date +%s)
+
+# Heartbeat: emit a line every 60s so Railway logs show liveness during the
+# 60+ min refresh even when individual phases are quiet.
+(
+  while true; do
+    echo "[HEARTBEAT $(date -u +%H:%M:%S)] refresh.sh active for $(( $(date +%s) - REFRESH_START_TS ))s"
+    sleep 60
+  done
+) &
+HEARTBEAT_PID=$!
+trap "kill $HEARTBEAT_PID 2>/dev/null || true" EXIT
+
 echo "[$(date '+%H:%M:%S')] === Solstice S2 refresh start ==="
 
 # ── Phase 0: pull today's Solstice baseline from their API ─────
@@ -42,17 +55,21 @@ if [ "$REFRESH_MODE" = "ci" ]; then
   done
 else
   echo "[$(date '+%H:%M:%S')] Phase 1: launching 6 walkers in PARALLEL"
-  python3 src/flares_estimator/walk_s2_lp.py        > /tmp/walker_logs/refresh_lp.log 2>&1 &
+  # tee → log file (kept) + sed prefix → refresh.sh stdout, so Railway sees
+  # live walker progress instead of just silent `&` backgrounded jobs.
+  # Each walker runs in a `set -o pipefail` subshell so $? propagates the
+  # python exit code (not sed's) through `wait`.
+  ( set -o pipefail; python3 -u src/flares_estimator/walk_s2_lp.py        2>&1 | tee /tmp/walker_logs/refresh_lp.log     | sed 's/^/[walker_lp] /' ) &
   PID_LP=$!
-  python3 src/flares_estimator/walk_s2_yt.py        > /tmp/walker_logs/refresh_yt.log 2>&1 &
+  ( set -o pipefail; python3 -u src/flares_estimator/walk_s2_yt.py        2>&1 | tee /tmp/walker_logs/refresh_yt.log     | sed 's/^/[walker_yt] /' ) &
   PID_YT=$!
-  python3 src/flares_estimator/walk_s2_kamino_v3.py --write > /tmp/walker_logs/refresh_kamino.log 2>&1 &
+  ( set -o pipefail; python3 -u src/flares_estimator/walk_s2_kamino_v3.py --write 2>&1 | tee /tmp/walker_logs/refresh_kamino.log | sed 's/^/[walker_kamino] /' ) &
   PID_KAM=$!
-  python3 src/flares_estimator/walk_s2_loopscale.py > /tmp/walker_logs/refresh_loop.log 2>&1 &
+  ( set -o pipefail; python3 -u src/flares_estimator/walk_s2_loopscale.py 2>&1 | tee /tmp/walker_logs/refresh_loop.log   | sed 's/^/[walker_loopscale] /' ) &
   PID_LOOP=$!
-  python3 src/flares_estimator/walk_s2_orca.py      > /tmp/walker_logs/refresh_orca.log 2>&1 &
+  ( set -o pipefail; python3 -u src/flares_estimator/walk_s2_orca.py      2>&1 | tee /tmp/walker_logs/refresh_orca.log   | sed 's/^/[walker_orca] /' ) &
   PID_ORCA=$!
-  python3 src/flares_estimator/walk_s2_raydium.py   > /tmp/walker_logs/refresh_ray.log 2>&1 &
+  ( set -o pipefail; python3 -u src/flares_estimator/walk_s2_raydium.py   2>&1 | tee /tmp/walker_logs/refresh_ray.log    | sed 's/^/[walker_raydium] /' ) &
   PID_RAY=$!
   for name_pid in "LP:$PID_LP" "YT:$PID_YT" "Loopscale:$PID_LOOP" "Orca:$PID_ORCA" "Raydium:$PID_RAY" "Kamino:$PID_KAM"; do
     name="${name_pid%:*}"; pid="${name_pid#*:}"

@@ -71,7 +71,10 @@ fi
 # ── Run the refresh ──────────────────────────────────────────────────
 cd /app
 log "starting server/refresh.sh"
-bash server/refresh.sh
+# stdbuf -oL: line-buffer refresh.sh stdout so Railway sees walker output
+# in real time instead of in a big flush at the end.
+# tee: keep a full local copy at /tmp/refresh_full.log for post-hoc debugging.
+stdbuf -oL bash server/refresh.sh 2>&1 | tee /tmp/refresh_full.log
 log "refresh.sh done"
 
 # ── Publish daily_totals.json to a dated GH release ──────────────────
