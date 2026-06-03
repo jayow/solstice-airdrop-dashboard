@@ -26,14 +26,63 @@ POOLS = {
 }
 
 
+def fetch_program_accounts_v2_paginated(program_id: str, filters: list, *,
+                                       page_size: int = 1000,
+                                       timeout: int = 120,
+                                       force_refresh: bool = False) -> list:
+    """Call getProgramAccountsV2 with server-side pagination.
+
+    Accumulates accounts across pages via `paginationKey` until the server
+    returns no key (or an empty page). Returns a list shaped like
+    getProgramAccounts results: [{'pubkey': ..., 'account': {...}}, ...].
+
+    `filters` is passed through unchanged (dataSize + memcmp etc).
+    Honors rpc_helper retry/cache semantics on each page request.
+    """
+    out = []
+    pagination_key = None
+    # Bound the loop defensively; 64 pages * 1000 = 64k accounts max per pool.
+    for _page in range(64):
+        cfg = {'encoding': 'base64', 'filters': filters, 'limit': page_size}
+        if pagination_key is not None:
+            cfg['paginationKey'] = pagination_key
+        r = rpc('getProgramAccountsV2', [program_id, cfg],
+                timeout=timeout, force_refresh=force_refresh)
+        result = (r or {}).get('result') or {}
+        # v2 response: {'accounts': [...], 'paginationKey': str|None}
+        # Some indexers return the bare list (v1-shaped); handle both.
+        if isinstance(result, list):
+            accs = result
+            pagination_key = None
+        else:
+            accs = result.get('accounts') or []
+            pagination_key = result.get('paginationKey')
+        out.extend(accs)
+        if not pagination_key or not accs:
+            break
+    return out
+
+
 def get_pool_tick(pool_id: str) -> int:
-    """Get current tick from Raydium API."""
+    """Get current tick. Prefer on-chain PoolState (Raydium API tickCurrent
+    field returns null for our S2 pools as of 2026-06-03, defeating the
+    API-only path)."""
+    try:
+        r = rpc('getAccountInfo', [pool_id, {'encoding': 'base64'}], timeout=15)
+        v = (r or {}).get('result', {}).get('value')
+        if v and v.get('data'):
+            data = base64.b64decode(v['data'][0])
+            if len(data) >= 273:
+                return int.from_bytes(data[269:273], 'little', signed=True)
+    except Exception:
+        pass
     try:
         r = requests.get(f'https://api-v3.raydium.io/pools/info/ids?ids={pool_id}', timeout=15).json()
         data = r.get('data') or []
-        if data and data[0]:
-            return int(data[0].get('tickCurrent') or 0)
-    except Exception: pass
+        if data and data[0] and data[0].get('tickCurrent') is not None:
+            return int(data[0]['tickCurrent'])
+    except Exception:
+        pass
     return 0
 
 
@@ -145,15 +194,15 @@ def main():
         n_attempts = 4
         for attempt in range(n_attempts):
             force = (attempt > 0)
-            r = rpc('getProgramAccounts', [RAYDIUM_CLMM, {
-                'encoding': 'base64',
-                'filters': [
-                    {'dataSize': 281},
-                    {'memcmp': {'offset': 41, 'bytes': pool_bytes}}
-                ]
-            }], timeout=120, force_refresh=force)
-            accs = r.get('result', []) or []
-            print(f'  getProgramAccounts attempt {attempt+1} returned {len(accs)} accs (force_refresh={force})', flush=True)
+            filters = [
+                {'dataSize': 281},
+                {'memcmp': {'offset': 41, 'bytes': pool_bytes}},
+            ]
+            accs = fetch_program_accounts_v2_paginated(
+                RAYDIUM_CLMM, filters,
+                page_size=1000, timeout=120, force_refresh=force,
+            )
+            print(f'  getProgramAccountsV2 attempt {attempt+1} returned {len(accs)} accs (force_refresh={force})', flush=True)
             if accs: break
             if attempt < n_attempts - 1:
                 print(f'  retry {attempt+1}: 0 positions — retry in {2*(attempt+1)}s', flush=True)
