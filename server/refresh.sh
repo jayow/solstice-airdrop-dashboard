@@ -15,18 +15,6 @@ cd "$(dirname "$0")/.."
 mkdir -p /tmp/walker_logs
 
 START=$(date +%s)
-REFRESH_START_TS=$(date +%s)
-
-# Heartbeat: emit a line every 60s so Railway logs show liveness during the
-# 60+ min refresh even when individual phases are quiet.
-(
-  while true; do
-    echo "[HEARTBEAT $(date -u +%H:%M:%S)] refresh.sh active for $(( $(date +%s) - REFRESH_START_TS ))s"
-    sleep 60
-  done
-) &
-HEARTBEAT_PID=$!
-trap "kill $HEARTBEAT_PID 2>/dev/null || true" EXIT
 
 echo "[$(date '+%H:%M:%S')] === Solstice S2 refresh start ==="
 
