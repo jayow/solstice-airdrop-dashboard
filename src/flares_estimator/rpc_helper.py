@@ -3,7 +3,16 @@ Shared RPC helper with automatic fallback to Solana public RPC when Helius quota
 is exhausted. Used by all extractors to keep working past the daily Helius limit.
 """
 import os, time, requests
-from threading import Lock
+from threading import Lock, Semaphore
+
+# Token-bucket gates to throttle concurrent in-flight requests and prevent
+# Railway 429 cascades when many threads call rpc() simultaneously.
+# `_GLOBAL_SEM` caps total concurrency; `_GPA_SEM` further caps the heavy
+# getProgramAccounts calls that providers rate-limit aggressively.
+_GLOBAL_CONCURRENCY = int(os.environ.get("SOLSTICE_RPC_CONCURRENCY", "20"))
+_GPA_CONCURRENCY = int(os.environ.get("SOLSTICE_GPA_CONCURRENCY", "2"))
+_GLOBAL_SEM = Semaphore(_GLOBAL_CONCURRENCY)
+_GPA_SEM = Semaphore(_GPA_CONCURRENCY)
 
 _PROVIDER_PREFIXES = ("helius", "quicknode", "chainstack", "alchemy", "triton", "rpcpool")
 
@@ -127,11 +136,15 @@ def rpc(method: str, params: list, timeout: int = 30, max_retries: int = 8,
             pass  # cache failure should never break the RPC path
     body = {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
     idx = _first_live_idx()
+    # Pick the gate: heavy GPA calls use the smaller semaphore so they don't
+    # crowd out lighter reads. All requests pass through the global gate too.
+    sem = _GPA_SEM if method == "getProgramAccounts" else _GLOBAL_SEM
 
     for attempt in range(max_retries):
         endpoint = ENDPOINTS[idx % len(ENDPOINTS)]
         try:
-            r = requests.post(endpoint, json=body, timeout=timeout)
+            with sem:
+                r = requests.post(endpoint, json=body, timeout=timeout)
             try: j = r.json()
             except Exception: j = {}
             err = j.get("error")
@@ -140,6 +153,17 @@ def rpc(method: str, params: list, timeout: int = 30, max_retries: int = 8,
             err_code = err.get("code") if isinstance(err, dict) else None
 
             is_quota = (err_code in QUOTA_ERRORS)
+            # Respect server's Retry-After on 429/503 before rotating endpoints.
+            # Only handles the integer-seconds form; HTTP-date falls through to
+            # the existing exponential-backoff path.
+            if r.status_code in (429, 503):
+                ra = r.headers.get("Retry-After")
+                if ra is not None:
+                    try:
+                        time.sleep(min(float(ra), 30))
+                        continue
+                    except (TypeError, ValueError):
+                        pass  # HTTP-date — fall through to existing handling
             if is_quota or r.status_code == 429:
                 _quota_dead.add(idx)
                 if len(_quota_dead) >= len(ENDPOINTS):
