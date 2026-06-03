@@ -1,0 +1,66 @@
+# Heavyweight / stateful — lives on the Railway volume, not in the image.
+data/
+server/wallets/
+server/events/
+
+# Build / VCS / editor noise.
+.git/
+.gitignore
+.vercel/
+node_modules/
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+tmp/
+logs/
+
+# Docs — not needed at runtime.
+docs/
+README.md
+*.md
+
+# Dev / experimental tool scripts (kept in repo, excluded from image).
+tools/_slim_test/
+tools/probe_*
+tools/sweep_*
+tools/trace_*
+tools/fabian_*
+tools/twa_*
+tools/decode_v2_*
+tools/discover_v2_*
+tools/inspect_v2_*
+tools/test_v2_*
+tools/check_wallet_claim.py
+tools/identify_slx_unknowns.py
+tools/find_bulk_inflow.py
+tools/find_missing_s1.py
+tools/find_streamflow_any.py
+tools/rescrape_legion_buyers.py
+tools/cex_listings_scraper.py
+tools/private_alerter.py
+tools/kr_watcher.py
+tools/index_wallet_txs.py
+tools/streamflow_batch.py
+tools/streamflow_lookup.py
+tools/slx_proof_watcher.py
+tools/slx_holding_tracker.py
+tools/onchain_claim_reconcile*.py
+tools/merge_legion_presale.py
+tools/fetch_presale_allocations.py
+tools/final_circulating_check.py
+tools/tag_legion_unclaimed.py
+tools/bulk_twa.py
+tools/compute_twa*.py
+
+# Other repo subprojects not part of the refresh image.
+s1-deploy/
+server-s1/
+flares-deploy/
+monitor/
+scripts/
+web/
+_legacy_walkers/
+package.json
+package-lock.json

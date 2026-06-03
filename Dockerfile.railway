@@ -1,0 +1,41 @@
+# Railway service image for the daily Solstice S2 flares refresh.
+#
+# Runs server/refresh.sh on a schedule (cron is configured in the Railway
+# dashboard, not here). The DB lives on a mounted volume at /mnt/data.
+#
+# Build context excludes data/, wallets/, events/, docs/ and dev-only tools
+# via .dockerignore. App code lives at /app, mirroring the repo layout so
+# `cd /app && bash server/refresh.sh` works unchanged.
+FROM python:3.13-slim
+
+# System deps:
+#   curl + ca-certificates → release downloads, RPC calls
+#   jq                     → entrypoint JSON parsing
+#   sqlite3                → integrity_check via CLI fallback / debugging
+#   gzip                   → unpack the slim DB tarball from GH releases
+#   gh                     → GitHub release download + upload
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl ca-certificates jq sqlite3 gzip \
+    && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+       | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+       > /etc/apt/sources.list.d/github-cli.list \
+    && apt-get update && apt-get install -y --no-install-recommends gh \
+    && rm -rf /var/lib/apt/lists/*
+
+# Python deps — derived from src/flares_estimator/*.py imports:
+#   requests   → all RPC + Solstice API calls
+#   base58     → Pubkey decode in walkers
+#   solders    → Pubkey type used by db.py and walkers
+# sqlite3 is stdlib. urllib is stdlib. No other 3rd-party deps in the hot path.
+RUN pip install --no-cache-dir requests base58 solders
+
+WORKDIR /app
+
+# Copy only the dirs needed for refresh.sh. .dockerignore filters the rest.
+COPY server/ /app/server/
+COPY src/    /app/src/
+COPY tools/  /app/tools/
+
+ENTRYPOINT ["bash", "server/_railway_entrypoint.sh"]
