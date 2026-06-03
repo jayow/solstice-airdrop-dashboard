@@ -142,23 +142,32 @@ def main():
         pool_bytes = base58.b58encode(base58.b58decode(pool_addr)).decode()
         accs = []
         import time as _t
-        for attempt in range(4):
+        n_attempts = 4
+        for attempt in range(n_attempts):
+            force = (attempt > 0)
             r = rpc('getProgramAccounts', [RAYDIUM_CLMM, {
                 'encoding': 'base64',
                 'filters': [
                     {'dataSize': 281},
                     {'memcmp': {'offset': 41, 'bytes': pool_bytes}}
                 ]
-            }], timeout=120, force_refresh=(attempt > 0))
+            }], timeout=120, force_refresh=force)
             accs = r.get('result', []) or []
+            print(f'  getProgramAccounts attempt {attempt+1} returned {len(accs)} accs (force_refresh={force})', flush=True)
             if accs: break
-            print(f'  retry {attempt+1}: 0 positions — retry in {2*(attempt+1)}s', flush=True)
-            _t.sleep(2 * (attempt + 1))
+            if attempt < n_attempts - 1:
+                print(f'  retry {attempt+1}: 0 positions — retry in {2*(attempt+1)}s', flush=True)
+                _t.sleep(2 * (attempt + 1))
         print(f'  {len(accs)} positions', flush=True)
         if len(accs) == 0:
-            print(f'  WARN: skipping {quest} sync — RPC empty after 4 retries', flush=True)
-            skipped_quests.add(quest)
-            continue
+            # Hardcoded S2 pools are known-active. Final attempt force_refresh=True
+            # returning 0 = RPC failure, not legitimate empty pool. Fail loudly so
+            # refresh.sh surfaces the drift rather than silently emitting partial flares.
+            raise RuntimeError(
+                f'walk_s2_raydium: getProgramAccounts returned 0 positions for pool {pool_addr} '
+                f'({quest}) after {n_attempts} attempts with force_refresh=True on final retry. '
+                f'RPC failure suspected — refusing to silently skip quest.'
+            )
 
         positions = []
         for a in accs:

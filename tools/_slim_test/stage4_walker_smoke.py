@@ -21,7 +21,7 @@ from pathlib import Path
 
 STAGE = 4
 NAME = "walker_smoke"
-WALKER = "tools/walk_s2_yt.py"
+WALKER = "src/flares_estimator/walk_s2_yt.py"
 SMOKE_COPY = "/tmp/slim_smoke.db"
 TIMEOUT_SEC = 600
 ERROR_RE = re.compile(r"(ERROR|RuntimeError|sqlite3\.OperationalError|no such table: wallet_txs)")

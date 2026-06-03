@@ -2,7 +2,9 @@
 """Stage 3 — Row count parity for HOT tables.
 
 For each HOT table: `slim_count == canonical_count` (exact).
-For `wallet_txs`: `slim_count == 0`.
+For `wallet_txs`: zero exposure to wallet_txs data in slim. Accepts EITHER
+`slim_count == 0` OR the table is absent from slim (`_count` returns None).
+Both satisfy the gate's intent: no wallet_txs row leaks into the slim DB.
 
 Exit: 0 PASS, 1 FAIL.
 """
@@ -81,10 +83,12 @@ def main() -> int:
         else:
             hot_ok += 1
 
-    # wallet_txs must be 0 on slim (canonical may have any rowcount)
+    # wallet_txs must have ZERO data exposure in slim. Accept absence (None
+    # from a "no such table" OperationalError) OR an empty table (count == 0).
+    # Both are valid implementations of "drop wallet_txs entirely".
     wtx_c = _count(c_conn, "wallet_txs")
     wtx_s = _count(s_conn, "wallet_txs")
-    wallet_txs_ok = (wtx_s == 0)
+    wallet_txs_ok = (wtx_s is None) or (wtx_s == 0)
     if not wallet_txs_ok:
         mismatches.append({
             "table": "wallet_txs",
@@ -110,7 +114,7 @@ def main() -> int:
 
     first = mismatches[0]
     if first["table"] == "wallet_txs":
-        reason = f"wallet_txs slim={first['slim']} (expected 0)"
+        reason = f"wallet_txs slim={first['slim']} (expected 0 or absent)"
     else:
         reason = (
             f"{first['table']} delta={first['delta']} "

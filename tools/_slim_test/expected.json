@@ -1,11 +1,9 @@
-{
-  "version": 1,
-  "generated_from": "data/solstice.db",
-  "canonical_db": "data/solstice.db",
-  "slim_db": "data/solstice.slim.db",
-  "size_min_bytes": 104857600,
-  "size_max_bytes": 5368709120,
-  "size_min_mb": 100,
+wrote /Users/jakeolaso/Downloads/Claude Projects/SolsticeAirdropUsers/tools/_slim_test/expected.json
+hot_tables: 11
+total_indexes_across_hot: 27
+dropped_tables: ['wallet_txs']
+dropped_indexes_count: 2
+ize_min_mb": 100,
   "size_max_mb": 5120,
   "integrity_check_expected": "ok",
   "hot_tables": {
