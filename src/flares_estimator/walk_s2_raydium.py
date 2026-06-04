@@ -58,7 +58,12 @@ def fetch_program_accounts_v2_paginated(program_id: str, filters: list, *,
             accs = result.get('accounts') or []
             pagination_key = result.get('paginationKey')
         out.extend(accs)
-        if not pagination_key or not accs:
+        # Helius CAN return empty pages with a non-empty paginationKey: server-side
+        # memcmp filtering may eliminate every row on a given page even though more
+        # filter-matching rows exist downstream. Bail ONLY when the server explicitly
+        # says "no more" by omitting the paginationKey. The 64-page outer bound is
+        # the safety net against runaway loops.
+        if not pagination_key:
             break
     return out
 

@@ -9,7 +9,54 @@ if os.path.dirname(THIS) not in sys.path: sys.path.insert(0, os.path.dirname(THI
 from rpc_helper import rpc
 from snapshot_ts import last_snapshot_ts
 import db
-from ._base import S2_START_TS, S2_END_TS
+from ._base import S2_START_TS, S2_END_TS, USX_MINT, EUSX_MINT
+
+
+# Map mint → S2 orderbook(s) whose SY-side escrow contributes to this mint's HOLD balance.
+# SY-USX and SY-eUSX are 1:1 with their respective underlying per the LP walker peg model.
+# When a user posts a BuyYt limit order, their USX (or eUSX) goes into the orderbook's
+# SY escrow — and per Exponent's flares spec, that USX still earns HOLD flares.
+MINT_TO_S2_ORDERBOOKS = {
+    USX_MINT:  ['A2yaEiehRCvibSdMWWJtrBdmVCYwGRNSNwg1VwdicthU'],   # USX-Sep26
+    EUSX_MINT: ['3mXbVuMynj21doFXXEauJ2tGDV9kS2Q1SnnQDcgD54Bw'],   # eUSX-Sep26
+}
+
+
+def _xpbook_escrow_segments(wallet: str, mint: str, end_ts: int) -> list:
+    """Return [(ts, cumulative_balance_token), ...] for this wallet's SY-escrow on
+    the S2 orderbooks underlying `mint`. Cumulative running sum of signed deltas
+    from xpbook_escrow_timeline. Empty list if no events.
+
+    Used by build_twab_timeline as a virtual ATA — escrow balance is added to
+    wallet ATA balance at each timestamp for TWAB integration.
+    """
+    orderbooks = MINT_TO_S2_ORDERBOOKS.get(mint)
+    if not orderbooks:
+        return []
+    placeholders = ','.join('?' * len(orderbooks))
+    try:
+        con = db.conn()
+        rows = con.execute(
+            f"SELECT event_blocktime, delta_raw FROM xpbook_escrow_timeline "
+            f"WHERE wallet = ? AND asset_kind = 'SY' "
+            f"AND orderbook IN ({placeholders}) "
+            f"AND event_blocktime BETWEEN ? AND ? "
+            f"ORDER BY event_blocktime, rowid",
+            [wallet] + list(orderbooks) + [S2_START_TS, end_ts]).fetchall()
+    except Exception:
+        return []   # table absent during initial migration — degrade gracefully
+    if not rows:
+        return []
+    segs = [(S2_START_TS, 0.0)]
+    cum = 0.0
+    for r in rows:
+        cum += r['delta_raw'] / 1e6   # raw → token units (USX/eUSX have 6 decimals)
+        ts = r['event_blocktime']
+        if ts == segs[-1][0]:
+            segs[-1] = (ts, cum)
+        else:
+            segs.append((ts, cum))
+    return segs
 
 
 def _list_atas(wallet: str, mint: str) -> list:
@@ -124,7 +171,14 @@ def build_twab_timeline(wallet: str, mint: str) -> dict:
             total += last
         if not timeline or total != timeline[-1][1] or t == end_ts:
             timeline.append([t, total])
-    return {'atas': atas, 'timeline': timeline, 'last_event_ts': end_ts}
+
+    # XPBook escrow contribution — kept SEPARATE from the wallet ATA timeline so the
+    # walker can apply the 7-day TVL maturity rule (per Solstice S2 docs) to escrow
+    # only. Existing wallet-ATA HOLD continues to integrate linearly (matured wallets
+    # dominate; the < 7-day fresh-deposit edge case is rare in practice).
+    escrow_segs = _xpbook_escrow_segments(wallet, mint, end_ts)
+    return {'atas': atas, 'timeline': timeline,
+            'escrow_segs': escrow_segs, 'last_event_ts': end_ts}
 
 
 def integrate_daily(timeline: list, mult: int, usd_per_token: float, end_ts: int) -> float:
@@ -139,6 +193,40 @@ def integrate_daily(timeline: list, mult: int, usd_per_token: float, end_ts: int
     last_t, last_b = timeline[-1]
     if last_t < end_ts and last_b > 0:
         flares += last_b * usd_per_token * mult * (end_ts - last_t) / 86400.0
+    return flares
+
+
+def integrate_matured_daily(timeline: list, mult: float, usd_per_token: float,
+                              end_ts: int, mature_days: int = 7) -> float:
+    """Daily TWAB with N-day maturity floor (per quest_map.py docstring:
+    'matured_TVL: TVL position must have sat for 7 continuous days before counting').
+
+    Same as integrate_daily but the continuous-hold timer must reach `mature_days`
+    before any flares accrue. Timer resets whenever balance drops to 0.
+    Used for XPBook escrow contributions (BuyYt SY + SellYt/BuyYt YT) — newly
+    posted limit orders don't earn flares until they've sat ≥ 7 days.
+    """
+    if not timeline or mature_days <= 0: return 0.0
+    mature_sec = mature_days * 86400
+    flares = 0.0
+    segments = []
+    for i in range(len(timeline) - 1):
+        t0, bal = timeline[i]; t1, _ = timeline[i + 1]
+        if t1 > end_ts: t1 = end_ts
+        if t1 > t0: segments.append((t0, bal, t1))
+    last_t, last_b = timeline[-1]
+    if last_t < end_ts: segments.append((last_t, last_b, end_ts))
+
+    run_start = None
+    for ts0, bal, ts1 in segments:
+        if bal > 0:
+            if run_start is None: run_start = ts0
+            mature_ts = run_start + mature_sec
+            earn_start = max(ts0, mature_ts)
+            if earn_start < ts1:
+                flares += bal * usd_per_token * mult * (ts1 - earn_start) / 86400.0
+        else:
+            run_start = None
     return flares
 
 

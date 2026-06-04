@@ -11,6 +11,7 @@ from snapshot_ts import last_snapshot_ts
 from gt_walkers._base import (S2_START_TS, S2_END_TS, EUSX_MINT,
     write_walker_outputs, sync_to_wallet_quests, report, live_eusx_peg)
 from gt_walkers._shared_hold import (build_twab_timeline, integrate_daily,
+    integrate_matured_daily,
     discover_universe_for_mint, get_mint_supply, is_hold_cache_stale)
 import db
 
@@ -28,15 +29,21 @@ def run(workers: int = 16, force_refresh: bool = False) -> dict:
         end_ts = min(now_ts, S2_END_TS)
         results = {}
 
+        def _flares_from_raw(raw):
+            f = integrate_daily(raw.get('timeline') or [], MULT, usd_per, end_ts)
+            f += integrate_matured_daily(raw.get('escrow_segs') or [], MULT, usd_per,
+                                          end_ts, mature_days=7)
+            return f
+
         def process(w):
             if not force_refresh:
                 cached = db.get_cache(w, 'S2_HOLD_EUSX')
                 if cached and (now_ts - (cached.get('extracted_at') or 0)) < 24*3600 \
                    and not is_hold_cache_stale(cached, w, QUEST):
-                    return w, integrate_daily(cached['raw'].get('timeline') or [], MULT, usd_per, end_ts)
+                    return w, _flares_from_raw(cached['raw'])
             raw = build_twab_timeline(w, EUSX_MINT)
             db.put_cache(w, 'S2_HOLD_EUSX', raw, watermark_ts=raw.get('last_event_ts', 0))
-            return w, integrate_daily(raw.get('timeline') or [], MULT, usd_per, end_ts)
+            return w, _flares_from_raw(raw)
 
         t0 = time.time()
         with ThreadPoolExecutor(max_workers=workers) as ex:

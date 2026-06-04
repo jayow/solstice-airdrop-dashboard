@@ -26,6 +26,16 @@ echo "[$(date '+%H:%M:%S')] Phase 0: fetch Solstice baseline"
 python3 tools/set_solstice_total.py 2>&1 | sed 's/^/  /' || \
   echo "  ⚠️  baseline fetch failed — audit will use prior day's value"
 
+# ── Phase 0.5: XPBook event indexer + transform ─────────────
+# Must run BEFORE walk_s2_yt + HOLD walkers — they read xpbook_escrow_timeline
+# to credit USX/eUSX/YT held in BuyYt/SellYt orderbook escrow on S2 markets.
+# Incremental (cursor-based) — ~30s on typical daily delta.
+echo "[$(date '+%H:%M:%S')] Phase 0.5: XPBook walker + transform"
+python3 -u src/flares_estimator/walk_xpbook.py > /tmp/walker_logs/refresh_xpbook.log 2>&1 && \
+python3 -u src/flares_estimator/transform_xpbook.py >> /tmp/walker_logs/refresh_xpbook.log 2>&1 && \
+echo "[$(date '+%H:%M:%S')]   ✓ XPBook done" || \
+echo "[$(date '+%H:%M:%S')]   ⚠️  XPBook errored — see refresh_xpbook.log"
+
 # ── Phase 1: walkers ────────────────────────────────────────
 # REFRESH_MODE=ci → run sequentially. GitHub Actions runner can't sustain the
 # parallel burst (100+ concurrent Helius connections) — silent RPC failures

@@ -41,12 +41,450 @@ MATURITY_SEP26 = 1789552700   # 2026-09-16 09:58:20 UTC (V2)
 
 EXPONENT_PROG = 'ExponentnaRg3CQbW6dqQNZKXp7gtZ9DGMp1cwC4HAS7'
 
+# ---- V6 V2-orderbook patch constants ---------------------------------------
+EXPONENT_CORE_PROGRAM = 'ExponentnaRg3CQbW6dqQNZKXp7gtZ9DGMp1cwC4HAS7'
+ORDERBOOK_PROGRAM     = 'XP1BRLn8eCYSygrd8er5P4GKdzqKbC3DLoSsS5UYVZy'
+V2_DEPOSIT_DISC       = bytes.fromhex('180ac9764fb2edf3')
+V2_WITHDRAW_DISC      = bytes.fromhex('29fd8b8ea7bb5676')
+ANCHOR_WRAP           = bytes.fromhex('e445a52e51cb9a1d')
+
+# ---- V15 XPBook postOffer indexer constants --------------------------------
+# Verified empirically via decode of 5V9V postOffer tx 6FoGZHh... (2026-06-02).
+# Source: tmp/yt_v2_v15 probe notes. Do NOT change without re-running the
+# end-to-end decoder on a known-good tx.
+POSTOFFER_EVENT_DISC       = bytes.fromhex('f1535f98c89d90c0')  # 224-byte event under XPBook wrapper
+ANCHOR_EVENT_WRAP          = bytes.fromhex('e445a52e51cb9a1d')  # Anchor emit_cpi sentinel
+XPBOOK_PROGRAM             = 'XP1BRLn8eCYSygrd8er5P4GKdzqKbC3DLoSsS5UYVZy'
+XPBOOK_WRAPPER             = 'XPBookgQTN2p8Yw1C2La35XkPMmZTCEYH77AdReVvK1'
+WRAPPER_POSTOFFER_IX_DISC  = bytes.fromhex('1ea5162277d7b03f')  # ix-disc inside wrapper call args
+ORDERBOOK_TO_MARKET = {
+    'A2yaEiehRCvibSdMWWJtrBdmVCYwGRNSNwg1VwdicthU': '2pZuAPFRJLbT57qJ1ebs8B2ExWwHywyaHUC6Y515BaMm',
+    '3oAfRGTEmeDeN8HZYCv2tMeLGMoRpPs4Jyo11wm8JcdV': 'BxbiZpzj32nrVGecFy8VQ1HohaW7ryhas1k9aiETDWdm',
+    '3mXbVuMynj21doFXXEauJ2tGDV9kS2Q1SnnQDcgD54Bw': 'EsVGeJ99ADQGwGWLiBEg93xBtmuMjyC4P5zG9bpVMJWf',
+}
+USX_MINT = '6FrrzDk5mQARGc1TDYoyVnSyRdds1t4PbtohCD6p3tgG'
+
+# Known PDA owners that must never appear as user wallets. Position PDAs owned
+# by Exponent program (or orderbook market PDAs themselves) — surfacing them as
+# "users" would dump 76K-scale YT onto a single fake wallet.
+BLACKLISTED_PDAS = frozenset([
+    'A2yaEiehRCvibSdMWWJtrBdmVCYwGRNSNwg1VwdicthU',
+    '3mXbVuMynj21doFXXEauJ2tGDV9kS2Q1SnnQDcgD54Bw',
+    '3oAfRGTEmeDeN8HZYCv2tMeLGMoRpPs4Jyo11wm8JcdV',
+    'BxbiZpzj32nrVGecFy8VQ1HohaW7ryhas1k9aiETDWdm',
+    '2pZuAPFRJLbT57qJ1ebs8B2ExWwHywyaHUC6Y515BaMm',
+    'EsVGeJ99ADQGwGWLiBEg93xBtmuMjyC4P5zG9bpVMJWf',
+    'rBbzpGk3PTX8mvQg95VWJ24EDgvxyDJYrEo9jtauvjP',
+])
+
+# market PDA → orderbook PDA. We additionally walk the orderbook PDA's sigs so
+# V2 fills (which only touch the orderbook) get picked up.
+MARKET_TO_ORDERBOOK_PDA = {
+    'BxbiZpzj32nrVGecFy8VQ1HohaW7ryhas1k9aiETDWdm': '3oAfRGTEmeDeN8HZYCv2tMeLGMoRpPs4Jyo11wm8JcdV',
+    '2pZuAPFRJLbT57qJ1ebs8B2ExWwHywyaHUC6Y515BaMm': 'A2yaEiehRCvibSdMWWJtrBdmVCYwGRNSNwg1VwdicthU',
+    'EsVGeJ99ADQGwGWLiBEg93xBtmuMjyC4P5zG9bpVMJWf': '3mXbVuMynj21doFXXEauJ2tGDV9kS2Q1SnnQDcgD54Bw',
+}
+
+# Resolved owner cache for position PDAs (avoid repeated getAccountInfo calls
+# during a single run).
+_POSITION_OWNER_CACHE = {}
+
 # Anchor event discriminators = sha256("event:<EventName>")[:8]
 # Verified 2026-05-21: V1 and V2 emit identical WrapperBuyYtEvent /
 # WrapperSellYtEvent discriminators and 104-byte payload layouts. Same parser
 # works for both market versions.
 _BUY_YT_DISC  = hashlib.sha256(b'event:WrapperBuyYtEvent').digest()[:8]
 _SELL_YT_DISC = hashlib.sha256(b'event:WrapperSellYtEvent').digest()[:8]
+
+
+def _resolve_position_owner(pda: str):
+    """Read the V2 position PDA on-chain and return its owner (bytes 8:40).
+
+    Returns base58 owner pubkey, or None if account missing / can't decode.
+    Cached for the duration of the run.
+    """
+    if pda in _POSITION_OWNER_CACHE:
+        return _POSITION_OWNER_CACHE[pda]
+    owner = None
+    try:
+        r = rpc('getAccountInfo', [pda, {'encoding': 'base64'}])
+        info = (r or {}).get('result') or {}
+        val = info.get('value') or {}
+        data = val.get('data')
+        if isinstance(data, list) and data and data[0]:
+            raw = base64.b64decode(data[0])
+            if len(raw) >= 40:
+                owner = base58.b58encode(raw[8:40]).decode()
+    except Exception:
+        owner = None
+    _POSITION_OWNER_CACHE[pda] = owner
+    return owner
+
+
+def extract_v2_yt_events_from_tx(tx: dict, market_pk: str) -> list:
+    """V2 orderbook-routed YT deposit/withdraw events.
+
+    Walks meta.innerInstructions for emit_cpi-wrapped events:
+      - anchor wrap discriminator e445a52e51cb9a1d (8 bytes)
+      - then v2 event discriminator (8 bytes): V2_DEPOSIT_DISC or V2_WITHDRAW_DISC
+      - payload[64:96]  = position_pda
+      - payload[192:200] = amount (u64 LE, YT in 1e6 scaling)
+      - payload[200:232] = syExchangeRate (u256 LE = 4× u64 limbs, 1e12 fixed-pt)
+
+    V10: returns base_amount in BASE-ASSET units (NOT pre-multiplied by peg —
+    downstream applies cfg['base_usd']). Formula (probe-verified on 5V9V Sep26):
+        base_amount = amount_raw * sy_rate / 1e12 / 1e6
+    Verified example: amount_raw=76128170724, sy_rate=1e12 → 76128.17 USX.
+
+    Sanity guards (WARN + skip event on violation):
+      1. payload size must equal 348 bytes
+      2. syExchangeRate must be in [1e11, 1e13]
+      3. amount_raw must be < 1e15
+
+    Resolves position PDA → owner via _resolve_position_owner. SKIPs any owner
+    in BLACKLISTED_PDAS (PDAs of Exponent / orderbook programs).
+
+    Returns list of (blocktime, owner, signed_base_amount, base_amount).
+    """
+    meta = tx.get('meta') or {}
+    if meta.get('err'): return []
+    blocktime = tx.get('blockTime') or 0
+    out = []
+    for grp in (meta.get('innerInstructions') or []):
+        for ix in (grp.get('instructions') or []):
+            d_b58 = ix.get('data')
+            if not d_b58: continue
+            try: data = base58.b58decode(d_b58)
+            except Exception:
+                try: data = base64.b64decode(d_b58)
+                except Exception: continue
+            # emit_cpi wrap: first 8 bytes ANCHOR_WRAP, next 8 bytes V2 disc
+            if len(data) < 16: continue
+            if data[:8] != ANCHOR_WRAP: continue
+            disc = data[8:16]
+            if disc == V2_DEPOSIT_DISC:
+                sign = +1
+            elif disc == V2_WITHDRAW_DISC:
+                sign = -1
+            else:
+                continue
+            payload = data[16:]
+            # Guard 1: payload size must equal 348 bytes (V10 spec).
+            if len(payload) != 348:
+                print(f'  ⚠️  v2 yt: unexpected payload size {len(payload)} (want 348) — skip event', flush=True)
+                continue
+            try:
+                position_pda = base58.b58encode(payload[64:96]).decode()
+                amount_raw = struct.unpack('<Q', payload[192:200])[0]
+                limbs = struct.unpack('<4Q', payload[200:232])
+                sy_rate = limbs[0] | (limbs[1] << 64) | (limbs[2] << 128) | (limbs[3] << 192)
+            except Exception:
+                continue
+            # Guard 3: amount_raw must be < 1e15.
+            if amount_raw >= 10**15:
+                print(f'  ⚠️  v2 yt: amount_raw {amount_raw} >= 1e15 — skip event', flush=True)
+                continue
+            # Guard 2: syExchangeRate must be in [1e11, 1e13].
+            if sy_rate < 10**11 or sy_rate > 10**13:
+                print(f'  ⚠️  v2 yt: syExchangeRate {sy_rate} outside [1e11, 1e13] — skip event', flush=True)
+                continue
+            owner = _resolve_position_owner(position_pda)
+            if not owner: continue
+            if owner in BLACKLISTED_PDAS: continue
+            # V16: base_amount comes from XPBook postOffer cost (usx_committed),
+            # V17: emit base_amount = 0 for all v2 events. The true v2 cost
+            # is injected as a post-walk fixup that reads xpbook_offers and
+            # sets cost_basis_by_market[market]['usd_paid'] += SUM(usx_committed)
+            # for each (wallet, orderbook). This avoids the V16 over-count where
+            # each v2 event emitted the full committed cost causing 7× inflation
+            # when a maker had multiple fills.
+            base_amount = 0.0
+            out.append((blocktime, owner, sign * base_amount, base_amount))
+    return out
+
+
+def _v2_selftest():
+    """Assert known-good position PDA → owner mapping.
+
+    Tested 2026-06-02: position PDA 8zcfwcV1EPGre6VwzJLVjPJSGK9KKbk5oC2PJU7epahY
+    owner = 5V9VwuVqXyUeJfa2N7uKxbaV6kX77dJJnowCL6kLojKN.
+    """
+    expected_owner = '5V9VwuVqXyUeJfa2N7uKxbaV6kX77dJJnowCL6kLojKN'
+    pda = '8zcfwcV1EPGre6VwzJLVjPJSGK9KKbk5oC2PJU7epahY'
+    actual = _resolve_position_owner(pda)
+    assert actual == expected_owner, (
+        f'_v2_selftest FAILED: expected {expected_owner}, got {actual}')
+    print(f'  _v2_selftest OK: {pda[:12]}… → {expected_owner[:12]}…', flush=True)
+
+
+def _audit_concentration(market_label: str, events_by_wallet: dict) -> dict:
+    """WARN-not-ABORT: if a single wallet's share > 30% AND it's a known PDA,
+    log a warning and remove it from the dict. Returns the (possibly filtered)
+    events_by_wallet.
+    """
+    total = 0.0
+    per_wallet = {}
+    for w, evs in events_by_wallet.items():
+        s = sum(d for (_, d, _, _) in evs if d > 0)
+        per_wallet[w] = s
+        total += max(0.0, s)
+    if total <= 0: return events_by_wallet
+    filtered = events_by_wallet
+    for w, s in per_wallet.items():
+        if s <= 0: continue
+        share = s / total
+        if share > 0.30 and w in BLACKLISTED_PDAS:
+            print(f'  ⚠️  concentration audit ({market_label}): {w} = {share*100:.1f}% '
+                  f'(blacklisted PDA) — removing from event set', flush=True)
+            filtered = {k: v for k, v in filtered.items() if k != w}
+    return filtered
+
+
+def _pre_walk_purge():
+    """Remove any previously-persisted walker_events rows whose wallet is a
+    known blacklisted PDA. Prior runs (pre-V6) could have stored these.
+    """
+    try:
+        import db as _db_purge
+        _db_purge.init()
+        c = _db_purge.conn()
+        placeholders = ','.join('?' for _ in BLACKLISTED_PDAS)
+        params = ['walk_s2_yt', *BLACKLISTED_PDAS]
+        cur = c.execute(
+            f'DELETE FROM walker_events WHERE walker = ? AND wallet IN ({placeholders})',
+            params,
+        )
+        n = cur.rowcount or 0
+        if n > 0:
+            print(f'  _pre_walk_purge: removed {n} blacklisted-PDA walker_events rows', flush=True)
+    except Exception as e:
+        print(f'  ⚠️  _pre_walk_purge failed: {e}', flush=True)
+
+
+# ============================================================================
+# V15 XPBook postOffer indexer
+# ----------------------------------------------------------------------------
+# Goal: capture USX committed per maker per orderbook so V2 YT cost basis
+# (which lives in the orderbook wrapper IX, NOT the position PDA) can be
+# attributed to the user who placed the offer.
+#
+# Architecture mirrors V14 (orderbook PDA sig walk + INSERT OR IGNORE into a
+# dedicated table) but with EMPIRICALLY VERIFIED constants:
+#   - Event disc f1535f98c89d90c0 (V14 used 198f66ce79aabdf8 → 0 rows)
+#   - USX committed comes from the WRAPPER IX call args (26-byte ix data),
+#     NOT from the event payload itself
+# ============================================================================
+
+
+def _ensure_xpbook_offers_schema(con):
+    """Create xpbook_offers table if missing. Idempotent.
+
+    Schema:
+      orderbook   TEXT  -- orderbook PDA (one of ORDERBOOK_TO_MARKET keys)
+      sig         TEXT  -- on-chain signature where the postOffer event lived
+      blocktime   INT   -- event blockTime
+      maker       TEXT  -- pubkey at event payload bytes [16:48]
+      usx_committed INT -- u64 from wrapper ix data[9:17] (1e6 units)
+
+    Primary key (orderbook, sig, maker) keeps inserts idempotent across reruns.
+    """
+    con.execute(
+        '''CREATE TABLE IF NOT EXISTS xpbook_offers (
+               orderbook     TEXT NOT NULL,
+               sig           TEXT NOT NULL,
+               blocktime     INTEGER,
+               maker         TEXT NOT NULL,
+               usx_committed INTEGER NOT NULL DEFAULT 0,
+               PRIMARY KEY (orderbook, sig, maker)
+           )'''
+    )
+    con.execute('CREATE INDEX IF NOT EXISTS idx_xpbook_offers_maker '
+                'ON xpbook_offers(orderbook, maker)')
+
+
+def _maker_usx_outflow_raw(tx, maker):
+    """Return raw u64 USX outflow (positive = USX paid out) from the maker's
+    wallet ATAs in this tx. USX mint hardcoded for USX-on-Solana.
+    Used to gate postOffer cost-attribution against cancellation refunds.
+    """
+    USX_MINT = '6FrrzDk5mQARGc1TDYoyVnSyRdds1t4PbtohCD6p3tgG'
+    pre = (tx.get('meta') or {}).get('preTokenBalances') or []
+    post = (tx.get('meta') or {}).get('postTokenBalances') or []
+    deltas = {}
+    for arr, sign in ((pre, -1), (post, +1)):
+        for b in arr:
+            if b.get('mint') != USX_MINT: continue
+            if b.get('owner') != maker: continue
+            ai = b.get('accountIndex')
+            amt_str = (b.get('uiTokenAmount') or {}).get('amount') or '0'
+            try:
+                amt = int(amt_str)
+            except Exception:
+                continue
+            deltas[ai] = deltas.get(ai, 0) + sign * amt
+    # Sum all NEGATIVE deltas (outflows). Return as raw u64.
+    return -sum(d for d in deltas.values() if d < 0)
+
+
+def _extract_usx_commit_from_wrapper(tx, group_idx, event_ix_idx):
+    """Find the wrapper ix in the same inner_ix group that carries the
+    postOffer call args. Returns u64 USX amount in 1e6 units, or 0 if not found.
+
+    V18: Multiple wrapper ix discriminators exist (5V9V's tx used
+    1ea5162277d7b03f, DDeKrHT's used 5d3db96a227ea83f, others may differ).
+    Match STRUCTURALLY instead: ANY 26-byte XPBookgQTN-program ix in the same
+    inner group whose first byte is 0x01 and whose u64 at bytes 9-17 is in a
+    sane USX range (1e6 .. 1e10 → $1 to $10,000). Pick the first match.
+    """
+    inner_ixs = (tx.get('meta') or {}).get('innerInstructions') or []
+    if group_idx >= len(inner_ixs): return 0
+    group = inner_ixs[group_idx]
+    for ix in group.get('instructions', []):
+        if (ix.get('programId') or ix.get('program')) != XPBOOK_WRAPPER: continue
+        d_b58 = ix.get('data')
+        if not d_b58: continue
+        try:
+            data = base58.b58decode(d_b58)
+        except Exception:
+            try:
+                data = base64.b64decode(d_b58)
+            except Exception:
+                continue
+        if len(data) != 26: continue
+        if data[0] != 0x01: continue  # wrapper-byte sentinel
+        try:
+            usx_raw = struct.unpack('<Q', data[9:17])[0]
+        except Exception:
+            continue
+        # Sanity-gate the u64 — must look like a USX amount in 1e6 units.
+        if 1_000_000 <= usx_raw <= 10_000_000_000:
+            return usx_raw
+    return 0
+
+
+def _index_postoffer_for_orderbook(orderbook_pda, lookback_days=30):
+    """Walk orderbook PDA sig history and persist postOffer (maker, usx)
+    rows into xpbook_offers.
+
+    Returns the number of rows newly inserted on this call.
+
+    Logic per tx:
+      1. For each inner_ix group, iterate its instructions
+      2. Find a postOfferEvent: program XPBOOK_WRAPPER, base58 data starting
+         with ANCHOR_EVENT_WRAP + POSTOFFER_EVENT_DISC, 224 bytes total
+      3. Extract maker pubkey from event payload[16:48]
+      4. In the SAME inner_ix group, find the wrapper ix carrying the
+         postOffer call args (26-byte data, ix disc = WRAPPER_POSTOFFER_IX_DISC)
+      5. INSERT OR IGNORE into xpbook_offers
+
+    lookback_days isn't a hard cutoff — we walk the orderbook's FULL sig
+    history (cheap: orderbooks have O(thousands) sigs) and rely on
+    INSERT OR IGNORE for idempotence across runs. The kwarg is preserved
+    for future use when we wire the freshness watermark.
+    """
+    import db as _db
+    _db.init()
+    con = _db.conn()
+    _ensure_xpbook_offers_schema(con)
+
+    sigs = fetch_all_sigs(orderbook_pda)
+    if not sigs:
+        return 0
+
+    rows_inserted = 0
+
+    def _fetch_tx(s):
+        for attempt in range(4):
+            try:
+                r = rpc('getTransaction', [s['signature'],
+                        {'encoding': 'jsonParsed', 'maxSupportedTransactionVersion': 0}],
+                        force_refresh=(attempt > 0))
+                tx = (r or {}).get('result')
+                if tx is None: continue
+                return tx
+            except Exception:
+                continue
+        return None
+
+    n_scanned = 0
+    with ThreadPoolExecutor(max_workers=16) as ex:
+        futs = {ex.submit(_fetch_tx, s): s for s in sigs}
+        for fut in as_completed(futs):
+            sig_str = futs[fut]['signature']
+            tx = fut.result()
+            n_scanned += 1
+            if tx is None: continue
+            meta = tx.get('meta') or {}
+            if meta.get('err'): continue
+            blocktime = tx.get('blockTime') or 0
+            inner_ixs = meta.get('innerInstructions') or []
+            for grp_idx, grp in enumerate(inner_ixs):
+                for ix_idx, ix in enumerate(grp.get('instructions') or []):
+                    if (ix.get('programId') or ix.get('program')) != XPBOOK_WRAPPER:
+                        continue
+                    d_b58 = ix.get('data')
+                    if not d_b58: continue
+                    try:
+                        data = base58.b58decode(d_b58)
+                    except Exception:
+                        try:
+                            data = base64.b64decode(d_b58)
+                        except Exception:
+                            continue
+                    if len(data) != 224: continue
+                    if data[0:8] != ANCHOR_EVENT_WRAP: continue
+                    if data[8:16] != POSTOFFER_EVENT_DISC: continue
+                    # Event payload starts at byte 16; maker at payload[0:32]
+                    try:
+                        maker = base58.b58encode(data[16:48]).decode()
+                    except Exception:
+                        continue
+                    usx_committed = _extract_usx_commit_from_wrapper(
+                        tx, grp_idx, ix_idx)
+                    # V18b: gate by ACTUAL maker USX outflow. Cancellations
+                    # also emit postOfferEvent + wrapper-ix patterns but the
+                    # maker's USX moves IN (refund), not OUT. Only credit cost
+                    # when net USX delta on the maker's ATA is negative.
+                    if usx_committed > 0:
+                        maker_outflow = _maker_usx_outflow_raw(tx, maker)
+                        if maker_outflow < usx_committed * 0.5:
+                            # No matching debit found — likely a cancel/refund
+                            # or a second-emit of the same event. Zero it out.
+                            usx_committed = 0
+                    try:
+                        cur = con.execute(
+                            'INSERT OR IGNORE INTO xpbook_offers '
+                            '(orderbook, sig, blocktime, maker, usx_committed) '
+                            'VALUES (?, ?, ?, ?, ?)',
+                            (orderbook_pda, sig_str, blocktime, maker, int(usx_committed)))
+                        if cur.rowcount and cur.rowcount > 0:
+                            rows_inserted += 1
+                    except Exception:
+                        continue
+    print(f'    indexed {orderbook_pda[:12]}…: scanned {n_scanned:,} txs, '
+          f'+{rows_inserted:,} new offer rows', flush=True)
+    return rows_inserted
+
+
+def _lookup_cost_by_owner(orderbook, owner):
+    """Best-effort: sum all usx_committed for this maker on this orderbook.
+
+    V15 first cut: lacks fill_amount → uses TOTAL committed as upper bound.
+    A future v16 will match by offer_idx once FilledOffersEvent disc is
+    pinned. Returns u64 in 1e6 units (callers divide by 1e6 for USD).
+    """
+    import db as _db
+    _db.init()
+    con = _db.conn()
+    cur = con.execute(
+        'SELECT SUM(usx_committed) FROM xpbook_offers '
+        'WHERE orderbook = ? AND maker = ?',
+        (orderbook, owner))
+    row = cur.fetchone()
+    if not row or row[0] is None:
+        return 0
+    return int(row[0])
+
 
 MARKETS = {
     'USX-Jun26': {
@@ -74,6 +512,9 @@ MARKETS = {
         'base_usd': 1.0,
         'yt_mint': '6gUU7UXtGgJ3tmeb2gXxQcVeM2L82bg9MzRYxu2YUspu',
         'maturity_ts': MATURITY_SEP26,
+        # XPBook orderbook PDA — YT escrowed here (BuyYt fill credits awaiting claim,
+        # SellYt offers awaiting fill/cancel) earns YT flares per Exponent spec.
+        'xpbook_orderbook': 'A2yaEiehRCvibSdMWWJtrBdmVCYwGRNSNwg1VwdicthU',
     },
     'eUSX-Sep26': {
         'market': 'EsVGeJ99ADQGwGWLiBEg93xBtmuMjyC4P5zG9bpVMJWf',
@@ -82,8 +523,42 @@ MARKETS = {
         'base_usd': 1.0319,
         'yt_mint': '2wZkuwSiDyHZuuZfS9C9kFkZNsgwHGjKtCxX3B6Ck6EX',
         'maturity_ts': MATURITY_SEP26,
+        'xpbook_orderbook': '3mXbVuMynj21doFXXEauJ2tGDV9kS2Q1SnnQDcgD54Bw',
     },
 }
+
+
+def _xpbook_yt_escrow_segments(wallet: str, orderbook: str, end_ts: int) -> list:
+    """Returns [(ts, cumulative_yt_balance_in_escrow), ...] for this wallet on
+    the given XPBook orderbook. Cumulative running sum of signed deltas from
+    xpbook_escrow_timeline (asset_kind='YT'). Empty if no events.
+
+    Per Exponent's flares spec, YT escrowed in the orderbook (BuyYt fills
+    awaiting claim, SellYt offers awaiting fill/cancel) still earns YT flares.
+    """
+    if not orderbook: return []
+    try:
+        import db as _db
+        con = _db.conn()
+        rows = con.execute(
+            "SELECT event_blocktime, delta_raw FROM xpbook_escrow_timeline "
+            "WHERE wallet = ? AND asset_kind = 'YT' AND orderbook = ? "
+            "AND event_blocktime BETWEEN ? AND ? "
+            "ORDER BY event_blocktime, rowid",
+            (wallet, orderbook, S2_START_TS, end_ts)).fetchall()
+    except Exception:
+        return []
+    if not rows: return []
+    segs = [(S2_START_TS, 0.0)]
+    cum = 0.0
+    for r in rows:
+        cum += r['delta_raw'] / 1e6
+        ts = r['event_blocktime']
+        if ts == segs[-1][0]:
+            segs[-1] = (ts, cum)
+        else:
+            segs.append((ts, cum))
+    return segs
 
 
 def fetch_all_sigs(addr: str) -> list:
@@ -176,6 +651,66 @@ def main():
           f'{datetime.fromtimestamp(end_ts, UTC).strftime("%Y-%m-%d %H:%M UTC")} '
           f'(midnight cutoff, {(end_ts-S2_START_TS)/86400:.1f} days)\n', flush=True)
 
+    # V6 V2-orderbook patch — gated, default OFF. When enabled:
+    #   - run on-chain self-test for position-owner resolution
+    #   - purge any stale blacklisted-PDA walker_events rows from earlier runs
+    #   - additionally walk the orderbook PDA for each market that has one
+    #   - decode V2 deposit/withdraw emit_cpi events and union with V1
+    #   - audit per-market concentration (drop blacklisted PDAs > 30%)
+    v2_enabled = os.environ.get('SOLSTICE_YT_V2_ENABLED') == '1'
+    if v2_enabled:
+        print('V6 V2-orderbook walker ENABLED (SOLSTICE_YT_V2_ENABLED=1)', flush=True)
+        _v2_selftest()
+        _pre_walk_purge()
+
+        # --- V15 XPBook postOffer indexer ------------------------------------
+        # Walks each orderbook PDA and persists (maker, usx_committed) rows.
+        # Hard-aborts if 0 orderbooks succeed; loud WARN if all succeed but
+        # the table stays empty (suggests a disc/decode regression like V14).
+        print('V15 XPBook postOffer indexer: starting', flush=True)
+        import db as _db_idx
+        _db_idx.init()
+        _ensure_xpbook_offers_schema(_db_idx.conn())
+        orderbooks_succeeded = 0
+        total_new_rows = 0
+        for ob_pda in ORDERBOOK_TO_MARKET.keys():
+            try:
+                n_new = _index_postoffer_for_orderbook(ob_pda, lookback_days=30)
+                orderbooks_succeeded += 1
+                total_new_rows += n_new
+            except Exception as e:
+                print(f'  ⚠️  V15 index failed for {ob_pda[:12]}…: {e}', flush=True)
+        if orderbooks_succeeded == 0:
+            raise RuntimeError(
+                'V15 XPBook indexer: 0/3 orderbooks succeeded — aborting '
+                'rather than running v2 cost-basis lookup against an empty '
+                'xpbook_offers table.')
+        # Even if no NEW rows this run (could be a re-run), confirm the table
+        # actually has data overall. Empty table after a full backfill is the
+        # exact V14 failure mode this patch was built to surface.
+        try:
+            cur = _db_idx.conn().execute('SELECT COUNT(*) FROM xpbook_offers')
+            total_rows = cur.fetchone()[0] or 0
+        except Exception:
+            total_rows = 0
+        print(f'V15 indexer summary: {orderbooks_succeeded}/3 orderbooks, '
+              f'+{total_new_rows:,} new rows, {total_rows:,} total rows', flush=True)
+        if total_rows == 0:
+            print('  ⚠️ V15: xpbook_offers is EMPTY after full backfill — '
+                  'disc/decode constants may be wrong (V14-style regression)', flush=True)
+
+        # Sanity: 5V9V should have ≥1 indexed offer on USX-Sep26 orderbook.
+        con = _db_idx.conn()
+        cur = con.execute(
+            'SELECT COUNT(*) FROM xpbook_offers WHERE orderbook = ? AND maker = ?',
+            ('A2yaEiehRCvibSdMWWJtrBdmVCYwGRNSNwg1VwdicthU',
+             '5V9VwuVqXyUeJfa2N7uKxbaV6kX77dJJnowCL6kLojKN'))
+        n_5v9v = cur.fetchone()[0]
+        print(f'  V15 sanity: 5V9V indexed offer count on USX-Sep26 = {n_5v9v}', flush=True)
+        if n_5v9v == 0:
+            print('  ⚠️ V15 sanity FAIL: 5V9V has 0 indexed offers — '
+                  'disc/decode may still be wrong', flush=True)
+
     all_results = defaultdict(lambda: defaultdict(float))
     all_events_by_wallet = defaultdict(list)   # wallet → list of all-market events for cache
 
@@ -186,6 +721,17 @@ def main():
 
         sigs = fetch_all_sigs(market_pk)
         print(f'  {len(sigs):,} market sigs', flush=True)
+
+        # V6: union in orderbook PDA sigs (dedupe by signature) so V2 fills
+        # that only touch the orderbook are picked up.
+        if v2_enabled:
+            ob_pda = MARKET_TO_ORDERBOOK_PDA.get(market_pk)
+            if ob_pda:
+                ob_sigs = fetch_all_sigs(ob_pda)
+                seen = {s['signature'] for s in sigs}
+                new = [s for s in ob_sigs if s['signature'] not in seen]
+                print(f'  {len(ob_sigs):,} orderbook sigs (+{len(new):,} unique)', flush=True)
+                sigs = sigs + new
 
         # Fetch all txs in parallel; extract per-wallet event tuples including base.
         # CRITICAL: silent RPC failures (tx == None or exception) silently dropped
@@ -208,7 +754,14 @@ def main():
                         _t.sleep(0.3 * (attempt + 1))
                         continue
                     evs = extract_yt_events_from_tx(tx, market_pk)
-                    return [(ts, user, delta, base, s['signature']) for ts, user, delta, base in evs]
+                    merged = [(ts, user, delta, base, s['signature']) for ts, user, delta, base in evs]
+                    if v2_enabled:
+                        # V2 events return (blocktime, owner, signed_amount, abs_amount).
+                        # Use abs_amount as base_amount so existing downstream USD logic still
+                        # works (USD = base_amount × base_usd peg).
+                        for v_ts, v_owner, v_delta, v_abs in extract_v2_yt_events_from_tx(tx, market_pk):
+                            merged.append((v_ts, v_owner, v_delta, v_abs, s['signature']))
+                    return merged
                 except Exception:
                     _t.sleep(0.3 * (attempt + 1))
                     continue
@@ -266,6 +819,51 @@ def main():
             events_by_wallet[r['wallet']].append((r['ts'], r['amount_delta'], r['base_amount'], r['sig']))
         print(f'  walker_events: {sum(len(v) for v in events_by_wallet.values()):,} total events across '
               f'{len(events_by_wallet):,} wallets (full history)', flush=True)
+
+        # V19: inject XPBook orderbook-derived YT events for Sep26 markets.
+        # The market-PDA event walk above only sees WrapperBuyYt/SellYt (AMM activity).
+        # XPBook fills + claims fire different events (depositYtV2 + wrapperWithdrawFundsEvent)
+        # and are invisible to that walk — so users with orderbook activity (filled BuyYt
+        # limit orders, executed SellYt orders) had their YT balance under-counted by
+        # ~76K for 5V9V on USX-Sep26. Inject the missing events here:
+        #   - BuyYt claim (wrapperWithdrawFundsEvent.amountYtOut > 0) → +YT to maker
+        #     timestamped at withdraw blocktime (when YT enters yield_position)
+        #   - SellYt fill (xpbook_fills with maker = wallet, side = SellYt) → -YT
+        #     timestamped at fill blocktime (when taker takes maker's escrowed YT)
+        ob_pk = cfg.get('xpbook_orderbook')
+        if ob_pk:
+            try:
+                con_xb = _db.conn()
+                # BuyYt claims: positive YT delta from withdraw events on this orderbook
+                for r in con_xb.execute(
+                    "SELECT wallet, event_blocktime, -delta_raw amt, event_sig "
+                    "FROM xpbook_escrow_timeline "
+                    "WHERE orderbook = ? AND asset_kind = 'YT' AND event_kind = 'withdraw' "
+                    "AND delta_raw < 0", (ob_pk,)):
+                    if r['amt'] > 0:
+                        events_by_wallet[r['wallet']].append(
+                            (r['event_blocktime'], r['amt'] / 1e6, 0.0, r['event_sig']))
+                # SellYt fills: maker loses YT when taker fills their sell offer
+                for r in con_xb.execute("""
+                    SELECT f.maker, f.fill_blocktime, f.yt_filled_raw amt, f.fill_sig
+                    FROM xpbook_fills f
+                    JOIN xpbook_offers o ON o.orderbook = f.orderbook
+                                       AND o.offer_idx = f.maker_slot
+                                       AND o.post_blocktime = (
+                                         SELECT MAX(post_blocktime) FROM xpbook_offers
+                                         WHERE orderbook = f.orderbook AND offer_idx = f.maker_slot
+                                           AND post_blocktime <= f.fill_blocktime)
+                    WHERE f.maker IS NOT NULL AND f.orderbook = ? AND o.side = 'SellYt'
+                """, (ob_pk,)):
+                    if r['amt'] > 0:
+                        events_by_wallet[r['maker']].append(
+                            (r['fill_blocktime'], -r['amt'] / 1e6, 0.0, r['fill_sig']))
+            except Exception as _e:
+                print(f'  WARN XPBook YT injection failed for {ob_pk[:14]}..: {_e}', flush=True)
+
+        # V6: concentration audit — drop blacklisted PDAs that own >30% share.
+        if v2_enabled:
+            events_by_wallet = _audit_concentration(mname, events_by_wallet)
 
         # ============================================================
         # GLOBAL SUPPLY AUDIT — informational. Compares sum of reconstructed
@@ -334,12 +932,40 @@ def main():
             timeline.append((end_ts, balance))
 
             # Integrate yt(t) × mult × dt over [S2_START_TS, end_ts]
+            #   - existing yield_position timeline: linear (current framework behavior)
+            #   - XPBook orderbook-escrow timeline: 7-day maturity per S2 docs
             flares = 0.0
             for i in range(len(timeline) - 1):
                 t0, bal = timeline[i]
                 t1, _ = timeline[i + 1]
                 if t1 <= t0 or bal <= 0: continue
                 flares += bal * mult * (t1 - t0) / 86400.0
+
+            # XPBook escrow contribution (BuyYt fills awaiting claim + SellYt offers
+            # awaiting fill/cancel) — apply 7-day TVL maturity.
+            escrow_segs = _xpbook_yt_escrow_segments(wallet, cfg.get('xpbook_orderbook'), end_ts)
+            if escrow_segs:
+                MATURE_SEC = 7 * 86400
+                run_start = None
+                # Build (t0, bal, t1) segments from escrow timeline
+                escrow_segments = []
+                for i in range(len(escrow_segs) - 1):
+                    ts0, b0 = escrow_segs[i]; ts1, _ = escrow_segs[i+1]
+                    if ts1 > end_ts: ts1 = end_ts
+                    if ts1 > ts0:
+                        escrow_segments.append((ts0, b0, ts1))
+                last_ts, last_b = escrow_segs[-1]
+                if last_ts < end_ts:
+                    escrow_segments.append((last_ts, last_b, end_ts))
+                for ts0, bal, ts1 in escrow_segments:
+                    if bal > 0:
+                        if run_start is None: run_start = ts0
+                        mature_ts = run_start + MATURE_SEC
+                        earn_start = max(ts0, mature_ts)
+                        if earn_start < ts1:
+                            flares += bal * mult * (ts1 - earn_start) / 86400.0
+                    else:
+                        run_start = None
 
             if flares > 0:
                 all_results[wallet][cfg['quest']] = flares
@@ -502,12 +1128,35 @@ def main():
             s2_contrib = (sum(e['usd_value'] for e in s2_events if e['yt_delta'] > 0)
                         - sum(e['usd_value'] for e in s2_events if e['yt_delta'] < 0))
 
+            # V17/V19: inject true v2 cost basis from xpbook_wallet_orderbook_flow
+            # (the actual_fill_cost_raw — exact USX consumed by fills, derived from
+            # the postOfferEvent.filledOffers.takenAmount events). This replaces the
+            # legacy V15 xpbook_offers.usx_committed query (column was renamed in v3
+            # of the XPBook transform; the value is the same).
+            v2_paid = 0.0
+            orderbook_for_market = MARKET_TO_ORDERBOOK_PDA.get(mp)
+            if orderbook_for_market:
+                try:
+                    con = _db.conn()
+                    cur = con.execute(
+                        "SELECT COALESCE(SUM(actual_fill_cost_raw), 0) "
+                        "FROM xpbook_wallet_orderbook_flow "
+                        "WHERE orderbook = ? AND wallet = ?",
+                        (orderbook_for_market, wallet))
+                    row = cur.fetchone()
+                    if row and row[0]:
+                        v2_paid = row[0] / 1e6   # raw → USX
+                except Exception as _e:
+                    print(f'  WARN v2 cost lookup failed for {wallet[:10]}/{mp[:10]}: {_e}', flush=True)
+                    v2_paid = 0.0
+
             cost_basis_by_market[mp] = {
-                'usd_basis':     max(0.0, s1_contrib + s2_contrib),
-                'usd_paid':      usd_paid_nominal,
+                'usd_basis':     max(0.0, s1_contrib + s2_contrib + v2_paid),
+                'usd_paid':      usd_paid_nominal + v2_paid,
                 'usd_recovered': usd_recovered_total,
                 's1_contribution': s1_contrib,
                 's2_contribution': s2_contrib,
+                'v2_orderbook_contribution': v2_paid,  # V17: separately tracked for audit
                 'n_buys':        n_buys,
                 'n_sells':       n_sells,
                 'n_groups_s1':   len(groups),
