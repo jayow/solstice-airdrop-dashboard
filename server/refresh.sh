@@ -53,8 +53,8 @@ if [ "$REFRESH_MODE" = "ci" ]; then
   done
 else
   echo "[$(date '+%H:%M:%S')] Phase 1: launching 6 walkers in PARALLEL"
-  # tee → log file (kept) + sed prefix → refresh.sh stdout, so Railway sees
-  # live walker progress instead of just silent `&` backgrounded jobs.
+  # tee → log file (kept) + sed prefix → refresh.sh stdout, so the local
+  # console sees live walker progress instead of just silent `&` backgrounded jobs.
   # Each walker runs in a `set -o pipefail` subshell so $? propagates the
   # python exit code (not sed's) through `wait`.
   ( set -o pipefail; python3 -u src/flares_estimator/walk_s2_lp.py        2>&1 | tee /tmp/walker_logs/refresh_lp.log     | sed 's/^/[walker_lp] /' ) &

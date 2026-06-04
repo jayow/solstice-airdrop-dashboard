@@ -6,7 +6,7 @@ import os, time, requests
 from threading import Lock, Semaphore
 
 # Token-bucket gates to throttle concurrent in-flight requests and prevent
-# Railway 429 cascades when many threads call rpc() simultaneously.
+# provider 429 cascades when many threads call rpc() simultaneously.
 # `_GLOBAL_SEM` caps total concurrency; `_GPA_SEM` further caps the heavy
 # getProgramAccounts calls that providers rate-limit aggressively.
 _GLOBAL_CONCURRENCY = int(os.environ.get("SOLSTICE_RPC_CONCURRENCY", "20"))
