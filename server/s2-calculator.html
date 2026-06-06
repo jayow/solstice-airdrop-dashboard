@@ -1465,10 +1465,12 @@ const YT_HELPER_MIN_DAYS_TO_MATURITY = 30;   // skip about-to-mature markets
 // version of this file had 1785024000 (Jul 26) which clipped the projection
 // 6 days early.
 const S2_END_TS = 1785542400;
-// Solstice +50% boost on Sep26 rate markets ends 2026-06-02 00:00 UTC.
+// Solstice +50% boost on Sep26 rate markets ended 2026-05-29 00:00 UTC.
+// (Originally announced 2026-06-02 but multi-wallet flare reproduction
+// confirmed the actual credit cutover was 2026-05-29.)
 // After this, YT/LP multipliers revert to base (boost/1.5). The Exponent API
 // currently returns boost values; we split projections at this boundary.
-const BOOST_END_TS = 1780358400;
+const BOOST_END_TS = 1780012800;
 const BOOST_RATIO  = 1.5;
 
 // Split a YT projection into boost-period flares and base-period flares.
@@ -1521,7 +1523,7 @@ async function loadYtMarkets() {
             const yy  = String(d.getUTCFullYear()).slice(-2);
             const sym = `YT-${m.ticker}${dd}${mmm}${yy}`;
             const multStr = boostActive
-              ? `${m.ytMultiplier}× → ${(m.ytMultiplier / BOOST_RATIO)}× (Jun 2)`
+              ? `${m.ytMultiplier}× → ${(m.ytMultiplier / BOOST_RATIO)}× (May 29)`
               : `${m.ytMultiplier}× boost`;
             return `<option value="${m.key}">${sym}  ·  ${multStr}  ·  ${(m.impliedApy*100).toFixed(2)}% APY</option>`;
           }).join('')
@@ -1557,7 +1559,7 @@ function onYtInput() {
     const dailyBase  = yt * proj.baseMult;
     out('yt-out-daily',
       `${fmt(dailyBoost)}/Day <span style="color:var(--ink-500); font-size:10px;">boost</span>
-       <br><span style="color:var(--ink-400);">${fmt(dailyBase)}/Day</span> <span style="color:var(--ink-500); font-size:10px;">base (post-Jun 2)</span>`);
+       <br><span style="color:var(--ink-400);">${fmt(dailyBase)}/Day</span> <span style="color:var(--ink-500); font-size:10px;">base (post-May 29)</span>`);
   } else {
     const daily = yt * (proj.daysBoost > 0 ? proj.boostMult : proj.baseMult);
     out('yt-out-daily', fmt(daily) + '/Day');
@@ -1587,7 +1589,7 @@ function ytHelperApply() {
   const usdPerUnit = (market.ticker === 'eUSX') ? 1.03 : 1.0;
   YT_HELPER_DEPOSIT_USD = dep * usdPerUnit;
   const multNote = proj.daysBoost > 0 && proj.daysBase > 0
-    ? `${proj.boostMult}× × ${proj.daysBoost.toFixed(0)}d boost, then ${proj.baseMult}× × ${proj.daysBase.toFixed(0)}d (post-Jun 2)`
+    ? `${proj.boostMult}× × ${proj.daysBoost.toFixed(0)}d boost, then ${proj.baseMult}× × ${proj.daysBase.toFixed(0)}d (post-May 29)`
     : `${proj.daysBoost > 0 ? proj.boostMult : proj.baseMult}× × ${daysToAccrue.toFixed(0)}d`;
   setPrefillTip('Pre-filled from YT helper: $' + formatAmount(dep) + ' → '
     + formatAmount(yt) + ' YT, ' + multNote + '. Edit to override.');

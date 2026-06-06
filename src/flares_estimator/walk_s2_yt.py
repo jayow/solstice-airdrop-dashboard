@@ -39,6 +39,18 @@ S2_END_TS   = 1785024000   # cap if walking beyond now
 MATURITY_JUN26 = 1780318699   # 2026-06-01 12:58:19 UTC (V1)
 MATURITY_SEP26 = 1789552700   # 2026-09-16 09:58:20 UTC (V2)
 
+# Solstice's +50% launch boost on Sep26 markets ran from market launch
+# (2026-05-18) until 2026-05-29 00:00 UTC. Pre-cutover accrual uses
+# `boost_mult`; post-cutover uses base `mult`. Segments straddling are split.
+#
+# Multi-wallet verified 2026-06-05 at this exact timestamp:
+#   5V9V YT-USX-Sep26  = 11,883,544 (matches Solstice to the cent)
+#   6iJD YT-USX-Sep26  = 12,414,940 (matches Solstice to the cent)
+#   3KUCs YT-USX-Sep26 =  1,919,390 (matches Solstice to the cent)
+# At the original announced 6/02 cutoff all three overshoot by 4-14%.
+# See data/user_provided/yt_verification_report.md.
+BOOST_END_TS = 1780012800  # 2026-05-29 00:00 UTC
+
 EXPONENT_PROG = 'ExponentnaRg3CQbW6dqQNZKXp7gtZ9DGMp1cwC4HAS7'
 
 # ---- V6 V2-orderbook patch constants ---------------------------------------
@@ -83,6 +95,16 @@ MARKET_TO_ORDERBOOK_PDA = {
     'BxbiZpzj32nrVGecFy8VQ1HohaW7ryhas1k9aiETDWdm': '3oAfRGTEmeDeN8HZYCv2tMeLGMoRpPs4Jyo11wm8JcdV',
     '2pZuAPFRJLbT57qJ1ebs8B2ExWwHywyaHUC6Y515BaMm': 'A2yaEiehRCvibSdMWWJtrBdmVCYwGRNSNwg1VwdicthU',
     'EsVGeJ99ADQGwGWLiBEg93xBtmuMjyC4P5zG9bpVMJWf': '3mXbVuMynj21doFXXEauJ2tGDV9kS2Q1SnnQDcgD54Bw',
+}
+
+# Wrapper market PDA → V2 CORE market PDA. The XPBook-LP-routed mints
+# (WrapperProvideLiquidity via the XPBook LP wrapper) bypass the wrapper
+# market PDA entirely — they only touch the V2 CORE market. Without walking
+# core-market sigs, we miss those mints' depositYtEventV2 events.
+# Verified 2026-06-05 from 5V9V's May 30 mint (sig 5WmmQz…) payload[32:64].
+MARKET_TO_V2_CORE = {
+    '2pZuAPFRJLbT57qJ1ebs8B2ExWwHywyaHUC6Y515BaMm': 'CdUviheAUJaXUryT7JCRDUoNdPXdVvkxNQY1okC6uY8S',
+    'EsVGeJ99ADQGwGWLiBEg93xBtmuMjyC4P5zG9bpVMJWf': 'B78XAMSpB5KQqykw9oEec1nFSPeRqYtbTmsxo9EPwAUW',
 }
 
 # Resolved owner cache for position PDAs (avoid repeated getAccountInfo calls
@@ -191,15 +213,14 @@ def extract_v2_yt_events_from_tx(tx: dict, market_pk: str) -> list:
             owner = _resolve_position_owner(position_pda)
             if not owner: continue
             if owner in BLACKLISTED_PDAS: continue
-            # V16: base_amount comes from XPBook postOffer cost (usx_committed),
-            # V17: emit base_amount = 0 for all v2 events. The true v2 cost
-            # is injected as a post-walk fixup that reads xpbook_offers and
-            # sets cost_basis_by_market[market]['usd_paid'] += SUM(usx_committed)
-            # for each (wallet, orderbook). This avoids the V16 over-count where
-            # each v2 event emitted the full committed cost causing 7× inflation
-            # when a maker had multiple fills.
+            # V18 (2026-06-05): emit yt_amount (not 0) as the delta so the
+            # depositYtEventV2 events from mints (Strip+DepositYt) and orderbook
+            # fills actually move the user's yield_position balance forward.
+            # base_amount stays 0 — true v2 cost basis is injected via the
+            # xpbook_offers post-walk fixup (avoids the V16 7× cost over-count).
+            yt_amount = amount_raw / 1e6
             base_amount = 0.0
-            out.append((blocktime, owner, sign * base_amount, base_amount))
+            out.append((blocktime, owner, sign * yt_amount, base_amount))
     return out
 
 
@@ -507,18 +528,23 @@ MARKETS = {
         # V2 USX-Sep26: market PDA == vault PDA == sig-walk anchor (verified
         # from WrapperBuyYtEvent payload bytes 0-31 in tx 36EkRUH8...).
         'market': '2pZuAPFRJLbT57qJ1ebs8B2ExWwHywyaHUC6Y515BaMm',
-        'mult':   45,    # 1.5× boost over Jun01's 30× — Solstice retention mechanic
+        # Time-varying multiplier: Solstice's launch-boost ran from market open
+        # (2026-05-18) until 2026-05-29 00:00 UTC. After that, base 30×.
+        # Multi-wallet verified — see BOOST_END_TS comment above.
+        'mult':       30,
+        'boost_mult': 45,
+        'boost_end_ts': BOOST_END_TS,
         'quest':  'S2_EXPONENT_YIELD_USX_SEP26',
         'base_usd': 1.0,
         'yt_mint': '6gUU7UXtGgJ3tmeb2gXxQcVeM2L82bg9MzRYxu2YUspu',
         'maturity_ts': MATURITY_SEP26,
-        # XPBook orderbook PDA — YT escrowed here (BuyYt fill credits awaiting claim,
-        # SellYt offers awaiting fill/cancel) earns YT flares per Exponent spec.
         'xpbook_orderbook': 'A2yaEiehRCvibSdMWWJtrBdmVCYwGRNSNwg1VwdicthU',
     },
     'eUSX-Sep26': {
         'market': 'EsVGeJ99ADQGwGWLiBEg93xBtmuMjyC4P5zG9bpVMJWf',
-        'mult':   22.5,  # 1.5× boost over Jun01's 15×
+        'mult':       15,
+        'boost_mult': 22.5,
+        'boost_end_ts': BOOST_END_TS,
         'quest':  'S2_EXPONENT_YIELD_EUSX_SEP26',
         'base_usd': 1.0319,
         'yt_mint': '2wZkuwSiDyHZuuZfS9C9kFkZNsgwHGjKtCxX3B6Ck6EX',
@@ -526,6 +552,28 @@ MARKETS = {
         'xpbook_orderbook': '3mXbVuMynj21doFXXEauJ2tGDV9kS2Q1SnnQDcgD54Bw',
     },
 }
+
+
+def _segment_flares(bal: float, t0: int, t1: int, cfg: dict) -> float:
+    """Integrate `bal × mult(t) × dt / 86400` over [t0, t1] for one market cfg.
+
+    Markets with `boost_mult` / `boost_end_ts` keys use the boosted rate up to
+    boost_end_ts and base `mult` after. Markets without boost keys behave
+    exactly as before (single-rate integration)."""
+    if t1 <= t0 or bal <= 0:
+        return 0.0
+    base_mult = cfg['mult']
+    boost_mult = cfg.get('boost_mult')
+    boost_end = cfg.get('boost_end_ts')
+    peg = cfg.get('base_usd', 1.0)  # eUSX peg (1.0319) or USX (1.0)
+    if not boost_mult or not boost_end or t0 >= boost_end:
+        return bal * base_mult * peg * (t1 - t0) / 86400.0
+    if t1 <= boost_end:
+        return bal * boost_mult * peg * (t1 - t0) / 86400.0
+    # Straddle: split at boost_end.
+    boost_part = bal * boost_mult * peg * (boost_end - t0) / 86400.0
+    base_part  = bal * base_mult  * peg * (t1 - boost_end) / 86400.0
+    return boost_part + base_part
 
 
 def _xpbook_yt_escrow_segments(wallet: str, orderbook: str, end_ts: int) -> list:
@@ -651,15 +699,12 @@ def main():
           f'{datetime.fromtimestamp(end_ts, UTC).strftime("%Y-%m-%d %H:%M UTC")} '
           f'(midnight cutoff, {(end_ts-S2_START_TS)/86400:.1f} days)\n', flush=True)
 
-    # V6 V2-orderbook patch — gated, default OFF. When enabled:
-    #   - run on-chain self-test for position-owner resolution
-    #   - purge any stale blacklisted-PDA walker_events rows from earlier runs
-    #   - additionally walk the orderbook PDA for each market that has one
-    #   - decode V2 deposit/withdraw emit_cpi events and union with V1
-    #   - audit per-market concentration (drop blacklisted PDAs > 30%)
+    # V18 (2026-06-05): V2 orderbook walker. Gated OFF by default — flipping it
+    # on caused 23-25% over-credit on USX-Sep26 control wallets that already
+    # matched Solstice exactly. Set SOLSTICE_YT_V2_ENABLED=1 to enable.
     v2_enabled = os.environ.get('SOLSTICE_YT_V2_ENABLED') == '1'
     if v2_enabled:
-        print('V6 V2-orderbook walker ENABLED (SOLSTICE_YT_V2_ENABLED=1)', flush=True)
+        print('V18 V2-orderbook walker ENABLED', flush=True)
         _v2_selftest()
         _pre_walk_purge()
 
@@ -717,7 +762,9 @@ def main():
     for mname, cfg in MARKETS.items():
         market_pk = cfg['market']
         mult = cfg['mult']
-        print(f'=== {mname} (mult {mult}, market {market_pk[:12]}…) ===', flush=True)
+        boost_mult = cfg.get('boost_mult')
+        mult_tag = f'{boost_mult}× → {mult}×' if boost_mult else f'{mult}×'
+        print(f'=== {mname} (mult {mult_tag}, market {market_pk[:12]}…) ===', flush=True)
 
         sigs = fetch_all_sigs(market_pk)
         print(f'  {len(sigs):,} market sigs', flush=True)
@@ -731,6 +778,18 @@ def main():
                 seen = {s['signature'] for s in sigs}
                 new = [s for s in ob_sigs if s['signature'] not in seen]
                 print(f'  {len(ob_sigs):,} orderbook sigs (+{len(new):,} unique)', flush=True)
+                sigs = sigs + new
+
+            # V19 (2026-06-05): union in V2 CORE market sigs. XPBook-LP-routed
+            # mints (WrapperProvideLiquidity via the XPBook LP wrapper program)
+            # bypass the wrapper market PDA and only touch the V2 core. Without
+            # this walk we miss those mints' depositYtEventV2 events.
+            v2_core = MARKET_TO_V2_CORE.get(market_pk)
+            if v2_core:
+                core_sigs = fetch_all_sigs(v2_core)
+                seen = {s['signature'] for s in sigs}
+                new = [s for s in core_sigs if s['signature'] not in seen]
+                print(f'  {len(core_sigs):,} v2-core sigs (+{len(new):,} unique)', flush=True)
                 sigs = sigs + new
 
         # Fetch all txs in parallel; extract per-wallet event tuples including base.
@@ -939,13 +998,30 @@ def main():
                 t0, bal = timeline[i]
                 t1, _ = timeline[i + 1]
                 if t1 <= t0 or bal <= 0: continue
-                flares += bal * mult * (t1 - t0) / 86400.0
+                flares += _segment_flares(bal, t0, t1, cfg)
 
             # XPBook escrow contribution (BuyYt fills awaiting claim + SellYt offers
             # awaiting fill/cancel) — apply 7-day TVL maturity.
-            escrow_segs = _xpbook_yt_escrow_segments(wallet, cfg.get('xpbook_orderbook'), end_ts)
+            ob = cfg.get('xpbook_orderbook')
+            escrow_segs = _xpbook_yt_escrow_segments(wallet, ob, end_ts)
             if escrow_segs:
-                MATURE_SEC = 7 * 86400
+                # Pre-fetch event_kind per ts so we only anchor run_start on 'post'
+                # events (SellYt offer posted). Non-post entries (e.g. taker fills
+                # landing YT into escrow) should not reset the 7-day maturity clock.
+                event_kinds = {}
+                try:
+                    import db as _db_kk
+                    con_kk = _db_kk.conn()
+                    for r in con_kk.execute(
+                        "SELECT event_blocktime, event_kind FROM xpbook_escrow_timeline "
+                        "WHERE wallet = ? AND asset_kind = 'YT' AND orderbook = ? "
+                        "ORDER BY event_blocktime",
+                        (wallet, ob)):
+                        event_kinds[r['event_blocktime']] = r['event_kind']
+                except Exception:
+                    event_kinds = {}
+
+                MATURE_SEC = 24 * 3600  # 24h — Solstice's "minimum one day rewarded daily"
                 run_start = None
                 # Build (t0, bal, t1) segments from escrow timeline
                 escrow_segments = []
@@ -959,11 +1035,13 @@ def main():
                     escrow_segments.append((last_ts, last_b, end_ts))
                 for ts0, bal, ts1 in escrow_segments:
                     if bal > 0:
-                        if run_start is None: run_start = ts0
-                        mature_ts = run_start + MATURE_SEC
-                        earn_start = max(ts0, mature_ts)
-                        if earn_start < ts1:
-                            flares += bal * mult * (ts1 - earn_start) / 86400.0
+                        if run_start is None and event_kinds.get(ts0) == 'post':
+                            run_start = ts0
+                        if run_start is not None:
+                            mature_ts = run_start + MATURE_SEC
+                            earn_start = max(ts0, mature_ts)
+                            if earn_start < ts1:
+                                flares += _segment_flares(bal, earn_start, ts1, cfg)
                     else:
                         run_start = None
 
