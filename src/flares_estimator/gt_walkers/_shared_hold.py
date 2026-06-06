@@ -236,18 +236,25 @@ def build_twab_timeline(wallet: str, mint: str) -> dict:
             'fetch_failed': fetch_failed}
 
 
-def integrate_daily(timeline: list, mult: int, usd_per_token: float, end_ts: int) -> float:
-    """daily TWAB: balance × usd × mult × dt_days, with tail extension to end_ts."""
+def integrate_daily(timeline: list, mult: int, usd_per_token, end_ts: int) -> float:
+    """daily TWAB: balance × usd × mult × dt_days, with tail extension to end_ts.
+
+    `usd_per_token` may be a constant (USX = 1.0) or a callable peg_fn(ts) → float
+    (eUSX peg compounds smoothly; evaluated at segment midpoint for second-order
+    accuracy). Using time-varying peg for eUSX is required — a constant peg
+    over-credits early balances by ~0.5% per month on 5V9V."""
     flares = 0.0
     if not timeline: return 0.0
+    is_callable = callable(usd_per_token)
+    def _usd(t0, t1): return usd_per_token((t0 + t1) // 2) if is_callable else usd_per_token
     for i in range(len(timeline) - 1):
         t0, b0 = timeline[i]; t1, _ = timeline[i + 1]
         if t1 > end_ts: t1 = end_ts
         if t1 <= t0 or b0 <= 0: continue
-        flares += b0 * usd_per_token * mult * (t1 - t0) / 86400.0
+        flares += b0 * _usd(t0, t1) * mult * (t1 - t0) / 86400.0
     last_t, last_b = timeline[-1]
     if last_t < end_ts and last_b > 0:
-        flares += last_b * usd_per_token * mult * (end_ts - last_t) / 86400.0
+        flares += last_b * _usd(last_t, end_ts) * mult * (end_ts - last_t) / 86400.0
     return flares
 
 

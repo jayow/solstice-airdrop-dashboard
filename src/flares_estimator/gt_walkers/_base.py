@@ -137,13 +137,25 @@ TOKEN_LEGACY = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'
 TOKEN_2022   = 'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb'
 
 # eUSX peg PDA (read-only)
-EUSX_PEG_PDA = 'JDs1wmLaVB2KsAotjbBKVEsiV1gbrG3Qrjyht5LnX9YP'
+# Vault state PDA — exposes the eUSX peg via backing/supply (matches the
+# eusxPrice field at https://app.solstice.finance/api/protocol exactly to
+# 15 decimals). The previous PDA JDs1wmLa was a per-user position account
+# (stale rate snapshot from 2025-09-30, never updated since).
+EUSX_VAULT_PDA = '2rjmJdxZeBLKjUjKjrSdtSqshgXbLEcPbjiJZ2vLNcCT'
 
 def live_eusx_peg() -> float:
+    """Live eUSX peg from on-chain vault state.
+
+    Decoder: backing (u64 LE at offset 75, /1e6) divided by supply (u64 LE
+    at offset 91, /1e6). Decimals cancel — the resulting ratio is the peg.
+    Verified against Solstice's /api/protocol eusxPrice field; values
+    match to all 15 decimals."""
     import base64, struct
     try:
-        r = rpc('getAccountInfo', [EUSX_PEG_PDA, {'encoding': 'base64'}], timeout=10)
+        r = rpc('getAccountInfo', [EUSX_VAULT_PDA, {'encoding': 'base64'}], timeout=10)
         d = base64.b64decode(r['result']['value']['data'][0])
-        return struct.unpack('<Q', d[48:56])[0] / 1e18
+        backing = struct.unpack('<Q', d[75:83])[0]
+        supply  = struct.unpack('<Q', d[91:99])[0]
+        return backing / supply
     except Exception:
-        return 1.156   # last known
+        return 1.034   # last known good (2026-06-06)

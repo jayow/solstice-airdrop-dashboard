@@ -13,6 +13,7 @@ from gt_walkers._base import (S2_START_TS, S2_END_TS, EUSX_MINT,
 from gt_walkers._shared_hold import (build_twab_timeline, integrate_daily,
     integrate_matured_daily,
     discover_universe_for_mint, get_mint_supply, is_hold_cache_stale)
+from quests.eusx_peg import peg_at, record_snapshot
 import db
 
 WALKER_NAME = 'gt_hold_eusx_daily'
@@ -22,7 +23,11 @@ MULT = 2
 
 def run(workers: int = 16, force_refresh: bool = False) -> dict:
     with report(WALKER_NAME, QUEST, [EUSX_MINT]):
-        usd_per = live_eusx_peg()
+        # Ensure we have a fresh peg snapshot in the DB before integrating.
+        # Then pass the time-varying peg_at(ts) callable into the integrators —
+        # a constant peg over-credits early balances (eUSX compounds smoothly).
+        record_snapshot()
+        usd_per = peg_at
         owners = discover_universe_for_mint(EUSX_MINT)
         print(f'    {len(owners):,} unique EUSX owners', flush=True)
         now_ts = last_snapshot_ts()   # midnight-UTC cutoff
@@ -56,7 +61,7 @@ def run(workers: int = 16, force_refresh: bool = False) -> dict:
                 if f > 0: results[w] = f
 
         our_total = sum(results.values())
-        upper = get_mint_supply(EUSX_MINT) * usd_per * MULT * (end_ts - S2_START_TS) / 86400.0
+        upper = get_mint_supply(EUSX_MINT) * peg_at(end_ts) * MULT * (end_ts - S2_START_TS) / 86400.0
         ratio = (our_total / upper * 100) if upper > 0 else 0
         print(f'    {len(results):,} earning wallets  our_total={our_total:,.0f}  capture={ratio:.2f}% of upper', flush=True)
         write_walker_outputs(WALKER_NAME, QUEST, results)

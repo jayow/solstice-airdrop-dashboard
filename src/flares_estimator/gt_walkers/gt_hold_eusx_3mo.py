@@ -10,9 +10,10 @@ if os.path.dirname(THIS) not in sys.path: sys.path.insert(0, os.path.dirname(THI
 from snapshot_ts import last_snapshot_ts
 
 from gt_walkers._base import (S2_START_TS, S2_END_TS, EUSX_MINT,
-    write_walker_outputs, sync_to_wallet_quests, report, live_eusx_peg)
+    write_walker_outputs, sync_to_wallet_quests, report)
 from gt_walkers._shared_hold import (build_twab_timeline, integrate_qualified_bonus,
     discover_universe_for_mint, is_hold_cache_stale)
+from quests.eusx_peg import peg_at, record_snapshot
 import db
 
 WALKER_NAME = 'gt_hold_eusx_3mo'
@@ -24,7 +25,8 @@ QUALIFY_DAYS = 90
 
 def run(workers: int = 16, force_refresh: bool = False) -> dict:
     with report(WALKER_NAME, QUEST, [EUSX_MINT]):
-        usd_per = live_eusx_peg()
+        record_snapshot()
+        usd_per = peg_at  # callable: peg_at(ts) for time-varying eUSX peg
         owners = discover_universe_for_mint(EUSX_MINT)
         print(f'    {len(owners):,} unique EUSX owners', flush=True)
         now_ts = last_snapshot_ts()   # midnight-UTC cutoff

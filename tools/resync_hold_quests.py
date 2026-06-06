@@ -19,11 +19,14 @@ sys.path.insert(0, os.path.join(ROOT, 'src'))
 sys.path.insert(0, os.path.join(ROOT, 'src', 'flares_estimator'))
 
 from gt_walkers._shared_hold import integrate_daily, integrate_qualified_bonus
+from quests.eusx_peg import peg_at
+from snapshot_ts import last_snapshot_ts
 
 DB = os.path.join(ROOT, 'data', 'solstice.db')
 S2_END_TS = 1785024000
-EUSX_PEG = 1.0319
 
+# Time-varying peg for eUSX (compounds smoothly; constant peg over-credits
+# early balances by ~0.5% per month). USX is always 1.0.
 TASKS = [
     # (cache_key, peg, [(quest_code, mult, qualify_days), ...])
     ('S2_HOLD_USX',  1.0, [
@@ -31,7 +34,7 @@ TASKS = [
         ('S2_HOLD_USX_1MO',    6, 30),
         ('S2_HOLD_USX_3MO',   15, 90),
     ]),
-    ('S2_HOLD_EUSX', EUSX_PEG, [
+    ('S2_HOLD_EUSX', peg_at, [
         ('S2_HOLD_EUSX_DAILY', 2, 0),
         ('S2_HOLD_EUSX_1MO',   4, 30),
         ('S2_HOLD_EUSX_3MO',  10, 90),
@@ -40,7 +43,9 @@ TASKS = [
 
 
 def main():
-    end_ts = min(int(time.time()), S2_END_TS)
+    # Honor the midnight-UTC cutoff (per feedback_midnight_cutoff): intraday
+    # integration would inflate totals vs Solstice.
+    end_ts = min(last_snapshot_ts(), S2_END_TS)
     con = sqlite3.connect(DB)
     con.row_factory = sqlite3.Row
 
