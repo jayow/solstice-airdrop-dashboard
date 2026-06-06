@@ -12,7 +12,7 @@ Formula (verified at 100-101% on user's S1 data):
 
 Output: data/s2_lp_flares.json  {wallet: {USX: flares, eUSX: flares}}
 """
-import os, sys, json, time, base64, base58, struct
+import os, sys, json, time, math, base64, base58, struct
 from datetime import datetime, UTC
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import defaultdict
@@ -184,7 +184,11 @@ MARKETS = {
         'lp_vault':     '83ayni8GmBwXwM4LXTEzgVV6sLZSYNJMT2JiFzAaQ2KJ',
         'lp_mint':      'UPvchSL3aVFwaqVEQKJ3msSLfhKJe468DBPJYgWLNw5',
         'underlying':   '6FrrzDk5mQARGc1TDYoyVnSyRdds1t4PbtohCD6p3tgG',
-        'mult':         30,    # 1.5× boost over Jun01's 20×
+        # Empirically (5V9V calibration 2026-06-06): Solstice's +50% launch
+        # boost applied to YT only, NOT to LP. With boost the walker was
+        # 208% over Solstice on 5V9V's USX-Sep26 LP; with base-only mult and
+        # sqrt(rate) valuation, walker matches at 98.22%.
+        'mult':         20,
         'peg':          1.0,
         'quest':        'S2_EXPONENT_LP_USX_SEP26',
     },
@@ -193,7 +197,8 @@ MARKETS = {
         'lp_vault':     'jNP3KbSyrE6hrjNsShmX2q4LBZTpvDLkudedSmdDVGY',
         'lp_mint':      '72AitxuVjN9LF88jMEMKX6NRqTufeJ9XRdtkj96UuKT2',
         'underlying':   '3ThdFZQKM6kRyVGLG48kaPg5TRMhYMKY1iCRa9xop1WC',
-        'mult':         15,    # 1.5× boost over Jun01's 10×
+        # Same as USX-Sep26: launch boost was YT-only; LP is flat mult.
+        'mult':         10,
         'peg':          None,   # populated from chain
         'quest':        'S2_EXPONENT_LP_EUSX_SEP26',
     },
@@ -409,7 +414,8 @@ def main():
     skipped_quests = set()  # quests whose vault returned 0 sigs (RPC flake) — don't sync (would zero existing data)
 
     for mname, cfg in MARKETS.items():
-        print(f'=== {mname} (mult {cfg["mult"]}, peg ${cfg["peg"]:.4f}) ===', flush=True)
+        mult_tag = f'{cfg["boost_mult"]}× → {cfg["mult"]}×' if cfg.get('boost_mult') else f'{cfg["mult"]}×'
+        print(f'=== {mname} (mult {mult_tag}, peg ${cfg["peg"]:.4f}) ===', flush=True)
         # Walk the FULL LP-vault history. fetch_all_sigs has 4-retry-on-empty
         # protection but persistent RPC failure can still return 0. Don't let
         # that wipe existing wallet_quests data — track skipped quests and
@@ -563,23 +569,44 @@ def main():
 
             lp_balance = carry_in
             last_lp_price = carry_price
-            usd_days = 0.0
+            # Track usd_days separately for boost / base windows so per-segment
+            # multipliers can be applied correctly when a market had a launch
+            # boost that expired mid-S2 (Sep26 markets, boost ended 2026-06-02).
+            boost_end = cfg.get('boost_end_ts')
+            usd_days_boost = 0.0
+            usd_days_base  = 0.0
             prev_t = S2_START_TS
+            def _accum(usd_per_sec, t0, t1):
+                """Split a [t0, t1] usd-flux into the boost / base buckets."""
+                nonlocal usd_days_boost, usd_days_base
+                if t1 <= t0: return
+                if not boost_end or t0 >= boost_end:
+                    usd_days_base += usd_per_sec * (t1 - t0) / 86400
+                elif t1 <= boost_end:
+                    usd_days_boost += usd_per_sec * (t1 - t0) / 86400
+                else:
+                    usd_days_boost += usd_per_sec * (boost_end - t0) / 86400
+                    usd_days_base  += usd_per_sec * (t1 - boost_end) / 86400
+            # Solstice values LP positions as `lp_balance × sqrt(lp_price)`,
+            # not `lp_balance × lp_price`. Empirically calibrated via 5V9V's
+            # 4 LP quests 2026-06-06: linear-rate walker was 143% over on
+            # eUSX-Jun26 and 208% over on USX-Sep26; sqrt(rate) matches at
+            # 99.5% / 98.2% (1.8% residual = peg precision). Likely a
+            # liquidity-weighting convention (Curve-style invariant).
             for i in range(len(evs)):
                 e = evs[i]
                 t1 = e['t']
-                dt = (t1 - prev_t) / 86400
-                if dt > 0 and lp_balance > 0 and last_lp_price:
-                    usd_days += lp_balance * last_lp_price * dt
+                if t1 > prev_t and lp_balance > 0 and last_lp_price:
+                    _accum(lp_balance * math.sqrt(last_lp_price), prev_t, t1)
                 lp_balance += e['lp_delta']
                 if e.get('rate'): last_lp_price = e['rate']
                 prev_t = t1
             # Tail: last event (or S2_START) to now
             if lp_balance > 0 and last_lp_price and prev_t < now_ts:
-                dt = (now_ts - prev_t) / 86400
-                if dt > 0:
-                    usd_days += lp_balance * last_lp_price * dt
-            flares = usd_days * cfg['mult']
+                _accum(lp_balance * math.sqrt(last_lp_price), prev_t, now_ts)
+            base_mult  = cfg['mult']
+            boost_mult = cfg.get('boost_mult', base_mult)
+            flares = usd_days_base * base_mult + usd_days_boost * boost_mult
             if flares > 0:
                 all_results[wallet][cfg['quest']] = flares
             # Store ALL events (pre-S2 + S2) in cache so build_daily_totals.py
@@ -590,6 +617,8 @@ def main():
             # contribute 0 to the chart.
             all_events_by_wallet[wallet].extend(all_evs)
             if lp_balance > 0 and last_lp_price:
+                # Snapshot stays in linear units (the cache field doubles as a
+                # display value showing the user's notional USD-equivalent).
                 all_snapshots[wallet][cfg['quest']] = lp_balance * last_lp_price
 
         # Quick stats for this market
