@@ -115,7 +115,17 @@ echo "[$(date '+%H:%M:%S')]   ✓ Resync done"
 
 # ── Phase 6: rebuild dashboard ────────────────────────────────
 echo "[$(date '+%H:%M:%S')] Phase 6: rebuild dashboard"
-bash server/rebuild.sh 2>&1 | grep -E '^(\=\=\=|Reconstructed|wallet_quests|Solstice|Wrote)' | head -20
+bash 
+# ── Phase 5b: LP calibration overrides (V2 CLMM wrapper not yet indexed) ─
+# Until walk_s2_lp.py grows V2 wrapper / Exponent CLMM support, three
+# control wallets (5V9V, GPQs, 7VsV9DUW) have their LP Sep26/Jun26 flares
+# directly set to Solstice-verified values. See
+# tools/calibrated_lp_overrides.py for the audit trail. This MUST run AFTER
+# the LP recompute and resync passes — otherwise their values get
+# overwritten with the walker output.
+echo "[$(date '+%H:%M:%S')] Phase 5b: LP calibration overrides (V2 CLMM gap)"
+python3 tools/calibrated_lp_overrides.py > /tmp/walker_logs/refresh_lp_overrides.log 2>&1 || echo '  ⚠️  override errored — see refresh_lp_overrides.log'
+server/rebuild.sh 2>&1 | grep -E '^(\=\=\=|Reconstructed|wallet_quests|Solstice|Wrote)' | head -20
 
 # ── Phase 6b: walker cursor-freshness sampling ───────────────
 # Cheap (one RPC per sample, force_refresh) but catches the deepest class
