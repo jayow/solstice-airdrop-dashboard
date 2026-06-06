@@ -12,6 +12,30 @@ import db
 from ._base import S2_START_TS, S2_END_TS, USX_MINT, EUSX_MINT
 
 
+# Canonical ATA derivation — gives us a deterministic fallback when
+# getTokenAccountsByOwner returns silently empty (RPC retry-exhausted).
+# The canonical ATA's signature history survives account closure on Solana,
+# so walking it can still reconstruct HOLD flares even for closed accounts.
+try:
+    from solders.pubkey import Pubkey as _Pubkey
+    _TOKEN_PROG = _Pubkey.from_string("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")
+    _ATOK_PROG  = _Pubkey.from_string("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL")
+    def _canonical_ata(wallet: str, mint: str) -> str | None:
+        try:
+            pda, _ = _Pubkey.find_program_address(
+                [bytes(_Pubkey.from_string(wallet)), bytes(_TOKEN_PROG),
+                 bytes(_Pubkey.from_string(mint))], _ATOK_PROG)
+            return str(pda)
+        except Exception:
+            return None
+except Exception:
+    def _canonical_ata(wallet: str, mint: str) -> str | None:
+        return None
+
+
+_MINT_CACHE_KEY = {USX_MINT: 'S2_HOLD_USX', EUSX_MINT: 'S2_HOLD_EUSX'}
+
+
 # Map mint → S2 orderbook(s) whose SY-side escrow contributes to this mint's HOLD balance.
 # SY-USX and SY-eUSX are 1:1 with their respective underlying per the LP walker peg model.
 # When a user posts a BuyYt limit order, their USX (or eUSX) goes into the orderbook's
@@ -59,9 +83,18 @@ def _xpbook_escrow_segments(wallet: str, mint: str, end_ts: int) -> list:
     return segs
 
 
-def _list_atas(wallet: str, mint: str) -> list:
+def _list_atas(wallet: str, mint: str):
+    """Return list of ATAs, or None on RPC failure.
+
+    The None return distinguishes 'wallet has no ATAs' (real empty) from
+    'RPC retry-exhausted and returned {}' (silent failure). The old
+    `r.get('result', {}).get('value', [])` conflated both — that's what
+    cost 942 USX + 330 eUSX wallets their HOLD flares during refresh
+    (cf. reference_walker_rpc_retry_fix)."""
     r = rpc('getTokenAccountsByOwner', [wallet, {'mint': mint}, {'encoding': 'jsonParsed'}], timeout=15)
-    return [a['pubkey'] for a in (r.get('result', {}).get('value', []) or [])]
+    result = r.get('result')
+    if result is None: return None
+    return [a['pubkey'] for a in (result.get('value', []) or [])]
 
 
 def _walk_ata_sigs(ata: str) -> list:
@@ -133,12 +166,33 @@ def is_hold_cache_stale(cached: dict | None, wallet: str, daily_quest: str) -> b
 def build_twab_timeline(wallet: str, mint: str) -> dict:
     """Walk every ATA owned by `wallet` for `mint` and produce a unified balance timeline.
 
-    Returns: {'atas': [...], 'timeline': [[ts, balance_total], ...], 'last_event_ts': int}
-    """
-    atas = _list_atas(wallet, mint)
+    Returns: {'atas': [...], 'timeline': [[ts, balance_total], ...],
+              'last_event_ts': int, 'fetch_failed': bool}
+
+    Resilient to silent RPC failure: seeds the canonical ATA (deterministic
+    from wallet+mint) and the prior cache's ATAs so a transient
+    getTokenAccountsByOwner failure doesn't zero the wallet's HOLD timeline.
+    `fetch_failed` flags the failure so callers can choose not to overwrite
+    a known-good cache with a failed-RPC empty result."""
+    fresh = _list_atas(wallet, mint)
+    fetch_failed = (fresh is None)
     end_ts = min(last_snapshot_ts(), S2_END_TS)   # midnight-UTC cutoff
+
+    canon = _canonical_ata(wallet, mint)
+    prior_atas = []
+    cache_key = _MINT_CACHE_KEY.get(mint)
+    if cache_key:
+        try:
+            prior = db.get_cache(wallet, cache_key)
+            prior_atas = ((prior or {}).get('raw') or {}).get('atas') or []
+        except Exception:
+            pass
+    seed = list(prior_atas) + list(fresh or []) + ([canon] if canon else [])
+    atas = list(dict.fromkeys(a for a in seed if a))
+
     if not atas:
-        return {'atas': [], 'timeline': [[S2_START_TS, 0.0], [end_ts, 0.0]], 'last_event_ts': end_ts}
+        return {'atas': [], 'timeline': [[S2_START_TS, 0.0], [end_ts, 0.0]],
+                'last_event_ts': end_ts, 'fetch_failed': fetch_failed}
 
     per_ata = {}
     for ata in atas:
@@ -178,7 +232,8 @@ def build_twab_timeline(wallet: str, mint: str) -> dict:
     # dominate; the < 7-day fresh-deposit edge case is rare in practice).
     escrow_segs = _xpbook_escrow_segments(wallet, mint, end_ts)
     return {'atas': atas, 'timeline': timeline,
-            'escrow_segs': escrow_segs, 'last_event_ts': end_ts}
+            'escrow_segs': escrow_segs, 'last_event_ts': end_ts,
+            'fetch_failed': fetch_failed}
 
 
 def integrate_daily(timeline: list, mult: int, usd_per_token: float, end_ts: int) -> float:
