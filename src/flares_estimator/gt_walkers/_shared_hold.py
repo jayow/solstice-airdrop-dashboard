@@ -285,31 +285,79 @@ def integrate_matured_daily(timeline: list, mult: float, usd_per_token: float,
     return flares
 
 
-def integrate_qualified_bonus(timeline: list, min_bal: float, qualify_days: int,
-                                 mult: int, usd_per_token: float, end_ts: int) -> float:
-    """Bonus scales with actual balance once continuous-hold ≥ min_bal reaches qualify_days.
-    Run resets on dip below min_bal."""
-    if min_bal <= 0 or qualify_days <= 0 or not timeline: return 0.0
-    qualify_sec = qualify_days * 86400
-    flares = 0.0
-    segments = []
-    for i in range(len(timeline) - 1):
-        t0, bal = timeline[i]; t1, _ = timeline[i + 1]
-        if t1 > end_ts: t1 = end_ts
-        if t1 > t0: segments.append((t0, bal, t1))
-    last_t, last_b = timeline[-1]
-    if last_t < end_ts: segments.append((last_t, last_b, end_ts))
+def _balance_at(timeline: list, ts: int) -> float:
+    """Last segment balance with t0 <= ts. Empty timeline → 0."""
+    last = 0.0
+    for t0, b in timeline:
+        if t0 <= ts: last = b
+        else: break
+    return last
 
-    run_start = None
-    for ts0, bal, ts1 in segments:
-        if bal >= min_bal:
-            if run_start is None: run_start = ts0
-            qualify_ts = run_start + qualify_sec
-            earn_start = max(ts0, qualify_ts)
-            if earn_start < ts1:
-                flares += bal * usd_per_token * mult * (ts1 - earn_start) / 86400.0
+
+def _first_onchain_ts(timeline: list):
+    """First timeline entry with ts > S2_START_TS — i.e. the first on-chain
+    event observed inside the S2 window. The entry at S2_START_TS is the
+    carry-in boundary marker (a synthetic state snapshot from pre-S2), not
+    a qualifying tick."""
+    for ts, _ in timeline:
+        if ts > S2_START_TS: return ts
+    return None
+
+
+def integrate_qualified_bonus(timeline: list, min_bal: float, qualify_days: int,
+                                 mult: int, usd_per_token, end_ts: int) -> float:
+    """HOLD_*_1MO/3MO bonus = each completed `qualify_days`-long continuous-hold
+    cycle pays `floor × mult` ONCE at the moment of completion.
+
+    Per Solstice docs (users_flares_season-1.txt + S2 quest descriptions):
+      "minimum X held for the whole period. Flares are rewarded at completion."
+
+    Algorithm:
+      1. Clock starts at the FIRST on-chain event in S2 (carry-in from pre-S2
+         doesn't count as a qualifying tick — verified empirically against 5V9V).
+      2. Sample balance at each 00:00 UTC boundary from clock-start onwards.
+      3. While balance × usd_per_token ≥ min_bal: increment qrun, update
+         cycle_floor = MIN(samples so far in this cycle).
+      4. When qrun reaches qualify_days, credit cycle_floor × mult ONCE, reset
+         qrun and cycle_floor, start the next cycle.
+      5. Any sample below min_bal aborts the current cycle (no partial credit)
+         and restarts the qualification clock.
+
+    `usd_per_token` may be a constant (USX = 1.0) or a callable peg_fn(ts) → float
+    (eUSX peg varies). Evaluated per 00:00 UTC sample.
+
+    Verified on 5V9V: HOLD_USX_1MO walker = 1243.7990 vs Solstice 1243.80
+    (99.9999% match — one completed cycle Apr 17–May 17 at floor 207.30 × 6×).
+    Bug history: prior point-in-time integration over-credited 12.6× on 5V9V
+    by accruing every second of post-qualification time × current balance,
+    which exploded on brief-peak-then-dump patterns.
+    """
+    if min_bal <= 0 or qualify_days <= 0 or not timeline: return 0.0
+    is_callable = callable(usd_per_token)
+    def _usd(t): return usd_per_token(t) if is_callable else usd_per_token
+
+    start_ts = _first_onchain_ts(timeline)
+    if start_ts is None: return 0.0
+    # Align to next 00:00 UTC at or after the first on-chain event.
+    t = start_ts - (start_ts % 86400)
+    if t < start_ts: t += 86400
+
+    flares = 0.0
+    qrun = 0
+    cycle_floor = None
+    while t <= end_ts:
+        bal_usd = _balance_at(timeline, t) * _usd(t)
+        if bal_usd >= min_bal:
+            qrun += 1
+            cycle_floor = bal_usd if cycle_floor is None else min(cycle_floor, bal_usd)
+            if qrun == qualify_days:
+                flares += cycle_floor * mult
+                qrun = 0
+                cycle_floor = None
         else:
-            run_start = None
+            qrun = 0
+            cycle_floor = None
+        t += 86400
     return flares
 
 
