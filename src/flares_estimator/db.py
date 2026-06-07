@@ -235,6 +235,57 @@ CREATE TABLE IF NOT EXISTS walker_freshness (
 );
 CREATE INDEX IF NOT EXISTS idx_freshness_ts ON walker_freshness(ts);
 
+-- =====================================================================
+-- v2_market_state_history : Exponent V2 CLMM tick-state timeline
+--
+-- Built by tools/index_v2_market_state.py from sig walk + inner-CPI decode.
+-- One row per (market, sig). At each market-mutating event we record:
+--   - spot_tick : the new spot tick AFTER the trade (TradePtEvent.tick_after_trade);
+--     unchanged for pure Deposit/Withdraw events (carries the prior spot_tick forward).
+--   - active_liquidity : sum of L_position for every position whose
+--     [lower_tick, upper_tick) covers spot_tick at this ts.
+--   - event_type : TradePt | Deposit | Withdraw
+--   - lp_position : per-position key (NULL on swap rows)
+--   - delta_liquidity, lower_tick, upper_tick : populated on Deposit/Withdraw
+--     (positive on Deposit, negative-as-stored on Withdraw).
+--
+-- Per-position state is reconstructed deterministically from the deposit/withdraw
+-- event sequence (one row per event, keyed by lp_position). To query
+-- "active liquidity at any ts" we walk this table up to ts. This table itself
+-- stores the cumulative active_liquidity for fast lookup.
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS v2_market_state_history (
+    market           TEXT NOT NULL,
+    ts               INTEGER NOT NULL,
+    slot             INTEGER NOT NULL,
+    sig              TEXT NOT NULL,
+    event_type       TEXT NOT NULL,           -- 'TradePt' | 'Deposit' | 'Withdraw'
+    spot_tick        INTEGER NOT NULL,        -- new spot tick AFTER this event
+    active_liquidity TEXT NOT NULL,           -- sum L for positions covering spot_tick (stringified u128 for safety)
+    lp_position      TEXT,                    -- non-null on Deposit/Withdraw
+    delta_liquidity  TEXT,                    -- signed string: '+N' on deposit, '-N' on withdraw, NULL on swap
+    lower_tick       INTEGER,
+    upper_tick       INTEGER,
+    swap_dir         TEXT,                    -- 'PtToSy' | 'SyToPt' (TradePt only)
+    amount_in        TEXT,                    -- u64 stringified
+    amount_out       TEXT,
+    PRIMARY KEY (market, sig, event_type)
+);
+CREATE INDEX IF NOT EXISTS idx_v2_state_market_ts ON v2_market_state_history(market, ts);
+CREATE INDEX IF NOT EXISTS idx_v2_state_lp_pos    ON v2_market_state_history(lp_position);
+
+-- =====================================================================
+-- v2_market_walk_cursor : per-market sig-walk progress
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS v2_market_walk_cursor (
+    market         TEXT PRIMARY KEY,
+    last_sig       TEXT,                      -- most recent sig (latest) we have processed
+    last_ts        INTEGER,
+    n_sigs_walked  INTEGER DEFAULT 0,
+    n_state_updates INTEGER DEFAULT 0,
+    refreshed_at   INTEGER
+);
+
 -- schema metadata
 -- =====================================================================
 CREATE TABLE IF NOT EXISTS meta (
