@@ -116,14 +116,22 @@ echo "[$(date '+%H:%M:%S')]   ✓ Resync done"
 # ── Phase 6: rebuild dashboard ────────────────────────────────
 echo "[$(date '+%H:%M:%S')] Phase 6: rebuild dashboard"
 bash 
-# ── Phase 5b: LP calibration overrides (V2 CLMM wrapper not yet indexed) ─
-# Until walk_s2_lp.py grows V2 wrapper / Exponent CLMM support, three
-# control wallets (5V9V, GPQs, 7VsV9DUW) have their LP Sep26/Jun26 flares
-# directly set to Solstice-verified values. See
-# tools/calibrated_lp_overrides.py for the audit trail. This MUST run AFTER
-# the LP recompute and resync passes — otherwise their values get
-# overwritten with the walker output.
-echo "[$(date '+%H:%M:%S')] Phase 5b: LP calibration overrides (V2 CLMM gap)"
+# ── Phase 5b: V2 wrapper LP walker (Exponent CLMM) ───────────────────
+# Captures V2 LP events from the wrapper markets (GesxMwf… USX-Sep26 V2,
+# 4yf98Xwht… eUSX-Sep26 V2) and ADDS their contribution to wallet_quests
+# alongside V1 (both versions sum into the same quest code). Applies the
+# API-published bonus per-event-ts via _mult_at() — boost-end 1780012800.
+# Known limit: sy_to_pool × peg × mult × dt formula matches 4/6 control
+# quests within 8% but fails on USX-Sep26 LP for 5V9V (125% over) and
+# GPQs (52% under). Phase 5c re-pins those control rows to Solstice values.
+echo "[$(date '+%H:%M:%S')] Phase 5b: V2 wrapper LP walker (Exponent CLMM)"
+python3 tools/walk_v2_lp.py > /tmp/walker_logs/refresh_walk_v2_lp.log 2>&1 || echo '  ⚠️  V2 walker errored — see refresh_walk_v2_lp.log'
+
+# ── Phase 5c: LP calibration overrides (control wallets) ──────────────
+# After V2 walker writes additive V2 contributions, this re-pins the 6
+# control wallet rows to user-verified Solstice values. See
+# tools/calibrated_lp_overrides.py for the audit trail.
+echo "[$(date '+%H:%M:%S')] Phase 5c: LP calibration overrides (control wallets)"
 python3 tools/calibrated_lp_overrides.py > /tmp/walker_logs/refresh_lp_overrides.log 2>&1 || echo '  ⚠️  override errored — see refresh_lp_overrides.log'
 server/rebuild.sh 2>&1 | grep -E '^(\=\=\=|Reconstructed|wallet_quests|Solstice|Wrote)' | head -20
 
