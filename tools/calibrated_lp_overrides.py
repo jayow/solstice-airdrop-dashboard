@@ -36,6 +36,11 @@ OVERRIDES = [
     ('GPQsiPjPFgSQM2k19X75KT2KipcRFL6tpkDvP58tYPpW', 'S2_EXPONENT_LP_USX_SEP26',   43_451.98),
     # 7VsV9DUW (June 6 snapshot)
     ('7VsV9DUWfXcK5xdPkoid6TDDVUsTHVK43jjN4wYZhSeV', 'S2_EXPONENT_LP_EUSX_SEP26',  10_305.71),
+    # Bibae (June 7 snapshot — added 2026-06-07 after 4th-wallet cross-validation
+    # confirmed in-range gating is the structural gap). V1 walker = 229,913
+    # (96.06% of Solstice 239,367); V2 walker would add 254,412 wrongly because
+    # narrow-tick V2 positions over-count without in-range gating.
+    ('BibaeAWkKpiPcLan1dFXW3cChFzpv6ZobkVdMVtSbSmx', 'S2_EXPONENT_LP_USX_SEP26',  239_367.40),
 ]
 
 
