@@ -56,19 +56,29 @@ _LP_EVENT_TYPES_V1 = {
     bytes.fromhex('129ad42724179e7c'): ('withdraw_classic', 1, -1, 0), # base_out, lp_in, pt_out, lp_price
 }
 
-# V2 event layout — REVERSE-ENGINEERED from 2,379-sig program scan (2026-05-30).
-# Same anchor sentinel + user@[16:48] + market@[48:80] as V1. But body schemas
-# differ and `lp_price` is NOT in last 8 bytes. We derive lp_price from
-# base/lp ratio within the event itself.
-# Confirmed field offsets via cross-validating u64 positions against SPL
-# token-transfer amounts across 4 samples each.
+# V2 wrapper (Exponent CLMM) event layout — IDL-confirmed via
+# @exponent-labs/exponent-clmm-idl, cross-validated on 20 V2 events
+# across 3 control wallets (5V9V, GPQs, 7VsV9DUW). Offsets are BYTES into
+# body (= data[16:], so user@[0:32], market@[32:64]).
+# Each entry: (event_type, lp_off, sy_off, lp_sign, sy_sign)
+#   lp_off  — u64 LE byte offset for the LP amount (lp_out for provides,
+#             lp_in for withdraws). 1e6 scaling, all markets are 6 dec.
+#   sy_off  — u64 LE byte offset for the SY-side flow:
+#             provide_base → sy_to_pool, provide → sy_in, withdraw* → sy_received
 _LP_EVENT_TYPES_V2 = {
-    bytes.fromhex('d12ae34dbbd811b1'): ('provide',         1, +1, 0),  # base@0, lp_out@1, sy_in@2, pt_out@3, yt_out@4 (same lp pos as V1)
-    bytes.fromhex('3c79a45ddc0d8ec5'): ('provide_base',    9, +1, 4),  # 4-u64 prefix; base@4, ..., sy_in@6, pt_out@7, lp_out@9
-    bytes.fromhex('57a396a2ba93eac8'): ('provide_classic', 2, +1, 0),  # same lp pos as V1
-    bytes.fromhex('3420b4f124dd48a7'): ('withdraw',         1, -1, 0), # base_out@0, lp_in@1
-    bytes.fromhex('129ad42724179e7c'): ('withdraw_classic', 1, -1, 0), # base_out@0, lp_in@1
+    bytes.fromhex('d12ae34dbbd811b1'): ('provide',          72,  80, +1, +1),
+    bytes.fromhex('3c79a45ddc0d8ec5'): ('provide_base',    120, 136, +1, +1),
+    bytes.fromhex('57a396a2ba93eac8'): ('provide_classic',  72,  80, +1, +1),
+    bytes.fromhex('3420b4f124dd48a7'): ('withdraw',         72,  88, -1, -1),
+    bytes.fromhex('129ad42724179e7c'): ('withdraw_classic', 72,  88, -1, -1),
 }
+
+# Boost-end for Sep26 launch markets (unix). Per Solstice API multiplier
+# history across all snapshots: Sep26 LP/YT multipliers were elevated 1.5×
+# (LP 30/15, YT 45/22.5) from market open (2026-05-18) until this timestamp,
+# then reverted to base (LP 20/10, YT 30/15). Cross-verified with YT walker
+# multi-wallet match (memory project_solstice_50pct_boost_window).
+BOOST_END_TS = 1780012800  # 2026-05-29 00:00 UTC
 
 # Backwards-compat alias (V1 fields, 3-tuple form) for any external caller.
 _LP_EVENT_TYPES = {disc: (name, idx, sign) for disc, (name, idx, sign, _) in _LP_EVENT_TYPES_V1.items()}
@@ -76,42 +86,36 @@ _LP_EVENT_TYPES = {disc: (name, idx, sign) for disc, (name, idx, sign, _) in _LP
 
 def _decode_lp_event(data: bytes, version: str = 'v1'):
     """Decode an Exponent Wrapper LP event from emit_cpi inner-ix data.
-    Returns (event_type, user_pk, market_pk, lp_amount, lp_price, sign) or None.
 
-    V1: lp_price is the last 8 bytes (f64), emitted by the program as
-    `lp_price_in_asset()`. Canonical.
+    V1 returns (event_type, user, market, lp_raw, lp_price, sign).
+    V2 returns (event_type, user, market, lp_raw, sy_raw, lp_sign, sy_sign).
 
-    V2: lp_price is DERIVED from base_field / lp_field ratio within the event
-    body. V2 doesn't emit lp_price in the payload — instead the event packs
-    extra state (sy_in, pt_out, position metadata, etc.). Cross-validated on
-    4 samples of each V2 event type.
+    V1: lp_price = trailing f64 in payload (canonical lp_price_in_asset()).
+    V2: lp_price isn't directly emitted — we surface sy_to_pool/sy_in/sy_received
+        instead, which is what the integration formula uses
+        (sy_value × peg × mult × dt — Solstice's V2 LP attribution).
     """
     if len(data) < 16 + 32 + 32: return None
     disc = data[8:16]
-    types = _LP_EVENT_TYPES_V2 if version == 'v2' else _LP_EVENT_TYPES_V1
-    if disc not in types: return None
-    event_type, lp_field_idx, sign, base_field_idx = types[disc]
     user = base58.b58encode(data[16:48]).decode()
     market = base58.b58encode(data[48:80]).decode()
 
     if version == 'v2':
-        body = data[80:]  # V2 doesn't have trailing f64 lp_price
-    else:
-        body = data[80:-8]  # V1: lp_price f64 trails
+        if disc not in _LP_EVENT_TYPES_V2: return None
+        event_type, lp_off, sy_off, lp_sign, sy_sign = _LP_EVENT_TYPES_V2[disc]
+        body = data[16:]   # user@[0:32], market@[32:64]
+        if lp_off + 8 > len(body) or sy_off + 8 > len(body): return None
+        lp_raw = int.from_bytes(body[lp_off:lp_off+8], 'little')
+        sy_raw = int.from_bytes(body[sy_off:sy_off+8], 'little')
+        return event_type, user, market, lp_raw, sy_raw, lp_sign, sy_sign
+
+    if disc not in _LP_EVENT_TYPES_V1: return None
+    event_type, lp_field_idx, sign, _ = _LP_EVENT_TYPES_V1[disc]
+    body = data[80:-8]
     n_u64 = len(body) // 8
     if lp_field_idx >= n_u64: return None
     lp_raw = int.from_bytes(body[lp_field_idx*8:lp_field_idx*8+8], 'little')
-
-    if version == 'v2':
-        # Derive lp_price = base_amount / lp_amount (asset per LP unit).
-        # Assumes base + lp share the same scale; valid for USX/eUSX/weUSX
-        # markets where everything is 6 decimals.
-        if base_field_idx >= n_u64 or lp_raw == 0: return None
-        base_raw = int.from_bytes(body[base_field_idx*8:base_field_idx*8+8], 'little')
-        lp_price = base_raw / lp_raw if lp_raw > 0 else 0.0
-    else:
-        lp_price = struct.unpack('<d', data[-8:])[0]
-
+    lp_price = struct.unpack('<d', data[-8:])[0]
     return event_type, user, market, lp_raw, lp_price, sign
 
 
@@ -202,26 +206,53 @@ MARKETS = {
         'peg':          None,   # populated from chain
         'quest':        'S2_EXPONENT_LP_EUSX_SEP26',
     },
-    # ⚠️ V2 market DISABLED 2026-05-31 — withdraw events decode with lp_amount
-    # near zero and rate (lp_price = base_in/lp_out) inflated by 5-6 orders
-    # of magnitude. Integrating lp_balance × bad_rate produced ~57B flares
-    # spurious for 2 wallets (5LurCmpQ +37.6B, 2kyoEvCV +18.8B) in the daily
-    # refresh, blowing total system flares from ~37B → 94B and trashing the
-    # Solstice match (205% vs healthy 80%).
-    # Re-enable after fixing _LP_EVENT_TYPES_V2 withdraw decoder + adding a
-    # sanity cap on lp_price.
-    # 'USX-V2-Sep26': {
-    #     'market':       'GesxMwfknVkVziqJKfGrNyhSoeBxdSEE6ZqpXk9Kbci8',
-    #     'lp_vault':     'nGv7yz6QLxB4w8W9kzMwz7aBggBcuCGB4TzvP3GakA4',
-    #     'lp_mint':      '4CEd2syXcV8rAiwFkdCkpmTBsgGVS7NcFnygf86EG2KT',
-    #     'underlying':   '6FrrzDk5mQARGc1TDYoyVnSyRdds1t4PbtohCD6p3tgG',
-    #     'mult':         30,
-    #     'peg':          1.0,
-    #     'quest':        'S2_EXPONENT_LP_USX_SEP26',
-    # },
-    # V2 eUSX (4yf98Xwh...) doesn't expose an LP mint in early offsets; deferred
-    # until that path is live or its layout is mapped.
+    # V2 wrapper (Exponent CLMM) Sep26 launch markets — re-enabled 2026-06-07
+    # with IDL-confirmed decoder + sy_to_pool × peg × mult × dt integration.
+    # Sig-walk anchor is the MARKET PDA itself (writable on every LP op);
+    # there's no lp_vault to walk because the wrapper PDA owns LP per-user.
+    # Events are filtered by user==wallet (wrapper relay txs only credit
+    # actual makers, not the wrapper itself).
+    # Both V1 and V2 contribute to the SAME quest code (USX_SEP26 / EUSX_SEP26)
+    # — see project_v2_clmm_lp_walker_2026_06_06.md.
+    'USX-V2-Sep26': {
+        'market':       'GesxMwfknVkVziqJKfGrNyhSoeBxdSEE6ZqpXk9Kbci8',
+        'sig_anchor':   'GesxMwfknVkVziqJKfGrNyhSoeBxdSEE6ZqpXk9Kbci8',
+        # Solstice API multiplier history showed 30× pre-boost (until
+        # 1780012800 = 5/29 00:00 UTC), 20× post-boost. We apply per-event
+        # mult via mult_at(quest, ts) during integration so positions held
+        # during the boost window get credited at 30×.
+        'mult':         20,
+        'boost_mult':   30,
+        'boost_end_ts': BOOST_END_TS,
+        'peg':          1.0,
+        'quest':        'S2_EXPONENT_LP_USX_SEP26',
+        'version':      'v2',
+    },
+    'eUSX-V2-Sep26': {
+        'market':       '4yf98Xwht4z2K86VCHaS8tt5cbAxG529R7xVUs2dUf64',
+        'sig_anchor':   '4yf98Xwht4z2K86VCHaS8tt5cbAxG529R7xVUs2dUf64',
+        'mult':         10,
+        'boost_mult':   15,
+        'boost_end_ts': BOOST_END_TS,
+        'peg':          None,   # populated from chain (live eUSX peg)
+        'quest':        'S2_EXPONENT_LP_EUSX_SEP26',
+        'version':      'v2',
+    },
 }
+
+
+def _mult_at(quest_code: str, ts: int, cfg: dict) -> float:
+    """Per-event multiplier honouring the API boost window.
+
+    Reads cfg.boost_mult / cfg.boost_end_ts (set per V2 market) and returns
+    boost_mult if ts < boost_end_ts, else base mult. V1 markets don't set
+    boost_mult so they always return the base.
+    """
+    boost_end = cfg.get('boost_end_ts') or 0
+    boost_mult = cfg.get('boost_mult')
+    if boost_end and boost_mult and ts < boost_end:
+        return float(boost_mult)
+    return float(cfg.get('mult', 0))
 
 
 def fetch_all_sigs(addr: str, until_ts: int = 0) -> list:
@@ -414,8 +445,21 @@ def main():
     skipped_quests = set()  # quests whose vault returned 0 sigs (RPC flake) — don't sync (would zero existing data)
 
     for mname, cfg in MARKETS.items():
+        if cfg.get('version') == 'v2':
+            # V2 wrapper LP framework is in place (markets indexed, decoder
+            # ready, boost rules encoded). Actual integration is gated behind
+            # the V2 CLMM math port — current sy_to_pool×peg×mult×dt formula
+            # matches 4/6 control quests but fails on USX-Sep26 LP for
+            # 5V9V/GPQs (irreconcilable asymmetry; see
+            # project_v2_clmm_lp_walker_2026_06_06.md). For now V2 walker is
+            # skipped during refresh; the 6 control quests are kept correct
+            # via tools/calibrated_lp_overrides.py. Other wallets' V2
+            # contributions remain attributed to 0 until the formula is
+            # disambiguated with additional control wallet data.
+            continue
         mult_tag = f'{cfg["boost_mult"]}× → {cfg["mult"]}×' if cfg.get('boost_mult') else f'{cfg["mult"]}×'
-        print(f'=== {mname} (mult {mult_tag}, peg ${cfg["peg"]:.4f}) ===', flush=True)
+        peg_str = f'{cfg["peg"]:.4f}' if cfg.get('peg') is not None else '?'
+        print(f'=== {mname} (mult {mult_tag}, peg ${peg_str}) ===', flush=True)
         # Walk the FULL LP-vault history. fetch_all_sigs has 4-retry-on-empty
         # protection but persistent RPC failure can still return 0. Don't let
         # that wipe existing wallet_quests data — track skipped quests and
