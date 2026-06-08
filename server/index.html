@@ -361,6 +361,7 @@ footer { text-align: center; color: var(--ink-500); font-size: 11px; margin-top:
         </select>
         <button id="toggle-pdas" onclick="togglePDAs()" title="Show or hide protocol-internal PDA addresses (vault contracts, strategy aggregators, etc.). Totals and ranks update accordingly.">Hide PDAs</button>
         <button id="toggle-view" onclick="toggleView()" title="Switch the headline stat, table column, and per-wallet drawer between cumulative S2 Flares and current-snapshot TVL (USD).">Show TVL</button>
+        <button id="toggle-tvl-filter" onclick="toggleTvlFilter()" title="Hide wallets whose current TVL is less than their S1 TWA TVL — catches wallets that farmed in S1 and have since exited.">Hide TVL &lt; TWA</button>
         <span style="flex:1;"></span>
         <button id="prev-top" title="Previous page">‹ Prev</button>
         <button id="next-top" title="Next page">Next ›</button>
@@ -2039,6 +2040,9 @@ let HIDE_PDAS = localStorage.getItem('hidePDAs') !== '0';  // default: hide
 // VIEW_MODE flips the headline stat, the table's Total column, and the
 // drawer's by-quest breakdown between cumulative S2 Flares and current TVL (USD).
 let VIEW_MODE = localStorage.getItem('viewMode') === 'tvl' ? 'tvl' : 'flares';
+// When true, hide wallets where current TVL is less than their S1 TWA TVL.
+// Catches S1 farmers who exited — high historical exposure, low current.
+let HIDE_TVL_BELOW_TWA = localStorage.getItem('hideTvlBelowTwa') === '1';
 
 // Compact $ formatter — mirrors fmt() but with leading $ and no decimals on big numbers.
 const fmtUsdShort = n => {
@@ -2081,6 +2085,8 @@ async function load() {
   if (btn) btn.textContent = HIDE_PDAS ? 'Show PDAs' : 'Hide PDAs';
   const vbtn = document.getElementById('toggle-view');
   if (vbtn) vbtn.textContent = VIEW_MODE === 'tvl' ? 'Show Flares' : 'Show TVL';
+  const tvlBtn = document.getElementById('toggle-tvl-filter');
+  if (tvlBtn) tvlBtn.textContent = HIDE_TVL_BELOW_TWA ? 'Show TVL < TWA' : 'Hide TVL < TWA';
   const th = document.getElementById('th-total');
   if (th) th.textContent = VIEW_MODE === 'tvl' ? 'TVL' : 'Total';
   renderStats();
@@ -2220,6 +2226,14 @@ function togglePDAs() {
   localStorage.setItem('hidePDAs', HIDE_PDAS ? '1' : '0');
   document.getElementById('toggle-pdas').textContent = HIDE_PDAS ? 'Show PDAs' : 'Hide PDAs';
   renderStats();
+  applyFilters();
+}
+
+function toggleTvlFilter() {
+  HIDE_TVL_BELOW_TWA = !HIDE_TVL_BELOW_TWA;
+  localStorage.setItem('hideTvlBelowTwa', HIDE_TVL_BELOW_TWA ? '1' : '0');
+  const btn = document.getElementById('toggle-tvl-filter');
+  if (btn) btn.textContent = HIDE_TVL_BELOW_TWA ? 'Show TVL < TWA' : 'Hide TVL < TWA';
   applyFilters();
 }
 
@@ -2464,6 +2478,16 @@ function applyFilters() {
   let rs = RAW.records;
   if (HIDE_PDAS) rs = rs.filter(r => !r.is_protocol_pda);
   if (proto) rs = rs.filter(r => (r[proto] || 0) > 0);
+  if (HIDE_TVL_BELOW_TWA) {
+    // Filter out wallets where current TVL < TWA TVL (S1). Wallets with
+    // no S1 history (twa_tvl_s1 == null) are kept (no historical to compare).
+    rs = rs.filter(r => {
+      const twa = r.twa_tvl_s1;
+      if (twa == null) return true;
+      const tvl = r.tvl || 0;
+      return tvl >= twa;
+    });
+  }
   if (q) rs = rs.filter(r => r.wallet.toLowerCase().includes(q));
   const dir = sortDir === "asc" ? 1 : -1;
   const rankField = HIDE_PDAS ? '_realRank' : '_globalRank';
