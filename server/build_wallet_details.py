@@ -272,8 +272,14 @@ def compute_tvl_by_quest(evidence: dict) -> dict:
 
     # YT TVL = cost_basis.usd_basis (amount originally deposited, decay-adjusted
     # for pre-S2 buys). Only credit quests where the wallet currently holds YT.
+    #
+    # Exception: S2_EXPONENT_YIELD_USX_JUN26 uses usd_paid (original funding
+    # amount) instead of usd_basis (s1_contribution + s2_contribution). The
+    # JUN26 market is a pre-S2 vintage; the usd_basis adjustment underreports
+    # the user's actual capital committed. User requested 2026-06-08.
     yt = evidence.get('S2_EXPONENT_YT') or {}
     cb_by_market = (yt.get('cost_basis_by_market') or {})
+    QUESTS_USE_USD_PAID = {'S2_EXPONENT_YIELD_USX_JUN26'}
     for mb in (yt.get('by_market') or []):
         mkt = mb.get('market')
         qcode = YT_MARKET_TO_QUEST.get(mkt)
@@ -281,9 +287,12 @@ def compute_tvl_by_quest(evidence: dict) -> dict:
         any_emitting = any((p.get('yt') or 0) > 0 for p in (mb.get('positions') or []))
         if not any_emitting: continue
         cb = cb_by_market.get(mkt) or mb.get('cost_basis') or {}
-        usd_basis = float(cb.get('usd_basis') or 0)
-        if usd_basis > 0:
-            tvl[qcode] = tvl.get(qcode, 0) + usd_basis
+        if qcode in QUESTS_USE_USD_PAID:
+            value = float(cb.get('usd_paid') or 0)
+        else:
+            value = float(cb.get('usd_basis') or 0)
+        if value > 0:
+            tvl[qcode] = tvl.get(qcode, 0) + value
     return tvl
 
 
