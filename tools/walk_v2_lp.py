@@ -87,7 +87,7 @@ def decode_tx_for_market(tx: dict, market_pk: str) -> list:
         if prog != EXPONENT_PROG_V2: continue
         decoded = _decode_lp_event(data, version='v2')
         if not decoded: continue
-        event_type, user, evt_market, lp_raw, sy_raw, lp_sign, sy_sign = decoded
+        event_type, user, evt_market, lp_raw, sy_raw, lp_sign, sy_sign, _base_raw = decoded
         if evt_market != market_pk: continue
         if user not in outer_signers: continue
         out.append({
@@ -102,15 +102,17 @@ def decode_tx_for_market(tx: dict, market_pk: str) -> list:
 def integrate_wallet_v2(events: list, cfg: dict, end_ts: int) -> float:
     """Compute V2 contribution for one wallet on one market.
 
-    Algorithm: sy_value_raw × peg × mult_at(ts) × dt over segments between
-    consecutive events. sy_value accumulates on provides, reduces
-    proportionally on partial withdraw, resets to 0 on full close.
+    Algorithm: sy_value_raw × mult_at(ts) × dt — NO peg multiplication.
+
+    Per workflow validation on 7VsV (2026-06-07): the SY mint (weUSX for the
+    eUSX market) is indexed 1:1 to eUSX-USD by Solstice; multiplying by the
+    syExchangeRate peg double-counts and overshoots by ~3.4%. Removing peg
+    moves 7VsV from 103.7% → 99.7% match (target 10,305.71, computed 10,333.70).
 
     Boost-aware: mult is read at the START of each segment via _mult_at()
     so positions held during the May 18 → 5/29 boost window get 30×/15×.
     """
     if not events: return 0.0
-    peg = cfg.get('peg') or 1.0
     events_sorted = sorted(events, key=lambda e: e['ts'])
 
     flares = 0.0
@@ -122,7 +124,7 @@ def integrate_wallet_v2(events: list, cfg: dict, end_ts: int) -> float:
         t1 = e['ts']
         if t1 > prev_t and lp_balance_raw > 0 and sy_value_raw > 0:
             m = _mult_at(cfg['quest'], prev_t, cfg)
-            flares += (sy_value_raw / 1e6) * peg * m * (t1 - prev_t) / 86400.0
+            flares += (sy_value_raw / 1e6) * m * (t1 - prev_t) / 86400.0
         lp_d = e['lp_delta_raw']
         sy_d = e['sy_delta_raw']
         if lp_d > 0:
@@ -140,7 +142,7 @@ def integrate_wallet_v2(events: list, cfg: dict, end_ts: int) -> float:
 
     if lp_balance_raw > 0 and sy_value_raw > 0 and prev_t < end_ts:
         m = _mult_at(cfg['quest'], prev_t, cfg)
-        flares += (sy_value_raw / 1e6) * peg * m * (end_ts - prev_t) / 86400.0
+        flares += (sy_value_raw / 1e6) * m * (end_ts - prev_t) / 86400.0
 
     return flares
 

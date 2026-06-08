@@ -107,10 +107,29 @@ def log(msg: str):
     print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {msg}", flush=True)
 
 
+_active_connections = []
+
+
 def db_conn():
+    """Caller doesn't need to close — the main loop calls _close_active_connections()
+    after each module run. Without this, the SQLite WAL reader-mark stayed pinned
+    across the 30s polling sleep, growing the WAL to 10 GB."""
     con = sqlite3.connect(DB, timeout=30)
     con.row_factory = sqlite3.Row
+    _active_connections.append(con)
     return con
+
+
+def _close_active_connections():
+    """Release every connection opened since the last close. Safe to call
+    repeatedly. Stops the WAL reader-mark from being pinned by stale daemon
+    connections across the 30s polling sleep."""
+    while _active_connections:
+        c = _active_connections.pop()
+        try:
+            c.close()
+        except Exception:
+            pass
 
 
 def already_fired(con, signal_key: str, dedupe_window_sec: int) -> bool:
@@ -994,6 +1013,8 @@ def main():
             last_run[name] = int(time.time())
         except Exception as e:
             log(f'  {name} initial bootstrap error: {e}')
+        finally:
+            _close_active_connections()
 
     log('Initial baselines complete. Entering polling loop.')
     while True:
@@ -1004,6 +1025,8 @@ def main():
                     fn()
                 except Exception as e:
                     log(f'{name} error: {e}')
+                finally:
+                    _close_active_connections()
                 last_run[name] = now
         time.sleep(30)
 

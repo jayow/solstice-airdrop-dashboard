@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from rpc_helper import rpc
+import rpc_helper as rh
 from snapshot_ts import last_snapshot_ts
 import walker_db
 import db as _db
@@ -32,13 +33,16 @@ def fetch_program_accounts_v2_paginated(program_id: str, filters: list, *,
                                        force_refresh: bool = False) -> list:
     """Call getProgramAccountsV2 with server-side pagination.
 
-    Accumulates accounts across pages via `paginationKey` until the server
-    returns no key (or an empty page). Returns a list shaped like
-    getProgramAccounts results: [{'pubkey': ..., 'account': {...}}, ...].
-
-    `filters` is passed through unchanged (dataSize + memcmp etc).
-    Honors rpc_helper retry/cache semantics on each page request.
+    getProgramAccountsV2 is a Helius-only extension — other providers in the
+    rotation (QuickNode, Chainstack, Alchemy, public/Triton/Ankr) silently
+    return an empty response (no error code, no V2 shape). If rpc_helper's
+    rotation lands on a non-Helius endpoint mid-walk, we'd see 0 accounts
+    with no way to retry usefully. So pin V2 calls to Helius directly.
     """
+    import requests, time
+    helius_url = rh.HELIUS_ENDPOINTS[0] if rh.HELIUS_ENDPOINTS else None
+    if not helius_url:
+        return []
     out = []
     pagination_key = None
     # Bound the loop defensively; 64 pages * 1000 = 64k accounts max per pool.
@@ -46,23 +50,27 @@ def fetch_program_accounts_v2_paginated(program_id: str, filters: list, *,
         cfg = {'encoding': 'base64', 'filters': filters, 'limit': page_size}
         if pagination_key is not None:
             cfg['paginationKey'] = pagination_key
-        r = rpc('getProgramAccountsV2', [program_id, cfg],
-                timeout=timeout, force_refresh=force_refresh)
-        result = (r or {}).get('result') or {}
-        # v2 response: {'accounts': [...], 'paginationKey': str|None}
-        # Some indexers return the bare list (v1-shaped); handle both.
-        if isinstance(result, list):
-            accs = result
-            pagination_key = None
-        else:
-            accs = result.get('accounts') or []
-            pagination_key = result.get('paginationKey')
+        body = {'jsonrpc': '2.0', 'id': 1, 'method': 'getProgramAccountsV2',
+                'params': [program_id, cfg]}
+        accs, pagination_key = [], None
+        # Small retry inside this page so a transient Helius 5xx doesn't
+        # poison the surrounding walker's 4-attempt loop.
+        for tries in range(3):
+            try:
+                r = requests.post(helius_url, json=body, timeout=timeout)
+                j = r.json() if r.status_code < 500 else {}
+                if 'error' in j: j = {}
+                result = (j or {}).get('result') or {}
+                if isinstance(result, list):
+                    accs = result
+                    pagination_key = None
+                else:
+                    accs = result.get('accounts') or []
+                    pagination_key = result.get('paginationKey')
+                break
+            except Exception:
+                time.sleep(0.5 * (2 ** tries))
         out.extend(accs)
-        # Helius CAN return empty pages with a non-empty paginationKey: server-side
-        # memcmp filtering may eliminate every row on a given page even though more
-        # filter-matching rows exist downstream. Bail ONLY when the server explicitly
-        # says "no more" by omitting the paginationKey. The 64-page outer bound is
-        # the safety net against runaway loops.
         if not pagination_key:
             break
     return out

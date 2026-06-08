@@ -73,6 +73,17 @@ _LP_EVENT_TYPES_V2 = {
     bytes.fromhex('129ad42724179e7c'): ('withdraw_classic', 72,  88, -1, -1),
 }
 
+# Offset of `amount_base_in` within the event body (data[16:]) for provide_base.
+# For 'provide' events the user supplies PT+SY directly (no base swap), so
+# base_in does not exist — fall back to sy_in. 'provide_classic' has a
+# different payload layout than provide_base; its base offset is not yet
+# reverse-engineered, so it falls back to sy_in.
+# Derived 2026-06-07 from GPQs USX-Sep26 control: payload[96:104] = 1009.57 USX,
+# matches Solstice target 43,452 at 99.7% via base_in × peg × mult × dt.
+_LP_BASE_IN_OFFSETS_V2 = {
+    bytes.fromhex('3c79a45ddc0d8ec5'):  96,  # provide_base
+}
+
 # Boost-end for Sep26 launch markets (unix). Per Solstice API multiplier
 # history across all snapshots: Sep26 LP/YT multipliers were elevated 1.5×
 # (LP 30/15, YT 45/22.5) from market open (2026-05-18) until this timestamp,
@@ -107,7 +118,9 @@ def _decode_lp_event(data: bytes, version: str = 'v1'):
         if lp_off + 8 > len(body) or sy_off + 8 > len(body): return None
         lp_raw = int.from_bytes(body[lp_off:lp_off+8], 'little')
         sy_raw = int.from_bytes(body[sy_off:sy_off+8], 'little')
-        return event_type, user, market, lp_raw, sy_raw, lp_sign, sy_sign
+        base_off = _LP_BASE_IN_OFFSETS_V2.get(disc)
+        base_raw = int.from_bytes(body[base_off:base_off+8], 'little') if base_off and base_off + 8 <= len(body) else 0
+        return event_type, user, market, lp_raw, sy_raw, lp_sign, sy_sign, base_raw
 
     if disc not in _LP_EVENT_TYPES_V1: return None
     event_type, lp_field_idx, sign, _ = _LP_EVENT_TYPES_V1[disc]
@@ -446,16 +459,12 @@ def main():
 
     for mname, cfg in MARKETS.items():
         if cfg.get('version') == 'v2':
-            # V2 wrapper LP framework is in place (markets indexed, decoder
-            # ready, boost rules encoded). Actual integration is gated behind
-            # the V2 CLMM math port — current sy_to_pool×peg×mult×dt formula
-            # matches 4/6 control quests but fails on USX-Sep26 LP for
-            # 5V9V/GPQs (irreconcilable asymmetry; see
-            # project_v2_clmm_lp_walker_2026_06_06.md). For now V2 walker is
-            # skipped during refresh; the 6 control quests are kept correct
-            # via tools/calibrated_lp_overrides.py. Other wallets' V2
-            # contributions remain attributed to 0 until the formula is
-            # disambiguated with additional control wallet data.
+            # V2 attribution is the sibling tools/walk_v2_lp.py (Phase 5b).
+            # 2026-06-07 multi-agent workflow tested 5 formulas; none fit all
+            # 7 control rows naturally AND scaled safely system-wide. GPQs
+            # USX-Sep26 stuck at 51.5% match — canary for a missing data
+            # dimension (likely per-position fee accruals or an unindexed
+            # V2 ix). See project_v2_clmm_lp_walker_2026_06_06.md.
             continue
         mult_tag = f'{cfg["boost_mult"]}× → {cfg["mult"]}×' if cfg.get('boost_mult') else f'{cfg["mult"]}×'
         peg_str = f'{cfg["peg"]:.4f}' if cfg.get('peg') is not None else '?'
