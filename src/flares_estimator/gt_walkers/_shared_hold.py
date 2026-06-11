@@ -3,6 +3,7 @@
 Single extract → 3 transforms per mint (daily / 1MO / 3MO).
 """
 import os, sys, time
+from concurrent.futures import ThreadPoolExecutor
 THIS = os.path.dirname(os.path.abspath(__file__))
 if os.path.dirname(THIS) not in sys.path: sys.path.insert(0, os.path.dirname(THIS))
 
@@ -10,6 +11,74 @@ from rpc_helper import rpc
 from snapshot_ts import last_snapshot_ts
 import db
 from ._base import S2_START_TS, S2_END_TS, USX_MINT, EUSX_MINT
+
+
+# Per-ATA inner pool for parallel `_post_balance` fetches inside the cold /
+# incremental walks. Sized against the real global RPC semaphore (20 slots,
+# rpc_helper._GLOBAL_CONCURRENCY default) and the HOLD outer pool of 16:
+#   16 outer × 4 inner = 64 inner workers contending for 20 semaphore slots.
+# The semaphore is the actual throughput gate; 4 inner per outer is the sweet
+# spot — bigger inner pools just queue at the semaphore without extra reqs/sec
+# and waste thread stacks. With ~600ms per _post_balance, a wallet with 12
+# in-window sigs goes from ~7.2s serial to ~1.8s parallel (4× speedup) when
+# the semaphore is contended; ~1.2s (6×) when it's not.
+_POST_BALANCE_INNER_POOL = 4
+
+
+def _parallel_post_balances(in_window_sigs, ata):
+    """Fetch _post_balance for many sigs concurrently, preserve ascending-ts order.
+
+    Returns a list of (ts, sig_str, bal) tuples sorted ascending by blockTime.
+    `bal` is float on success (including the valid 0.0 close-event), None on
+    failure (RPC returned no result, ata not in tx, OR exception escaped).
+
+    Iteration / ordering:
+      - We submit all futures up-front, keep an explicit ordered list of
+        (future, sig_dict) tuples (NOT relying on dict insertion order — this
+        is a Python 3.7+ guarantee but expressing it as a list makes the
+        ascending-blockTime contract self-documenting).
+      - After every future resolves, results are sorted by ts ascending using
+        Python's stable sort — same-ts ties retain submission order, which is
+        the original ascending-blockTime order from `_walk_ata_sigs` (line 145).
+      - This matches serial semantics bit-for-bit: the caller's serial append
+        loop sees the SAME (ts, sig, bal) sequence it would have built itself.
+
+    Exception handling:
+      - `_post_balance` is currently no-raise (rpc_helper returns dicts even
+        on logical failure). We still wrap `fut.result()` in try/except so any
+        future bug upstream (e.g. KeyError on a malformed tx) maps to bal=None
+        → post_balance_failed=True, identical to the existing None branch.
+      - This is a deliberate semantic widening: serial code would surface an
+        uncaught exception as a walker crash; parallel code degrades to a
+        flagged-failure ATA. We log the exception so silent-empty bugs don't
+        hide (per feedback_systematic_troubleshooting).
+    """
+    if not in_window_sigs:
+        return []
+    pairs = []
+    with ThreadPoolExecutor(max_workers=_POST_BALANCE_INNER_POOL,
+                            thread_name_prefix='hold-postbal') as ex:
+        # Submit in ascending-ts order; keep a list (not a dict) so the
+        # ordering contract is explicit and survives any future refactor.
+        submissions = [(ex.submit(_post_balance, s['signature'], ata), s)
+                       for s in in_window_sigs]
+        for fut, s in submissions:
+            ts = s.get('blockTime') or 0
+            try:
+                bal = fut.result()
+            except Exception as e:
+                # See docstring — defensive widening. Print so silent failures
+                # are diagnosable; do NOT re-raise (would orphan sibling sigs
+                # in this ATA and tank the whole wallet walk).
+                print(f'  WARN _post_balance raised for {ata[:8]}.. '
+                      f'sig={s.get("signature","?")[:8]}..: {e}', flush=True)
+                bal = None
+            pairs.append((ts, s['signature'], bal))
+    # Stable sort by ts ascending. With Python's Timsort this preserves the
+    # original submission order for same-blockTime ties, matching the serial
+    # iteration that `_walk_ata_sigs` produces.
+    pairs.sort(key=lambda t: t[0])
+    return pairs
 
 
 # Canonical ATA derivation — gives us a deterministic fallback when
@@ -225,6 +294,9 @@ def _cold_walk_ata(ata: str, end_ts: int):
         out['segs'].append((end_ts, 0.0))
         return out
     # Carry-in: the LAST pre-S2 sig's post-balance seeds the timeline at S2_START.
+    # SERIAL — single RPC, not part of the per-sig loop (I8). Must stay outside
+    # the parallel block: it writes to segs[0] which the in-window monotonicity
+    # guard reads, so it has to land before the parallel fetch results.
     pre = [s for s in sigs if (s.get('blockTime') or 0) < S2_START_TS]
     if pre:
         r = _post_balance(pre[-1]['signature'], ata)
@@ -233,19 +305,25 @@ def _cold_walk_ata(ata: str, end_ts: int):
             out['segs'][0] = (S2_START_TS, r)
         else:
             out['post_balance_failed'] = True
-    # Walk in-window sigs, building segs and tracking newest-successful for cursor.
+    # PARALLEL fetch of in-window per-sig post-balances.
+    # `_parallel_post_balances` returns (ts, sig, bal) tuples sorted ascending
+    # by blockTime — identical ordering to the original serial iteration.
+    in_window = [s for s in sigs
+                 if S2_START_TS <= (s.get('blockTime') or 0) <= end_ts]
+    results = _parallel_post_balances(in_window, ata)
+    # SERIAL append: preserves I2 (monotonicity guard), I3 (newest_ok_sig is
+    # the highest-ts successful sig — because results is ts-ascending, the
+    # last successful assignment wins), I6 (OR-aggregate post_balance_failed).
     newest_ok_sig = None
     newest_ok_ts = 0
-    for s in [s for s in sigs if S2_START_TS <= (s.get('blockTime') or 0) <= end_ts]:
-        ts = s.get('blockTime') or 0
-        bal = _post_balance(s['signature'], ata)
+    for ts, sig_str, bal in results:
         if bal is None:
             out['post_balance_failed'] = True
             continue
         if ts <= out['segs'][-1][0]:
             continue
         out['segs'].append((ts, bal))
-        newest_ok_sig = s['signature']
+        newest_ok_sig = sig_str
         newest_ok_ts = ts
     if newest_ok_sig:
         out['last_sig'] = newest_ok_sig
@@ -271,20 +349,27 @@ def _incremental_walk_ata(ata: str, since_sig: str, end_ts: int, prior_ata_state
            'rpc_failed': rpc_failed, 'post_balance_failed': False}
     if not sigs:
         return out
+    # PARALLEL fetch of in-window per-sig post-balances.
+    # No pre_s2_carry recompute here (I8) — incremental inherits the prior
+    # value from prior_ata_state. Window filter matches the original loop:
+    # ts < S2_START_TS or ts > end_ts is dropped.
+    in_window = [s for s in sigs
+                 if S2_START_TS <= (s.get('blockTime') or 0) <= end_ts]
+    results = _parallel_post_balances(in_window, ata)
+    # SERIAL append: preserves I2 (monotonicity vs cached segs[-1][0]), I3
+    # (newest_ok_sig advances to the chronologically latest successful sig),
+    # I6 (OR-aggregate post_balance_failed), I11 (no else branch — leave
+    # last_known_balance at prior_ata_state's value when no new sig succeeded).
     newest_ok_sig = None
     newest_ok_ts = 0
-    for s in sigs:
-        ts = s.get('blockTime') or 0
-        if ts < S2_START_TS or ts > end_ts:
-            continue
-        bal = _post_balance(s['signature'], ata)
+    for ts, sig_str, bal in results:
         if bal is None:
             out['post_balance_failed'] = True
             continue
         if ts <= out['segs'][-1][0]:
             continue
         out['segs'].append((ts, bal))
-        newest_ok_sig = s['signature']
+        newest_ok_sig = sig_str
         newest_ok_ts = ts
     if newest_ok_sig:
         out['last_sig'] = newest_ok_sig
