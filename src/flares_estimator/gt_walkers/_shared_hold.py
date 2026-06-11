@@ -258,19 +258,19 @@ def integrate_daily(timeline: list, mult: int, usd_per_token, end_ts: int) -> fl
     return flares
 
 
-def integrate_matured_daily(timeline: list, mult: float, usd_per_token: float,
+def integrate_matured_daily(timeline: list, mult: float, usd_per_token,
                               end_ts: int, mature_days: int = 7) -> float:
-    """Daily TWAB with N-day maturity floor (per quest_map.py docstring:
-    'matured_TVL: TVL position must have sat for 7 continuous days before counting').
+    """Daily TWAB with N-day maturity floor.
 
-    Same as integrate_daily but the continuous-hold timer must reach `mature_days`
-    before any flares accrue. Timer resets whenever balance drops to 0.
-    Used for XPBook escrow contributions (BuyYt SY + SellYt/BuyYt YT) — newly
-    posted limit orders don't earn flares until they've sat ≥ 7 days.
+    `usd_per_token` may be a constant float (USX=1.0) or a callable peg_fn(ts)→float
+    (eUSX uses time-varying peg — matches integrate_daily semantics, evaluated at
+    segment midpoint for second-order accuracy).
     """
     if not timeline or mature_days <= 0: return 0.0
     mature_sec = mature_days * 86400
     flares = 0.0
+    is_callable = callable(usd_per_token)
+    def _usd(t0, t1): return usd_per_token((t0 + t1) // 2) if is_callable else usd_per_token
     segments = []
     for i in range(len(timeline) - 1):
         t0, bal = timeline[i]; t1, _ = timeline[i + 1]
@@ -286,7 +286,7 @@ def integrate_matured_daily(timeline: list, mult: float, usd_per_token: float,
             mature_ts = run_start + mature_sec
             earn_start = max(ts0, mature_ts)
             if earn_start < ts1:
-                flares += bal * usd_per_token * mult * (ts1 - earn_start) / 86400.0
+                flares += bal * _usd(earn_start, ts1) * mult * (ts1 - earn_start) / 86400.0
         else:
             run_start = None
     return flares

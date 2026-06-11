@@ -25,6 +25,7 @@ from snapshot_ts import last_snapshot_ts
 import walker_db
 import db as _db
 from incremental_events import extract_events_incremental
+import position_watermark
 
 S2_START_TS = 1776038400
 MIN_HOLD_DAYS = 1.0
@@ -176,8 +177,11 @@ def main():
             tick_lower = int.from_bytes(d[88:92], 'little', signed=True)
             tick_upper = int.from_bytes(d[92:96], 'little', signed=True)
             if L == 0: continue
+            # Capture data hash for the watermark check (skip sig walk when
+            # the position's on-chain state is unchanged since last refresh).
             positions.append({'pubkey': a['pubkey'], 'mint': mint, 'L': L,
-                              'tick_lower': tick_lower, 'tick_upper': tick_upper})
+                              'tick_lower': tick_lower, 'tick_upper': tick_upper,
+                              'data_hash': position_watermark.hash_data(d)})
 
         # For each position, find NFT owner and compute USD value. If
         # find_nft_owner returns None (RPC flake — getTokenLargestAccounts can
@@ -185,15 +189,17 @@ def main():
         # quest_cache. Position-NFT ownership is invariant once opened, so
         # the cached owner is authoritative for any position we've seen before.
         def process(p):
-            owner = find_nft_owner(p['mint'])
-            fallback = False
+            # Cache-first: NFT ownership is invariant once opened (per docstring above).
+            # Only call find_nft_owner() RPC for positions we've never seen.
+            owner = cached_owner_by_pos.get(p['pubkey'])
+            fallback = bool(owner)
             if not owner:
-                owner = cached_owner_by_pos.get(p['pubkey'])
-                fallback = bool(owner)
+                owner = find_nft_owner(p['mint'])
+                fallback = False
             if not owner: return None
             usd = liquidity_to_usd(p['L'], p['tick_lower'], p['tick_upper'],
                                     current_tick, price_a, price_b, dec_a, dec_b)
-            return (owner, p['pubkey'], p['mint'], usd, fallback)
+            return (owner, p['pubkey'], p['mint'], usd, fallback, p['data_hash'])
 
         n_processed = 0
         n_fallback = 0
@@ -204,10 +210,10 @@ def main():
                 n_processed += 1
                 res = fut.result()
                 if res:
-                    owner, pos_pubkey, mint, usd, fallback = res
+                    owner, pos_pubkey, mint, usd, fallback, data_hash = res
                     if fallback: n_fallback += 1
                     if usd > 0:
-                        position_owners.append((owner, pos_pubkey, mint, usd))
+                        position_owners.append((owner, pos_pubkey, mint, usd, data_hash))
                         all_positions[owner][QUEST_TO_POSKEY[quest]] += usd
                 if n_processed % 50 == 0: print(f'    {n_processed}/{len(positions)} owners found', flush=True)
         print(f'  {len(position_owners)} positions with active USD value (fallback used: {n_fallback})', flush=True)
@@ -313,17 +319,37 @@ def main():
                     usd_days += prev_u * dt
             return usd_days
 
+        # Per-position watermark: if the position PDA's account data hasn't
+        # changed since the last refresh, no events can have occurred — skip
+        # the costly extract_events_incremental() entirely and reuse cached.
+        # Pre-compute the unchanged set in main thread (avoids SQLite
+        # cross-thread errors when walk() runs in a ThreadPoolExecutor).
+        wm_con = _db.conn()
+        position_watermark.ensure_table(wm_con)
+        unchanged_positions = position_watermark.unchanged_set(
+            wm_con,
+            [(po[1], po[4]) for po in position_owners]  # (pos_pubkey, data_hash)
+        )
+        walked_updates = []  # collected during walk(); flushed after pool joins
+        print(f'  {len(unchanged_positions)}/{len(position_owners)} positions unchanged — skipping sig walk', flush=True)
+
         def walk(args):
-            owner, pos_pubkey, mint, usd = args
+            owner, pos_pubkey, mint, usd, data_hash = args
             existing = existing_by_owner_pos.get((owner, pos_pubkey), [])
-            new_evs = extract_events_incremental(pos_pubkey, existing, _classify, walker_name='walk_s2_orca')
-            for e in new_evs:
-                e.setdefault('mint_position', mint)
-                e['quest'] = quest   # tag so downstream can attribute cost basis per quest
-            position_events_by_owner[owner].extend(existing)
-            position_events_by_owner[owner].extend(new_evs)
-            all_evs = existing + new_evs
-            usd_days = _integrate_position(all_evs, usd)
+            if existing and pos_pubkey in unchanged_positions:
+                # No on-chain state change since last refresh; reuse cached.
+                position_events_by_owner[owner].extend(existing)
+                usd_days = _integrate_position(existing, usd)
+            else:
+                new_evs = extract_events_incremental(pos_pubkey, existing, _classify, walker_name='walk_s2_orca')
+                for e in new_evs:
+                    e.setdefault('mint_position', mint)
+                    e['quest'] = quest   # tag so downstream can attribute cost basis per quest
+                position_events_by_owner[owner].extend(existing)
+                position_events_by_owner[owner].extend(new_evs)
+                all_evs = existing + new_evs
+                usd_days = _integrate_position(all_evs, usd)
+                walked_updates.append((pos_pubkey, data_hash))
             if usd_days <= 0: return None
             return owner, usd_days * mult
 
@@ -338,12 +364,13 @@ def main():
                     owner, flares = res
                     all_results[owner][quest] += flares
 
+        position_watermark.update_many(wm_con, walked_updates)  # flush this quest's watermark updates
         q_total = sum(r.get(quest, 0) for r in all_results.values())
         print(f'  {quest} total: {q_total:,.0f}\n', flush=True)
 
         # Coverage: sum of tracked-position USD vs pool TVL. Captures any
         # positions we failed to enumerate (RPC truncation, decoder skip, etc).
-        tracked_tvl = sum(usd for (_, _, _, usd) in position_owners)
+        tracked_tvl = sum(usd for (_, _, _, usd, _) in position_owners)
         walker_db.write_coverage('walk_s2_orca', quest,
                                  pool_tvl_usd=float(tvl), tracked_tvl_usd=tracked_tvl,
                                  n_positions=len(position_owners))
