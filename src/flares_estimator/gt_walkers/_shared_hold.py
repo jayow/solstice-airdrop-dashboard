@@ -353,6 +353,74 @@ def build_twab_timeline(wallet: str, mint: str) -> dict:
                 'last_event_ts': end_ts, 'fetch_failed': fetch_failed,
                 'per_ata': {}, '_schema': 2}
 
+    # 3.5. SCHEMA-1 MIGRATION FAST PATH (whole-wallet check).
+    # Legacy caches store the summed timeline across all ATAs (no per-ATA split).
+    # If the live state matches the cache's recorded end-state — same ATA set
+    # AND same total balance — the existing timeline is authoritative; no walk
+    # needed. Carries the legacy timeline into a schema-2 per_ata shape so the
+    # next refresh hits the schema-2 FAST path proper.
+    #
+    # We synthesize per_ata by putting the entire summed timeline on the FIRST
+    # ATA and zero-segs on the rest. The union-fold below sums them back to the
+    # correct total. This is exact for the dominant single-ATA wallet case and
+    # produces the correct WALLET-level integrand for multi-ATA (the per-ATA
+    # split is lost in schema-1 anyway, but downstream integrate_* only sees
+    # the wallet-level timeline).
+    if (schema == 1 and not fetch_failed and prior_raw.get('timeline')
+            and prior_atas and live):
+        legacy_timeline = prior_raw['timeline']
+        # Migration only trusts FLAT timelines (≤2 points = wallet never moved
+        # within S2). Active wallets (3+ points) get COLD walked because some
+        # schema-1 caches contain spurious mid-window balances from old RPC
+        # bugs that would silently propagate via migration.
+        is_passive = len(legacy_timeline) <= 2
+        cached_last_balance = float(legacy_timeline[-1][1])
+        live_total_balance = sum(live.values())
+        same_atas = set(prior_atas) == set(live.keys())
+        same_bal = abs(live_total_balance - cached_last_balance) < _BALANCE_EQ_EPS
+        if is_passive and same_atas and same_bal:
+            new_per_ata = {}
+            carrier = atas[0]
+            for ata in atas:
+                if ata == carrier:
+                    segs = [(int(t), float(b)) for t, b in legacy_timeline]
+                    new_per_ata[ata] = {
+                        'segs': segs,
+                        'last_sig': None,
+                        'last_sig_ts': int(segs[-1][0]) if segs else 0,
+                        'last_known_balance': cached_last_balance,
+                        'pre_s2_carry': float(segs[0][1]) if segs else 0.0,
+                        'last_full_walk_ts': 0,   # forces COLD next refresh; cheap because state is stable
+                        'closed': False,
+                    }
+                else:
+                    new_per_ata[ata] = {
+                        'segs': [(S2_START_TS, 0.0), (end_ts, 0.0)],
+                        'last_sig': None, 'last_sig_ts': 0,
+                        'last_known_balance': 0.0, 'pre_s2_carry': 0.0,
+                        'last_full_walk_ts': 0, 'closed': False,
+                    }
+            # Union-fold back to wallet-level timeline (same logic as main path).
+            all_ts = sorted({S2_START_TS, end_ts} |
+                            {ts for st in new_per_ata.values() for ts, _ in st['segs']})
+            timeline = []
+            for t in all_ts:
+                total = 0.0
+                for st in new_per_ata.values():
+                    last = 0.0
+                    for ts, b in st['segs']:
+                        if ts <= t: last = b
+                        else: break
+                    total += last
+                if not timeline or total != timeline[-1][1] or t == end_ts:
+                    timeline.append([t, total])
+            return {
+                'atas': list(new_per_ata.keys()), 'timeline': timeline,
+                'escrow_segs': _xpbook_escrow_segments(wallet, mint, end_ts),
+                'last_event_ts': end_ts, 'fetch_failed': False,
+                'per_ata': new_per_ata, '_schema': 2,
+            }
+
     # 4. Per-ATA decision: COLD / FAST / SLOW. Track any per-ata RPC issues.
     new_per_ata = {}
     any_rpc_failed = False
