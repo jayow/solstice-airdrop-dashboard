@@ -47,7 +47,8 @@ def run(workers: int = 16, force_refresh: bool = False) -> dict:
                    and not is_hold_cache_stale(cached, w, QUEST):
                     return w, _flares_from_raw(cached['raw'])
             raw = build_twab_timeline(w, EUSX_MINT)
-            db.put_cache(w, 'S2_HOLD_EUSX', raw, watermark_ts=raw.get('last_event_ts', 0))
+            if not raw.get('fetch_failed'):
+                db.put_cache(w, 'S2_HOLD_EUSX', raw, watermark_ts=raw.get('last_event_ts', 0))
             return w, _flares_from_raw(raw)
 
         t0 = time.time()

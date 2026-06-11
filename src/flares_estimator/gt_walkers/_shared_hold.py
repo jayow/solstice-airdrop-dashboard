@@ -87,33 +87,63 @@ def _list_atas(wallet: str, mint: str):
     """Return list of ATAs, or None on RPC failure.
 
     The None return distinguishes 'wallet has no ATAs' (real empty) from
-    'RPC retry-exhausted and returned {}' (silent failure). The old
-    `r.get('result', {}).get('value', [])` conflated both — that's what
-    cost 942 USX + 330 eUSX wallets their HOLD flares during refresh
-    (cf. reference_walker_rpc_retry_fix)."""
+    'RPC retry-exhausted and returned {}' (silent failure). Cf.
+    reference_walker_rpc_retry_fix."""
     r = rpc('getTokenAccountsByOwner', [wallet, {'mint': mint}, {'encoding': 'jsonParsed'}], timeout=15)
     result = r.get('result')
     if result is None: return None
     return [a['pubkey'] for a in (result.get('value', []) or [])]
 
 
-def _walk_ata_sigs(ata: str) -> list:
+def _list_atas_with_balances(wallet: str, mint: str):
+    """Same RPC as _list_atas but also extracts the current uiAmount per ATA.
+    Returns {ata_pubkey: balance} or None on RPC failure. Used by the
+    incremental fast-path to probe live balances with zero extra RPC cost."""
+    r = rpc('getTokenAccountsByOwner', [wallet, {'mint': mint}, {'encoding': 'jsonParsed'}], timeout=15)
+    result = r.get('result')
+    if result is None: return None
+    out = {}
+    for acc in (result.get('value', []) or []):
+        ata = acc.get('pubkey')
+        info = (((acc.get('account') or {}).get('data') or {}).get('parsed') or {}).get('info') or {}
+        amt = (info.get('tokenAmount') or {}).get('uiAmount')
+        if ata: out[ata] = float(amt or 0)
+    return out
+
+
+def _walk_ata_sigs(ata: str, since_sig: str | None = None):
+    """Page newest→oldest, stop at `since_sig` (incremental cursor) or after
+    10 pages. Returns (sigs_sorted_ascending, rpc_failed).
+
+    `since_sig` matches the walk_xpbook.py convention: stop when we encounter
+    this signature going backwards — we get every sig newer than the cursor.
+    On RPC failure (`result is None`), rpc_failed=True and the partial result
+    so far is returned. Callers must NOT advance the cursor when rpc_failed."""
     snap = last_snapshot_ts()
-    sigs = []; before = None
+    sigs = []; before = None; rpc_failed = False; hit_cursor = False
     for _ in range(10):
         params = [ata, {'limit': 1000, **({'before': before} if before else {})}]
         r = rpc('getSignaturesForAddress', params, timeout=20)
+        if r.get('result') is None:
+            rpc_failed = True
+            break
         page = r.get('result') or []
         if not page: break
         raw_batch_len = len(page)
-        last_sig = page[-1]['signature']
-        # Drop sigs newer than snapshot boundary.
-        page = [s for s in page if (s.get('blockTime') or 0) <= snap]
-        sigs.extend(page)
+        # Walk the page newest→oldest looking for the cursor; collect everything
+        # before the cursor. Sigs newer than snap are also dropped (boundary).
+        for s in page:
+            if since_sig and s.get('signature') == since_sig:
+                hit_cursor = True
+                break
+            bt = s.get('blockTime') or 0
+            if bt <= snap:
+                sigs.append(s)
+        if hit_cursor: break
         if raw_batch_len < 1000: break
-        before = last_sig
+        before = page[-1]['signature']
     sigs.sort(key=lambda s: s.get('blockTime') or 0)
-    return sigs
+    return sigs, rpc_failed
 
 
 def _post_balance(sig: str, ata: str):
@@ -126,8 +156,15 @@ def _post_balance(sig: str, ata: str):
     idx = keys.index(ata)
     post = next((b for b in (tx.get('meta', {}).get('postTokenBalances', []) or [])
                   if b.get('accountIndex') == idx), None)
-    if not post: return None
-    return float(post.get('uiTokenAmount', {}).get('uiAmount') or 0)
+    if post:
+        return float(post.get('uiTokenAmount', {}).get('uiAmount') or 0)
+    # Account closed in this tx: post-balance missing, pre-balance present.
+    # Record the zero-out so the timeline correctly captures the close.
+    pre = next((b for b in (tx.get('meta', {}).get('preTokenBalances', []) or [])
+                 if b.get('accountIndex') == idx), None)
+    if pre:
+        return 0.0
+    return None
 
 
 def is_hold_cache_stale(cached: dict | None, wallet: str, daily_quest: str) -> bool:
@@ -163,77 +200,247 @@ def is_hold_cache_stale(cached: dict | None, wallet: str, daily_quest: str) -> b
         return False
 
 
+FORCE_FULL_WALK_INTERVAL = 7 * 86400          # 7 days
+FAST_PATH_MIN_BALANCE_BUFFER = 110.0           # max(min_bal for 1MO/3MO=100) * 1.10
+_BALANCE_EQ_EPS = 1e-9
+
+
+def _cold_walk_ata(ata: str, end_ts: int):
+    """Full sig-walk for one ATA, S2_START_TS through end_ts.
+
+    Returns dict {segs, last_sig, last_sig_ts, last_known_balance,
+    pre_s2_carry, rpc_failed, post_balance_failed}.
+    `rpc_failed`: getSignaturesForAddress had a None result during pagination.
+    `post_balance_failed`: at least one _post_balance call in S2-window returned
+    None (treated as missing). Cursor advances only to the newest successfully
+    decoded sig — so a failed sig won't be skipped on the next incremental pass.
+    """
+    sigs, rpc_failed = _walk_ata_sigs(ata)
+    out = {'segs': [(S2_START_TS, 0.0)], 'last_sig': None, 'last_sig_ts': 0,
+           'last_known_balance': 0.0, 'pre_s2_carry': 0.0,
+           'rpc_failed': rpc_failed, 'post_balance_failed': False}
+    if not sigs:
+        # Still extend the synthetic end-of-window marker so downstream
+        # integrators always see a final segment at end_ts.
+        out['segs'].append((end_ts, 0.0))
+        return out
+    # Carry-in: the LAST pre-S2 sig's post-balance seeds the timeline at S2_START.
+    pre = [s for s in sigs if (s.get('blockTime') or 0) < S2_START_TS]
+    if pre:
+        r = _post_balance(pre[-1]['signature'], ata)
+        if r is not None:
+            out['pre_s2_carry'] = r
+            out['segs'][0] = (S2_START_TS, r)
+        else:
+            out['post_balance_failed'] = True
+    # Walk in-window sigs, building segs and tracking newest-successful for cursor.
+    newest_ok_sig = None
+    newest_ok_ts = 0
+    for s in [s for s in sigs if S2_START_TS <= (s.get('blockTime') or 0) <= end_ts]:
+        ts = s.get('blockTime') or 0
+        bal = _post_balance(s['signature'], ata)
+        if bal is None:
+            out['post_balance_failed'] = True
+            continue
+        if ts <= out['segs'][-1][0]:
+            continue
+        out['segs'].append((ts, bal))
+        newest_ok_sig = s['signature']
+        newest_ok_ts = ts
+    if newest_ok_sig:
+        out['last_sig'] = newest_ok_sig
+        out['last_sig_ts'] = newest_ok_ts
+        out['last_known_balance'] = out['segs'][-1][1]
+    else:
+        out['last_known_balance'] = out['segs'][0][1]
+    return out
+
+
+def _incremental_walk_ata(ata: str, since_sig: str, end_ts: int, prior_ata_state: dict):
+    """Walk only sigs newer than `since_sig`, merging onto prior_ata_state's
+    cached segs. Same return shape as _cold_walk_ata.
+    Preserves I11 monotonicity (drops new sigs with ts <= last cached seg ts)."""
+    sigs, rpc_failed = _walk_ata_sigs(ata, since_sig=since_sig)
+    # Start from the prior cached state — we ONLY append.
+    segs = [tuple(p) for p in prior_ata_state.get('segs') or [(S2_START_TS, 0.0)]]
+    pre_s2_carry = float(prior_ata_state.get('pre_s2_carry') or 0.0)
+    out = {'segs': segs, 'last_sig': prior_ata_state.get('last_sig'),
+           'last_sig_ts': int(prior_ata_state.get('last_sig_ts') or 0),
+           'last_known_balance': float(prior_ata_state.get('last_known_balance') or 0.0),
+           'pre_s2_carry': pre_s2_carry,
+           'rpc_failed': rpc_failed, 'post_balance_failed': False}
+    if not sigs:
+        return out
+    newest_ok_sig = None
+    newest_ok_ts = 0
+    for s in sigs:
+        ts = s.get('blockTime') or 0
+        if ts < S2_START_TS or ts > end_ts:
+            continue
+        bal = _post_balance(s['signature'], ata)
+        if bal is None:
+            out['post_balance_failed'] = True
+            continue
+        if ts <= out['segs'][-1][0]:
+            continue
+        out['segs'].append((ts, bal))
+        newest_ok_sig = s['signature']
+        newest_ok_ts = ts
+    if newest_ok_sig:
+        out['last_sig'] = newest_ok_sig
+        out['last_sig_ts'] = newest_ok_ts
+        out['last_known_balance'] = out['segs'][-1][1]
+    return out
+
+
 def build_twab_timeline(wallet: str, mint: str) -> dict:
-    """Walk every ATA owned by `wallet` for `mint` and produce a unified balance timeline.
+    """Build a unified balance timeline across every ATA owned by `wallet`.
 
-    Returns: {'atas': [...], 'timeline': [[ts, balance_total], ...],
-              'last_event_ts': int, 'fetch_failed': bool}
+    Returns: {'atas', 'timeline', 'escrow_segs', 'last_event_ts',
+              'fetch_failed', 'per_ata', '_schema'}
 
-    Resilient to silent RPC failure: seeds the canonical ATA (deterministic
-    from wallet+mint) and the prior cache's ATAs so a transient
-    getTokenAccountsByOwner failure doesn't zero the wallet's HOLD timeline.
-    `fetch_failed` flags the failure so callers can choose not to overwrite
-    a known-good cache with a failed-RPC empty result."""
-    fresh = _list_atas(wallet, mint)
-    fetch_failed = (fresh is None)
-    end_ts = min(last_snapshot_ts(), S2_END_TS)   # midnight-UTC cutoff
+    Incremental cache (schema-2): per-ATA state stored as
+        per_ata: {ata: {segs, last_sig, last_sig_ts, last_known_balance,
+                        pre_s2_carry, last_full_walk_ts, closed}}
+    Three paths per ATA:
+      COLD — no schema-2 cache OR last_full_walk_ts > 7d ago. Full sig walk.
+      FAST — live balance matches cached.last_known_balance within ε, AND
+             live_bal > FAST_PATH_MIN_BALANCE_BUFFER, AND cache < 7d old.
+             Reuse cached segs verbatim, no sig walk.
+      SLOW — schema-2 cache present but FAST gate failed. Walk only sigs newer
+             than cached.last_sig, append to cached segs.
 
-    canon = _canonical_ata(wallet, mint)
-    prior_atas = []
+    Risk shapes:
+      - Round-trip wash (A → B → A within the cycle): FAST path would miss the
+        dip; FAST_PATH_MIN_BALANCE_BUFFER gates it out for balances near min_bal.
+        7-day forced cold walk bounds the worst-case area drift.
+      - Closed ATA: not present in live result. Kept in cache; we trust its
+        prior segs and skip future walking.
+      - RPC failure: fetch_failed=True propagates to caller, which must NOT
+        overwrite a known-good cache with a failed-RPC result.
+    """
+    end_ts = min(last_snapshot_ts(), S2_END_TS)
+    now_ts = int(time.time())
     cache_key = _MINT_CACHE_KEY.get(mint)
+    canon = _canonical_ata(wallet, mint)
+
+    # 1. Load prior schema-2 (or schema-1 legacy) cache.
+    prior_raw = {}
+    prior_per_ata = {}
+    schema = 1
     if cache_key:
         try:
             prior = db.get_cache(wallet, cache_key)
-            prior_atas = ((prior or {}).get('raw') or {}).get('atas') or []
+            prior_raw = (prior or {}).get('raw') or {}
+            prior_per_ata = dict(prior_raw.get('per_ata') or {})
+            schema = int(prior_raw.get('_schema') or 1)
         except Exception:
             pass
-    seed = list(prior_atas) + list(fresh or []) + ([canon] if canon else [])
+    prior_atas = list(prior_raw.get('atas') or [])
+
+    # 2. Probe live state: one RPC gets ATAs + balances. None = RPC failure.
+    live = _list_atas_with_balances(wallet, mint)
+    fetch_failed = (live is None)
+    live = live if live is not None else {}
+
+    # 3. Seed the working ATA set.
+    seed = list(prior_atas) + list(live.keys()) + ([canon] if canon else [])
     atas = list(dict.fromkeys(a for a in seed if a))
 
     if not atas:
         return {'atas': [], 'timeline': [[S2_START_TS, 0.0], [end_ts, 0.0]],
-                'last_event_ts': end_ts, 'fetch_failed': fetch_failed}
+                'escrow_segs': _xpbook_escrow_segments(wallet, mint, end_ts),
+                'last_event_ts': end_ts, 'fetch_failed': fetch_failed,
+                'per_ata': {}, '_schema': 2}
 
-    per_ata = {}
+    # 4. Per-ATA decision: COLD / FAST / SLOW. Track any per-ata RPC issues.
+    new_per_ata = {}
+    any_rpc_failed = False
+    any_post_failed = False
     for ata in atas:
-        sigs = _walk_ata_sigs(ata)
-        if not sigs: continue
-        # carry-in (balance just before S2)
-        pre = [s for s in sigs if (s.get('blockTime') or 0) < S2_START_TS]
-        carry = 0.0
-        if pre:
-            r = _post_balance(pre[-1]['signature'], ata)
-            if r is not None: carry = r
-        segs = [(S2_START_TS, carry)]
-        for s in [s for s in sigs if S2_START_TS <= (s.get('blockTime') or 0) <= end_ts]:
-            ts = s.get('blockTime') or 0
-            bal = _post_balance(s['signature'], ata)
-            if bal is None: continue
-            if ts <= segs[-1][0]: continue
-            segs.append((ts, bal))
-        per_ata[ata] = segs
+        ps = prior_per_ata.get(ata)
+        ps_schema_ok = (schema == 2) and isinstance(ps, dict) and (ps.get('last_sig') is not None)
+        live_bal = live.get(ata)
+        in_live = (ata in live)
+        last_full_walk = int((ps or {}).get('last_full_walk_ts') or 0)
+        cache_age_ok = ps_schema_ok and ((now_ts - last_full_walk) < FORCE_FULL_WALK_INTERVAL)
 
-    all_ts = sorted({S2_START_TS, end_ts} | {ts for segs in per_ata.values() for ts, _ in segs})
+        # FAST path: live balance matches cached, above buffer, cache < 7d.
+        if (cache_age_ok and in_live and live_bal is not None and ps is not None and
+                abs(live_bal - float(ps.get('last_known_balance') or 0.0)) < _BALANCE_EQ_EPS and
+                live_bal > FAST_PATH_MIN_BALANCE_BUFFER):
+            new_per_ata[ata] = {
+                'segs': [list(p) for p in (ps.get('segs') or [(S2_START_TS, 0.0)])],
+                'last_sig': ps.get('last_sig'),
+                'last_sig_ts': int(ps.get('last_sig_ts') or 0),
+                'last_known_balance': float(ps.get('last_known_balance') or 0.0),
+                'pre_s2_carry': float(ps.get('pre_s2_carry') or 0.0),
+                'last_full_walk_ts': last_full_walk,
+                'closed': False,
+            }
+            continue
+
+        # SLOW path: schema-2 cache with cursor present; incremental walk.
+        if ps_schema_ok and not fetch_failed:
+            res = _incremental_walk_ata(ata, ps['last_sig'], end_ts, ps)
+            any_rpc_failed = any_rpc_failed or res['rpc_failed']
+            any_post_failed = any_post_failed or res['post_balance_failed']
+            # If RPC failed, don't advance cursor — keep prior values verbatim.
+            if res['rpc_failed']:
+                new_per_ata[ata] = dict(ps)
+                continue
+            new_per_ata[ata] = {
+                'segs': [list(p) for p in res['segs']],
+                'last_sig': res['last_sig'],
+                'last_sig_ts': res['last_sig_ts'],
+                'last_known_balance': res['last_known_balance'],
+                'pre_s2_carry': res['pre_s2_carry'],
+                'last_full_walk_ts': last_full_walk,   # FAST/SLOW don't reset 7d clock
+                'closed': (not in_live) and (live is not None),
+            }
+            continue
+
+        # COLD path: full walk.
+        res = _cold_walk_ata(ata, end_ts)
+        any_rpc_failed = any_rpc_failed or res['rpc_failed']
+        any_post_failed = any_post_failed or res['post_balance_failed']
+        new_per_ata[ata] = {
+            'segs': [list(p) for p in res['segs']],
+            'last_sig': res['last_sig'],
+            'last_sig_ts': res['last_sig_ts'],
+            'last_known_balance': res['last_known_balance'],
+            'pre_s2_carry': res['pre_s2_carry'],
+            'last_full_walk_ts': now_ts,
+            'closed': (not in_live) and (not res['rpc_failed']) and (not fetch_failed),
+        }
+
+    # 5. Build the union timeline from new_per_ata segs (same fold as v1).
+    all_ts = sorted({S2_START_TS, end_ts} |
+                    {ts for st in new_per_ata.values() for ts, _ in st.get('segs') or []})
     timeline = []
     for t in all_ts:
         total = 0.0
-        for segs in per_ata.values():
+        for st in new_per_ata.values():
             last = 0.0
-            for ts, b in segs:
+            for ts, b in (st.get('segs') or []):
                 if ts <= t: last = b
                 else: break
             total += last
         if not timeline or total != timeline[-1][1] or t == end_ts:
             timeline.append([t, total])
 
-    # XPBook escrow contribution — kept SEPARATE from the wallet ATA timeline so the
-    # walker can apply the 7-day TVL maturity rule (per Solstice S2 docs) to escrow
-    # only. Existing wallet-ATA HOLD continues to integrate linearly (matured wallets
-    # dominate; the < 7-day fresh-deposit edge case is rare in practice).
+    # 6. Escrow segs are ALWAYS read fresh from xpbook_escrow_timeline.
     escrow_segs = _xpbook_escrow_segments(wallet, mint, end_ts)
-    return {'atas': atas, 'timeline': timeline,
-            'escrow_segs': escrow_segs, 'last_event_ts': end_ts,
-            'fetch_failed': fetch_failed}
+
+    return {
+        'atas': list(new_per_ata.keys()),
+        'timeline': timeline,
+        'escrow_segs': escrow_segs,
+        'last_event_ts': end_ts,
+        'fetch_failed': fetch_failed or any_rpc_failed,
+        'per_ata': new_per_ata,
+        '_schema': 2,
+    }
 
 
 def integrate_daily(timeline: list, mult: int, usd_per_token, end_ts: int) -> float:

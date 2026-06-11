@@ -40,7 +40,8 @@ def run(workers: int = 16, force_refresh: bool = False) -> dict:
                    and not is_hold_cache_stale(cached, w, 'S2_HOLD_EUSX_DAILY'):
                     return w, integrate_qualified_bonus(cached['raw'].get('timeline') or [], MIN_BAL, QUALIFY_DAYS, MULT, usd_per, end_ts)
             raw = build_twab_timeline(w, EUSX_MINT)
-            db.put_cache(w, 'S2_HOLD_EUSX', raw, watermark_ts=raw.get('last_event_ts', 0))
+            if not raw.get('fetch_failed'):
+                db.put_cache(w, 'S2_HOLD_EUSX', raw, watermark_ts=raw.get('last_event_ts', 0))
             return w, integrate_qualified_bonus(raw.get('timeline') or [], MIN_BAL, QUALIFY_DAYS, MULT, usd_per, end_ts)
 
         t0 = time.time()
