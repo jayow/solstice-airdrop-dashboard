@@ -2803,7 +2803,7 @@
       "kind": "pda"
     },
     "6w2W4adkVy5UXFQuRU4afAAZRb1fHQUPEFyUXffFRzy9": {
-      "label": "(auto) on-chain owner: H67ehFrMLhFn6xVRymY2GaXMhr1LKH9mdaSEnXnQRKNa — third-party pump.fun token-2022 fee/routing program (NOT Kamino KLEND, NOT a Solstice partner)",
+      "label": "(auto) on-chain owner: H67ehFrMLhFn6xVRymY2GaXMhr1LKH9mdaSEnXnQRKNa \u2014 third-party pump.fun token-2022 fee/routing program (NOT Kamino KLEND, NOT a Solstice partner)",
       "protocol": "third_party_pumpfun",
       "source": "auto_onchain_audit",
       "kind": "pda"
@@ -5005,7 +5005,7 @@
       "kind": "pda"
     },
     "ANrCxXkqd6Nxowb3QzD9CaMWMzDndDYyJnHHKNaPxaoM": {
-      "label": "(auto) on-chain owner: H67ehFrMLhFn6xVRymY2GaXMhr1LKH9mdaSEnXnQRKNa — third-party pump.fun token-2022 fee/routing program (NOT Kamino KLEND, NOT a Solstice partner)",
+      "label": "(auto) on-chain owner: H67ehFrMLhFn6xVRymY2GaXMhr1LKH9mdaSEnXnQRKNa \u2014 third-party pump.fun token-2022 fee/routing program (NOT Kamino KLEND, NOT a Solstice partner)",
       "protocol": "third_party_pumpfun",
       "source": "auto_onchain_audit",
       "kind": "pda"
@@ -5299,7 +5299,7 @@
       "kind": "pda"
     },
     "AtGZMriaQUsSMcKeBMUC2poaN1Cf5f3gK29RYNm59H6z": {
-      "label": "(auto) on-chain owner: H67ehFrMLhFn6xVRymY2GaXMhr1LKH9mdaSEnXnQRKNa — third-party pump.fun token-2022 fee/routing program (NOT Kamino KLEND, NOT a Solstice partner)",
+      "label": "(auto) on-chain owner: H67ehFrMLhFn6xVRymY2GaXMhr1LKH9mdaSEnXnQRKNa \u2014 third-party pump.fun token-2022 fee/routing program (NOT Kamino KLEND, NOT a Solstice partner)",
       "protocol": "third_party_pumpfun",
       "source": "auto_onchain_audit",
       "kind": "pda"
@@ -7471,7 +7471,7 @@
       "kind": "pda"
     },
     "ESrDGVybfzWTXbimL7GoWYwPEGGth2KeuJgU8VhoPYvJ": {
-      "label": "(auto) on-chain owner: H67ehFrMLhFn6xVRymY2GaXMhr1LKH9mdaSEnXnQRKNa — third-party pump.fun token-2022 fee/routing program (NOT Kamino KLEND, NOT a Solstice partner)",
+      "label": "(auto) on-chain owner: H67ehFrMLhFn6xVRymY2GaXMhr1LKH9mdaSEnXnQRKNa \u2014 third-party pump.fun token-2022 fee/routing program (NOT Kamino KLEND, NOT a Solstice partner)",
       "protocol": "third_party_pumpfun",
       "source": "auto_onchain_audit",
       "kind": "pda"
@@ -9427,7 +9427,7 @@
       "kind": "pda"
     },
     "HboxwePXHF2V6vFMLRJjrKw5auU1s9eM55KRwBtoG2zU": {
-      "label": "(auto) on-chain owner: H67ehFrMLhFn6xVRymY2GaXMhr1LKH9mdaSEnXnQRKNa — third-party pump.fun token-2022 fee/routing program (NOT Kamino KLEND, NOT a Solstice partner)",
+      "label": "(auto) on-chain owner: H67ehFrMLhFn6xVRymY2GaXMhr1LKH9mdaSEnXnQRKNa \u2014 third-party pump.fun token-2022 fee/routing program (NOT Kamino KLEND, NOT a Solstice partner)",
       "protocol": "third_party_pumpfun",
       "source": "auto_onchain_audit",
       "kind": "pda"
@@ -10015,7 +10015,7 @@
       "kind": "pda"
     },
     "UV4HCc4e67AyJYXoz75X2xC5GZXPzE6XhkL278SWxFy": {
-      "label": "(auto) on-chain owner: H67ehFrMLhFn6xVRymY2GaXMhr1LKH9mdaSEnXnQRKNa — third-party pump.fun token-2022 fee/routing program (NOT Kamino KLEND, NOT a Solstice partner)",
+      "label": "(auto) on-chain owner: H67ehFrMLhFn6xVRymY2GaXMhr1LKH9mdaSEnXnQRKNa \u2014 third-party pump.fun token-2022 fee/routing program (NOT Kamino KLEND, NOT a Solstice partner)",
       "protocol": "third_party_pumpfun",
       "source": "auto_onchain_audit",
       "kind": "pda"
@@ -10397,7 +10397,12 @@
       "protocol": "institutional",
       "source": "manual",
       "kind": "institutional"
-    }
+    },
+    "DGVQ9S7nbMBKkP6f24QpF7EBUMGJDEHzGFbVr7a2zxKp": "solstice_dispensing_wallet",
+    "2WpAVkGQNPjBnUhwJgVAKzCrYUMwh1eJXEK2SvmRRTLt": "solstice_treasury_candidate",
+    "DYcvEzC1a9A511Z5uA7AnAyHYCzpruk6AvyURwfMPt7J": "solstice_treasury_candidate",
+    "2SaYqwUj4cQiYtYkjQUVHwHzKqsUJ9CKEZBcVuY8c5pX": "solstice_treasury_candidate",
+    "3MkvadT9rdbBZpsGiWUyESdGEMqUv1HCXjJTm63MwBSL": "solstice_treasury_candidate"
   },
   "_audit_note": "\n2026-05-29: Removed 1 entries \u2014 on-chain audit confirmed they are EOA (owner=SystemProgram), not PDAs. Presumption-of-innocence rule applies."
 }

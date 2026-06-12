@@ -51,7 +51,17 @@ def is_pda_program(owner: str) -> bool:
 
 
 def classify(wallet: str) -> str:
-    """Returns 'user' | 'pda' | 'pda_or_uninit' | 'unknown'.
+    """Returns 'user' | 'pda' | 'unknown'.
+
+    Decision tree:
+      - owner = SystemProgram → 'user' (definitely real wallet)
+      - owner = other program → 'pda' (definitely program-owned)
+      - account doesn't exist on-chain (v is None) → 'unknown' (NOT 'pda'!)
+        The "no SOL on-chain" case is dominated by legitimate users with
+        token-only wallets or abstracted-fee wallets. Treating it as PDA
+        strips real users (e.g. DDeKrHTUyD3PeXjZsJyRtMYQ7mFfywXQHJBvMsbsAdcc
+        has positive flares across 4 quests but no SOL balance).
+        'unknown' falls through to build_data.py's include-by-default branch.
 
     Lighter retry budget than rpc() default — a flaky endpoint can otherwise
     trap a worker for minutes (8 retries × exponential backoff = 5min+), which
@@ -62,7 +72,7 @@ def classify(wallet: str) -> str:
                 timeout=5, max_retries=2)
         v = r.get('result', {}).get('value')
         if v is None:
-            return 'pda_or_uninit'
+            return 'unknown'
         owner = v.get('owner')
         if owner == SYSTEM_PROGRAM:
             return 'user'
