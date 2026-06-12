@@ -26,8 +26,10 @@ balance(t) timelines, and integrate `balance × peg × multiplier × dt`.
 
 Protocol APIs (Kamino, Loopscale, Orca, Raydium) are used only for
 *enumeration shortcuts* and *current USD valuation* — never for flare
-amounts. See [`MORE.md`](./MORE.md) (TBD) for the full per-quest
-methodology.
+amounts. For build pipeline + per-quest detail, see
+[`CLAUDE.md`](./CLAUDE.md) (in-repo orientation),
+[`server/README.md`](./server/README.md) (S2 pipeline + refresh.sh phases),
+and the per-quest indexing notes referenced from `CLAUDE.md`.
 
 ## Architecture
 
