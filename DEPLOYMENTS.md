@@ -7,7 +7,7 @@ Every local directory → its Vercel project → its production alias.
 | Local dir | Vercel project | Project ID | Live alias |
 |---|---|---|---|
 | `server/` | `solstice-flares` | `prj_7BFlFPdWTxjteCARFwu3vWM5Of5k` | **https://s2.solstice.hanyon.app** |
-| `s1-deploy/` | `s1-solstice-airdrop` | `prj_qxfSh7BDG44hnCno6m5B1B57TA8D` | **https://airdrop.solstice.hanyon.app** |
+| `s1-deploy/` | `s1-solstice-airdrop` | `prj_qxfSh7BDG44hnCno6m5B1B57TA8D` | **https://s1.solstice.hanyon.app** |
 | `web/` | `web` | `prj_GEu7KLlPNILqZ9lC17k4AiyzR3si` | (stale, pre-S2, last build April 24 2026) |
 
 ## Deploy commands

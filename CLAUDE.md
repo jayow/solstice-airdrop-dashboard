@@ -116,7 +116,7 @@ These get re-discovered every few sessions — keep them top of mind:
 | Wallet classification | `wallets.classification` (written by `filter_pdas_db.py`) | weekly or on-demand |
 | Manual PDA list | `data/protocol_pdas.json` | manual edit |
 | S1 allocations | `slx_allocations` (built from on-chain + Clique API) | manual |
-| Post-claim balances | `slx_balance_snapshots` | 15-min refresh via `tools/snapshot_slx_balances.py` |
+| Post-claim balances | `slx_balance_snapshots` | 15-min refresh via `tools/slx_holding_tracker.py` (run in nohup; daemon loops every CYCLE_SEC=900) |
 
 ## Where things live
 

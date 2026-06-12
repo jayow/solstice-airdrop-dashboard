@@ -103,8 +103,9 @@ Upstream of the DB: on-chain Solana state + Clique acs-v4 allocations API
 ## Rebuild
 
 ```bash
-# 1. Refresh balance snapshots (if needed)
-python3 tools/snapshot_slx_balances.py
+# 1. Start the 15-min balance snapshot daemon (runs forever; idempotent INSERTs)
+#    Not in cron — run in a nohup session so it survives logout:
+nohup python3 tools/slx_holding_tracker.py > /tmp/slx_tracker.log 2>&1 & disown
 
 # 2. Rebuild dashboard JSON
 python3 tools/build_s1_data.py
