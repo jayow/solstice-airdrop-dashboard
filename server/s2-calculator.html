@@ -768,24 +768,51 @@ footer { text-align: center; color: var(--text-3); font-size: 11px; margin-top: 
             <span class="assumptions__stat-value mono" id="yt-out-total" style="color: var(--accent);">—</span>
           </div>
         </div>
-        <!-- Applied-to-SLX readout: the params from Load wallet tab that get
-             folded into the SLX calc when you click Simulate. Mirrors the
-             current state so you don't have to switch tabs to check. -->
-        <div class="assumptions__readout" style="margin-top: 8px; border-top: 1px solid var(--border); padding-top: 8px;">
-          <div class="assumptions__stat">
-            <span class="assumptions__stat-label" title="Your loyalty multiplier (set in Load wallet tab)">Your mult</span>
-            <span class="assumptions__stat-value mono" id="yt-out-yourmult">—</span>
+        <!-- Applied-to-SLX controls + readout. Three selects (Your mult, Sys
+             mult, SLX bucket) are SYNCED with the same selects in the Load
+             wallet tab — changes in either tab reflect everywhere via
+             _syncMultsBetweenTabs(). The Sys total + Projected SLX tiles are
+             derived display-only. -->
+        <div class="assumptions__rows" style="margin-top: 8px; border-top: 1px solid var(--border); padding-top: 8px;">
+          <div class="assumptions__row">
+            <label class="assumptions__label" for="sim-your-mult">Your loyalty</label>
+            <select id="sim-your-mult" class="assumptions__control" onchange="_syncFromSimTab(this, 'calc-your-mult')">
+              <option value="1.4">1.4× — Full</option>
+              <option value="1.3">1.3× — Reduced</option>
+              <option value="1.2">1.2× — Minimum</option>
+              <option value="1.0">1.0× — None</option>
+            </select>
           </div>
-          <div class="assumptions__stat">
-            <span class="assumptions__stat-label" title="Avg system loyalty mult (set in Load wallet tab)">Sys mult</span>
-            <span class="assumptions__stat-value mono" id="yt-out-sysmult">—</span>
+          <div class="assumptions__row">
+            <label class="assumptions__label" for="sim-avg-mult">Avg system loyalty</label>
+            <select id="sim-avg-mult" class="assumptions__control" onchange="_syncFromSimTab(this, 'calc-avg-mult')">
+              <option value="1.4">1.4×</option>
+              <option value="1.3" selected>1.3×</option>
+              <option value="1.2">1.2×</option>
+              <option value="1.1">1.1×</option>
+              <option value="1.0">1.0×</option>
+            </select>
           </div>
+          <div class="assumptions__row">
+            <label class="assumptions__label" for="sim-airdrop-pct">SLX bucket</label>
+            <select id="sim-airdrop-pct" class="assumptions__control" onchange="_syncFromSimTab(this, 'calc-airdrop-pct')">
+              <option value="0.03" selected>3.00% — 30M SLX</option>
+              <option value="0.0325">3.25% — 32.5M SLX</option>
+              <option value="0.035">3.50% — 35M SLX</option>
+            </select>
+          </div>
+        </div>
+        <div class="assumptions__readout" style="margin-top: 8px;">
           <div class="assumptions__stat">
-            <span class="assumptions__stat-label" title="System-wide total flares at S2 end (Solstice's projected total)">Sys total</span>
+            <span class="assumptions__stat-label" title="System-wide total flares at S2 end (boosted by avg mult)">Sys total</span>
             <span class="assumptions__stat-value mono" id="yt-out-systotal">—</span>
           </div>
           <div class="assumptions__stat">
-            <span class="assumptions__stat-label" title="Your projected SLX after applying multipliers and the % bucket">Projected SLX</span>
+            <span class="assumptions__stat-label" title="Your share of the system total">Your share</span>
+            <span class="assumptions__stat-value mono" id="yt-out-share">—</span>
+          </div>
+          <div class="assumptions__stat">
+            <span class="assumptions__stat-label" title="Your projected SLX for this simulated deposit">Projected SLX</span>
             <span class="assumptions__stat-value mono" id="yt-out-slx" style="color: var(--accent);">—</span>
           </div>
         </div>
@@ -1247,8 +1274,9 @@ function renderResults() {
   document.getElementById('calc-share').textContent = (share * 100).toFixed(4) + '%';
   document.getElementById('calc-slx').textContent = formatAmount(slx) + ' SLX';
 
-  // Keep the Simulate tab's "Applied to SLX calc" readout in sync — the
-  // multipliers / sys total tiles need to update when global controls change.
+  // Keep the Simulate tab's "Applied to SLX calc" readout in sync — both the
+  // mirrored selects (Your mult / Sys mult / SLX bucket) and the derived tiles.
+  if (typeof _syncFromMainTab === 'function') _syncFromMainTab();
   if (typeof _renderSimulateAppliedToSlx === 'function') {
     _renderSimulateAppliedToSlx(undefined);
   }
@@ -1569,13 +1597,43 @@ async function loadYtMarkets() {
 
 let _LAST_SIM_TOTAL = 0;
 
+function _syncFromSimTab(srcEl, targetId) {
+  // The Simulate tab's selects (sim-your-mult, sim-avg-mult, sim-airdrop-pct)
+  // are wired to mirror their Load-wallet-tab twins. Changing one updates the
+  // other and re-runs all dependent recalcs (loyalty rebases the boosted input
+  // displays; airdrop-pct just triggers the share recompute).
+  const target = document.getElementById(targetId);
+  if (!target || target.value === srcEl.value) return;
+  target.value = srcEl.value;
+  if (targetId === 'calc-your-mult' || targetId === 'calc-avg-mult') {
+    onLoyaltyChange();
+  } else {
+    onAnyInput();
+  }
+}
+
+function _syncFromMainTab() {
+  // Reverse direction: when the user changes a select in the Load wallet tab,
+  // mirror the new value into the Simulate-tab counterpart. Called from
+  // renderResults() so it stays in sync with every render.
+  const pairs = [
+    ['calc-your-mult',   'sim-your-mult'],
+    ['calc-avg-mult',    'sim-avg-mult'],
+    ['calc-airdrop-pct', 'sim-airdrop-pct'],
+  ];
+  for (const [mainId, simId] of pairs) {
+    const main = document.getElementById(mainId);
+    const sim  = document.getElementById(simId);
+    if (main && sim && main.value !== sim.value) sim.value = main.value;
+  }
+}
+
 function _renderSimulateAppliedToSlx(simulatedTotalFlares) {
-  // Mirror of the params the SLX calc uses (set in Load wallet tab). Called
-  // by onYtInput() so the user sees what's being applied without tab-switching.
-  // simulatedTotalFlares is the YT helper's projected total — used to compute
-  // a preview SLX value for THIS deposit (overlays whatever's currently in calc).
+  // Recomputes the Sys total / Your share / Projected SLX readout tiles.
+  // The Your/Sys mult and SLX bucket are now first-class selects in the
+  // Simulate tab (synced to the main calc), so they don't need separate display.
   // Passing undefined re-uses the last simulated total (so global control
-  // changes from renderResults re-flow into this readout).
+  // changes flow into this readout without re-typing the deposit).
   if (simulatedTotalFlares === undefined) {
     simulatedTotalFlares = _LAST_SIM_TOTAL;
   } else {
@@ -1586,14 +1644,14 @@ function _renderSimulateAppliedToSlx(simulatedTotalFlares) {
   const avgMult  = _getMult('sys');
   const rawSys   = Math.max(0, getSysTotalRaw());
   const airdropPct = parseFloat(document.getElementById('calc-airdrop-pct').value) || S2_AIRDROP_PCT;
-  out('yt-out-yourmult', yourMult.toFixed(2) + '×');
-  out('yt-out-sysmult',  avgMult.toFixed(2) + '×');
   out('yt-out-systotal', rawSys > 0 ? formatKMB(rawSys * avgMult) : '—');
   if (simulatedTotalFlares > 0 && rawSys > 0) {
     const share = (simulatedTotalFlares * yourMult) / (rawSys * avgMult);
     const slx = share * SLX_TOTAL_SUPPLY * airdropPct;
+    out('yt-out-share', (share * 100).toFixed(4) + '%');
     out('yt-out-slx', formatAmount(slx) + ' SLX');
   } else {
+    out('yt-out-share', '—');
     out('yt-out-slx', '—');
   }
 }
