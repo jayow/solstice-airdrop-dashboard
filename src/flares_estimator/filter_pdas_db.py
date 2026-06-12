@@ -51,12 +51,17 @@ def is_pda_program(owner: str) -> bool:
 
 
 def classify(wallet: str) -> str:
-    """Returns 'user' | 'pda' | 'unknown'"""
+    """Returns 'user' | 'pda' | 'pda_or_uninit' | 'unknown'.
+
+    Lighter retry budget than rpc() default — a flaky endpoint can otherwise
+    trap a worker for minutes (8 retries × exponential backoff = 5min+), which
+    stalls the whole TPool. max_retries=2 keeps per-wallet wall time bounded to
+    ~10s even on the worst path."""
     try:
-        r = rpc('getAccountInfo', [wallet, {'encoding': 'base64'}], timeout=10)
+        r = rpc('getAccountInfo', [wallet, {'encoding': 'base64'}],
+                timeout=5, max_retries=2)
         v = r.get('result', {}).get('value')
         if v is None:
-            # Account doesn't exist on-chain — for our purposes, treat as suspect PDA
             return 'pda_or_uninit'
         owner = v.get('owner')
         if owner == SYSTEM_PROGRAM:
