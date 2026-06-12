@@ -768,6 +768,27 @@ footer { text-align: center; color: var(--text-3); font-size: 11px; margin-top: 
             <span class="assumptions__stat-value mono" id="yt-out-total" style="color: var(--accent);">—</span>
           </div>
         </div>
+        <!-- Applied-to-SLX readout: the params from Load wallet tab that get
+             folded into the SLX calc when you click Simulate. Mirrors the
+             current state so you don't have to switch tabs to check. -->
+        <div class="assumptions__readout" style="margin-top: 8px; border-top: 1px solid var(--border); padding-top: 8px;">
+          <div class="assumptions__stat">
+            <span class="assumptions__stat-label" title="Your loyalty multiplier (set in Load wallet tab)">Your mult</span>
+            <span class="assumptions__stat-value mono" id="yt-out-yourmult">—</span>
+          </div>
+          <div class="assumptions__stat">
+            <span class="assumptions__stat-label" title="Avg system loyalty mult (set in Load wallet tab)">Sys mult</span>
+            <span class="assumptions__stat-value mono" id="yt-out-sysmult">—</span>
+          </div>
+          <div class="assumptions__stat">
+            <span class="assumptions__stat-label" title="System-wide total flares at S2 end (Solstice's projected total)">Sys total</span>
+            <span class="assumptions__stat-value mono" id="yt-out-systotal">—</span>
+          </div>
+          <div class="assumptions__stat">
+            <span class="assumptions__stat-label" title="Your projected SLX after applying multipliers and the % bucket">Projected SLX</span>
+            <span class="assumptions__stat-value mono" id="yt-out-slx" style="color: var(--accent);">—</span>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -1202,8 +1223,11 @@ function renderResults() {
   // The inputs display BOOSTED values (raw × loyalty). The raw values are
   // tracked via dataset.raw so we can re-render the input value when the
   // loyalty multiplier changes. Share math operates on boosted directly.
-  const rawUser = getUserTotalRaw();
-  const rawSys  = getSysTotalRaw();
+  //
+  // Negative-input guardrail: parseAmount accepts a leading minus, so pasting
+  // "-100M" would otherwise yield negative SLX. Clamp both inputs to >=0.
+  const rawUser = Math.max(0, getUserTotalRaw());
+  const rawSys  = Math.max(0, getSysTotalRaw());
   const yourMult = _getMult('your');
   const avgMult  = _getMult('sys');
   const boostedUser = rawUser * yourMult;
@@ -1222,6 +1246,12 @@ function renderResults() {
   document.getElementById('calc-you').textContent = formatKMB(boostedUser) + ' flares';
   document.getElementById('calc-share').textContent = (share * 100).toFixed(4) + '%';
   document.getElementById('calc-slx').textContent = formatAmount(slx) + ' SLX';
+
+  // Keep the Simulate tab's "Applied to SLX calc" readout in sync — the
+  // multipliers / sys total tiles need to update when global controls change.
+  if (typeof _renderSimulateAppliedToSlx === 'function') {
+    _renderSimulateAppliedToSlx(undefined);
+  }
 
   // basis = USD at risk: wallet's tracked YT cost basis OR the YT helper's
   // most recent deposit (whichever is larger). Used for ROI + breakeven FDV.
@@ -1537,6 +1567,37 @@ async function loadYtMarkets() {
   }
 }
 
+let _LAST_SIM_TOTAL = 0;
+
+function _renderSimulateAppliedToSlx(simulatedTotalFlares) {
+  // Mirror of the params the SLX calc uses (set in Load wallet tab). Called
+  // by onYtInput() so the user sees what's being applied without tab-switching.
+  // simulatedTotalFlares is the YT helper's projected total — used to compute
+  // a preview SLX value for THIS deposit (overlays whatever's currently in calc).
+  // Passing undefined re-uses the last simulated total (so global control
+  // changes from renderResults re-flow into this readout).
+  if (simulatedTotalFlares === undefined) {
+    simulatedTotalFlares = _LAST_SIM_TOTAL;
+  } else {
+    _LAST_SIM_TOTAL = simulatedTotalFlares;
+  }
+  const out = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
+  const yourMult = _getMult('your');
+  const avgMult  = _getMult('sys');
+  const rawSys   = Math.max(0, getSysTotalRaw());
+  const airdropPct = parseFloat(document.getElementById('calc-airdrop-pct').value) || S2_AIRDROP_PCT;
+  out('yt-out-yourmult', yourMult.toFixed(2) + '×');
+  out('yt-out-sysmult',  avgMult.toFixed(2) + '×');
+  out('yt-out-systotal', rawSys > 0 ? formatKMB(rawSys * avgMult) : '—');
+  if (simulatedTotalFlares > 0 && rawSys > 0) {
+    const share = (simulatedTotalFlares * yourMult) / (rawSys * avgMult);
+    const slx = share * SLX_TOTAL_SUPPLY * airdropPct;
+    out('yt-out-slx', formatAmount(slx) + ' SLX');
+  } else {
+    out('yt-out-slx', '—');
+  }
+}
+
 function onYtInput() {
   const dep = parseAmount(document.getElementById('yt-deposit').value);
   const key = document.getElementById('yt-market').value;
@@ -1544,6 +1605,7 @@ function onYtInput() {
   const out = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
   if (!isFinite(dep) || dep <= 0 || !market) {
     out('yt-out-yt', '—'); out('yt-out-daily', '—'); out('yt-out-duration', '—'); out('yt-out-total', '—');
+    _renderSimulateAppliedToSlx(0);
     return;
   }
   const yt = dep / market.ytPrice;
@@ -1566,6 +1628,7 @@ function onYtInput() {
   }
   out('yt-out-duration', daysTotal.toFixed(0) + ' Days');
   out('yt-out-total', fmt(proj.totalFlares));
+  _renderSimulateAppliedToSlx(proj.totalFlares);
 }
 
 function ytHelperApply() {
