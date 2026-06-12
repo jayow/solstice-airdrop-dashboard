@@ -123,6 +123,17 @@ echo "[$(date '+%H:%M:%S')]   ✓ Resync done"
 echo "[$(date '+%H:%M:%S')] Phase 5b: V2 wrapper LP walker (Exponent CLMM)"
 python3 tools/walk_v2_lp.py > /tmp/walker_logs/refresh_walk_v2_lp.log 2>&1 || echo '  ⚠️  V2 walker errored — see refresh_walk_v2_lp.log'
 
+# ── Phase 5c: S1 claim_at rolling reconcile (~few sec when no new claims) ───
+# Cheap on-chain top-up so the S1 dashboard's claim_at column doesn't decay
+# silently. Walks the 6-day window of Fs5AQwKF distributor signatures and
+# patches any claim_at currently NULL. See tools/onchain_claim_reconcile_window6d.py
+# for the full mechanism. Does NOT cover Clique portal claims that bypass the
+# tracked discriminator — pair with a weekly `python3 tools/refresh_unclaimed_clique.py`
+# run for the authoritative answer.
+echo "[$(date '+%H:%M:%S')] Phase 5c: S1 claim_at rolling reconcile"
+python3 tools/onchain_claim_reconcile_window6d.py 2>&1 | sed 's/^/  /' || \
+  echo "  ⚠️  S1 claim reconcile errored — non-fatal"
+
 # ── Phase 6: rebuild dashboard ────────────────────────────────
 echo "[$(date '+%H:%M:%S')] Phase 6: rebuild dashboard"
 bash server/rebuild.sh 2>&1 | grep -E '^(\=\=\=|Reconstructed|wallet_quests|Solstice|Wrote)' | head -20
