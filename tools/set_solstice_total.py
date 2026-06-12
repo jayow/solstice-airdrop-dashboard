@@ -48,18 +48,38 @@ def main():
             print(f'  Pass total manually: python3 tools/set_solstice_total.py <total>', file=sys.stderr)
             sys.exit(1)
 
+    # Convention: one canonical row per (date_utc, source='solstice_dashboard'),
+    # ts = midnight UTC of date_utc. The partial UNIQUE INDEX
+    # uniq_snapshots_solstice_date(date_utc) WHERE source='solstice_dashboard'
+    # enforces this structurally; ON CONFLICT below is the upsert path.
     date_utc = args.date or dt.datetime.now(dt.UTC).strftime('%Y-%m-%d')
     midnight_ts = int(dt.datetime.strptime(date_utc, '%Y-%m-%d').replace(tzinfo=dt.UTC).timestamp())
 
     con = sqlite3.connect(DB)
+    # Monotonicity guard: Solstice's published total only grows; if a stale
+    # rerun supplies a smaller value, preserve the existing truth.
     con.execute(
-        'INSERT OR REPLACE INTO flares_snapshots '
+        'INSERT INTO flares_snapshots '
         '(ts, date_utc, source, universe_size, grand_total, quest_totals_json) '
-        'VALUES (?, ?, ?, ?, ?, ?)',
+        'VALUES (?, ?, ?, ?, ?, ?) '
+        'ON CONFLICT(date_utc) WHERE source=\'solstice_dashboard\' DO UPDATE SET '
+        '  ts = excluded.ts, '
+        '  universe_size = excluded.universe_size, '
+        '  grand_total = excluded.grand_total, '
+        '  quest_totals_json = excluded.quest_totals_json '
+        'WHERE excluded.grand_total >= flares_snapshots.grand_total',
         (midnight_ts, date_utc, 'solstice_dashboard', total_users, args.total, '{}'))
     con.commit()
+    stored = con.execute(
+        "SELECT grand_total, universe_size FROM flares_snapshots "
+        "WHERE date_utc=? AND source='solstice_dashboard'",
+        (date_utc,)).fetchone()
     con.close()
-    print(f'Recorded Solstice grand_total = {args.total:,.2f}  totalUsers = {total_users:,} for {date_utc} (ts={midnight_ts})')
+    if stored and abs(stored[0] - args.total) > 0.01:
+        print(f'NOTE: incoming grand_total ({args.total:,.2f}) <= stored ({stored[0]:,.2f}) — '
+              f'monotonicity guard preserved stored value for {date_utc}')
+    else:
+        print(f'Recorded Solstice grand_total = {args.total:,.2f}  totalUsers = {total_users:,} for {date_utc} (ts={midnight_ts})')
 
 
 if __name__ == '__main__':

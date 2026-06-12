@@ -74,11 +74,17 @@ def classify(wallet: str) -> str:
 def main():
     db.init()
     c = db.conn()
-    # Find every wallet with positive flares
+    # Find every wallet with positive flares — EXCLUDING is_s1 wallets.
+    # Per feedback_s1_is_ground_truth_for_user: Solstice's S1 list is the
+    # authoritative real-user signal; on-chain owner check (System Program vs
+    # other) misclassifies the common pattern of SOL-less ATA-only S1 users
+    # as 'pda_or_uninit', which silently strips their flares from the dashboard.
     wallets = [r['wallet'] for r in c.execute(
-        'SELECT DISTINCT wallet FROM wallet_quests WHERE flares > 0'
+        'SELECT DISTINCT wq.wallet FROM wallet_quests wq '
+        'LEFT JOIN wallets w ON w.wallet = wq.wallet '
+        'WHERE wq.flares > 0 AND COALESCE(w.is_s1, 0) = 0'
     )]
-    print(f'Classifying {len(wallets):,} wallets with positive flares...', flush=True)
+    print(f'Classifying {len(wallets):,} wallets with positive flares (S1 wallets skipped)...', flush=True)
 
     counts = {'user':0, 'pda':0, 'pda_or_uninit':0, 'unknown':0}
     pda_wallets = []
