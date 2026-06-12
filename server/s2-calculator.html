@@ -731,7 +731,40 @@ footer { text-align: center; color: var(--text-3); font-size: 11px; margin-top: 
 
     <div class="tabbed-panel__pane" data-pane="simulate" hidden>
       <div class="assumptions" id="yt-helper">
-        <div class="assumptions__rows" id="yt-helper-grid">
+        <!-- Applied-to-SLX controls FIRST (above the deposit row) — these are
+             the params the SLX calc uses. All three are SYNCED with the same
+             selects in the Load wallet tab via _syncFromSimTab() / _syncFromMainTab(). -->
+        <div class="assumptions__rows">
+          <div class="assumptions__row">
+            <label class="assumptions__label" for="sim-your-mult">Your loyalty</label>
+            <select id="sim-your-mult" class="assumptions__control" onchange="_syncFromSimTab(this, 'calc-your-mult')">
+              <option value="1.4">1.4× — Full</option>
+              <option value="1.3">1.3× — Reduced</option>
+              <option value="1.2">1.2× — Minimum</option>
+              <option value="1.0">1.0× — None</option>
+            </select>
+          </div>
+          <div class="assumptions__row">
+            <label class="assumptions__label" for="sim-avg-mult">Avg system loyalty</label>
+            <select id="sim-avg-mult" class="assumptions__control" onchange="_syncFromSimTab(this, 'calc-avg-mult')">
+              <option value="1.4">1.4×</option>
+              <option value="1.3" selected>1.3×</option>
+              <option value="1.2">1.2×</option>
+              <option value="1.1">1.1×</option>
+              <option value="1.0">1.0×</option>
+            </select>
+          </div>
+          <div class="assumptions__row">
+            <label class="assumptions__label" for="sim-airdrop-pct">SLX bucket</label>
+            <select id="sim-airdrop-pct" class="assumptions__control" onchange="_syncFromSimTab(this, 'calc-airdrop-pct')">
+              <option value="0.03" selected>3.00% — 30M SLX</option>
+              <option value="0.0325">3.25% — 32.5M SLX</option>
+              <option value="0.035">3.50% — 35M SLX</option>
+            </select>
+          </div>
+        </div>
+        <!-- Deposit + market + Simulate button BELOW the params row -->
+        <div class="assumptions__rows" id="yt-helper-grid" style="margin-top: 8px; border-top: 1px solid var(--border); padding-top: 8px;">
           <div class="assumptions__row">
             <label class="assumptions__label" for="yt-deposit">Deposit amount</label>
             <input id="yt-deposit" type="text" inputmode="decimal" class="assumptions__control"
@@ -766,40 +799,6 @@ footer { text-align: center; color: var(--text-3); font-size: 11px; margin-top: 
           <div class="assumptions__stat">
             <span class="assumptions__stat-label">Total to S2 end</span>
             <span class="assumptions__stat-value mono" id="yt-out-total" style="color: var(--accent);">—</span>
-          </div>
-        </div>
-        <!-- Applied-to-SLX controls + readout. Three selects (Your mult, Sys
-             mult, SLX bucket) are SYNCED with the same selects in the Load
-             wallet tab — changes in either tab reflect everywhere via
-             _syncMultsBetweenTabs(). The Sys total + Projected SLX tiles are
-             derived display-only. -->
-        <div class="assumptions__rows" style="margin-top: 8px; border-top: 1px solid var(--border); padding-top: 8px;">
-          <div class="assumptions__row">
-            <label class="assumptions__label" for="sim-your-mult">Your loyalty</label>
-            <select id="sim-your-mult" class="assumptions__control" onchange="_syncFromSimTab(this, 'calc-your-mult')">
-              <option value="1.4">1.4× — Full</option>
-              <option value="1.3">1.3× — Reduced</option>
-              <option value="1.2">1.2× — Minimum</option>
-              <option value="1.0">1.0× — None</option>
-            </select>
-          </div>
-          <div class="assumptions__row">
-            <label class="assumptions__label" for="sim-avg-mult">Avg system loyalty</label>
-            <select id="sim-avg-mult" class="assumptions__control" onchange="_syncFromSimTab(this, 'calc-avg-mult')">
-              <option value="1.4">1.4×</option>
-              <option value="1.3" selected>1.3×</option>
-              <option value="1.2">1.2×</option>
-              <option value="1.1">1.1×</option>
-              <option value="1.0">1.0×</option>
-            </select>
-          </div>
-          <div class="assumptions__row">
-            <label class="assumptions__label" for="sim-airdrop-pct">SLX bucket</label>
-            <select id="sim-airdrop-pct" class="assumptions__control" onchange="_syncFromSimTab(this, 'calc-airdrop-pct')">
-              <option value="0.03" selected>3.00% — 30M SLX</option>
-              <option value="0.0325">3.25% — 32.5M SLX</option>
-              <option value="0.035">3.50% — 35M SLX</option>
-            </select>
           </div>
         </div>
         <div class="assumptions__readout" style="margin-top: 8px;">
