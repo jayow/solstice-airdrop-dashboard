@@ -1037,7 +1037,7 @@ async function openDrawer(addr) {
   document.body.style.overflow = 'hidden';
   const addrEl = document.getElementById('dr-addr');
   addrEl.textContent = addr;
-  addrEl.href = 'https://portfolio.jup.ag/portfolio/' + addr;
+  addrEl.href = 'https://jup.ag/portfolio/' + addr;  // portfolio.jup.ag is deprecated — it redirects to jup.ag/portfolio and drops the address
   // Wire the calculator icon to deep-link with this wallet pre-filled.
   const calcLink = document.getElementById('dr-calc');
   if (calcLink) calcLink.href = 's2-calculator.html?w=' + encodeURIComponent(addr);
