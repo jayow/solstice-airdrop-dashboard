@@ -333,6 +333,10 @@ footer { text-align: center; color: var(--ink-500); font-size: 11px; margin-top:
         </div>
       </div>
       <div id="table-asof" style="font-size:11px; color:var(--ink-400); margin:0 0 8px 0;"></div>
+      <!-- Wrap table in a horizontal-scroll container so the 17-col layout never
+           clips on the right (Updated/Claimed columns were getting cut off on
+           sub-2000px viewports). Vertical scroll stays at the page level. -->
+      <div style="overflow-x: auto; -webkit-overflow-scrolling: touch;">
       <table id="t">
         <thead>
           <tr>
@@ -358,6 +362,7 @@ footer { text-align: center; color: var(--ink-500); font-size: 11px; margin-top:
         </thead>
         <tbody id="tb"></tbody>
       </table>
+      </div><!-- /horizontal-scroll wrapper -->
       <div class="pagination">
         <span id="pageinfo"></span>
         <span style="display:flex; gap:8px;">
@@ -498,6 +503,11 @@ function renderHero() {
         <div class="label">U2 unlocked <span style="color:var(--ink-500); cursor:help;">ⓘ</span></div>
         <div class="v" style="color:#a5b4fc;">${fmtCompact(s.sum_u2_3m)}<span class="unit">SLX · ${u2SupplyPct}%</span></div>
         <div class="sub">of 1B total supply · unlocks on 5 July 2026</div>
+      </div>
+      <div class="hero-stat" data-tip="Claimed = wallet has called the on-chain Claim instruction.\nUnclaimed wallets default to the 9-month vest schedule (selection window closed ~2026-06-04).\nNumbers from Clique acs-v4 last refreshed today via tools/refresh_unclaimed_clique.py.">
+        <div class="label">Claim status <span style="color:var(--ink-500); cursor:help;">ⓘ</span></div>
+        <div class="v good">${fmtInt(s.count_claimed || 0)}<span class="unit">claimed</span></div>
+        <div class="sub">${s.claimed_pct_by_count || 0}% of fetched · ${fmtInt((s.fetched_wallets || 0) - (s.count_claimed || 0))} unclaimed</div>
       </div>
     </div>`;
   // (Hero tooltip wiring is done below alongside donut tooltips — querySelectorAll('[data-tip]') catches both)
