@@ -53,10 +53,14 @@ ENDPOINTS = HELIUS_ENDPOINTS + EXTRA_ENDPOINTS + [TRITON_FREE, PUBLIC_RPC, ANKR_
 _current_idx = 0
 _lock = Lock()
 
-# Endpoints that returned a quota error this session — skipped at start of each
-# call so we don't burn a request per call on an already-exhausted provider.
-# Reset on process restart (when daily quota presumably refreshes).
-_quota_dead: set = set()
+# Endpoints temporarily demoted (quota error or connection stall). Maps endpoint
+# index → unix-ts until which it's skipped. TIME-BOXED, not session-permanent:
+# a transient 429 on the fast Helius endpoint must not sideline it for the whole
+# run — it's re-probed once its cooldown expires, so the rotation returns to the
+# preferred (lowest-index = Helius) endpoint automatically.
+_quota_dead: dict = {}
+_QUOTA_COOLDOWN_SEC = 90   # demotion window after a 429 / quota error
+_NET_COOLDOWN_SEC = 30     # demotion window after a connection stall/timeout
 
 # Quota error codes
 QUOTA_ERRORS = (-32429, -32413)  # Helius / generic over-limit
@@ -99,11 +103,14 @@ INFINITE_CACHE_MAX_AGE_HOURS = 100_000
 
 
 def _first_live_idx() -> int:
-    """Return the lowest endpoint index not marked quota-dead this session."""
+    """Return the lowest endpoint index not currently in cooldown (prefers Helius
+    at idx 0). Cooldowns are time-boxed, so a previously-demoted endpoint becomes
+    eligible again once its window expires."""
+    now = time.time()
     for i in range(len(ENDPOINTS)):
-        if i not in _quota_dead:
+        if _quota_dead.get(i, 0.0) <= now:
             return i
-    return 0  # all dead — reset and try again
+    return 0  # all cooling down — fall back to the primary (Helius) anyway
 
 
 def rpc(method: str, params: list, timeout: int = 30, max_retries: int = 8,
@@ -144,7 +151,10 @@ def rpc(method: str, params: list, timeout: int = 30, max_retries: int = 8,
         endpoint = ENDPOINTS[idx % len(ENDPOINTS)]
         try:
             with sem:
-                r = requests.post(endpoint, json=body, timeout=timeout)
+                # (connect, read) tuple: cap connection establishment at ≤5s so a
+                # SYN_SENT stall on a throttling endpoint fails fast and rotates,
+                # instead of blocking for the full read timeout.
+                r = requests.post(endpoint, json=body, timeout=(min(5, timeout), timeout))
             try: j = r.json()
             except Exception: j = {}
             err = j.get("error")
@@ -165,11 +175,13 @@ def rpc(method: str, params: list, timeout: int = 30, max_retries: int = 8,
                     except (TypeError, ValueError):
                         pass  # HTTP-date — fall through to existing handling
             if is_quota or r.status_code == 429:
-                _quota_dead.add(idx)
-                if len(_quota_dead) >= len(ENDPOINTS):
-                    _quota_dead.clear()
-                    time.sleep(min(4, 0.5 * (2 ** attempt)))
+                # Time-boxed demotion: over quota for now, re-probed after cooldown
+                # (so a transient Helius 429 doesn't pin us to slow endpoints).
+                _quota_dead[idx] = time.time() + _QUOTA_COOLDOWN_SEC
                 idx = _first_live_idx()
+                if _quota_dead.get(idx, 0.0) > time.time():
+                    # every endpoint is cooling down — brief backoff before retry
+                    time.sleep(min(4, 0.5 * (2 ** attempt)))
                 continue
 
             if r.status_code in (503, 504):
@@ -186,7 +198,13 @@ def rpc(method: str, params: list, timeout: int = 30, max_retries: int = 8,
                         pass
                 return j
         except requests.exceptions.RequestException:
-            time.sleep(min(4, 0.3 * (2 ** attempt)))
+            # Connection stall/timeout (e.g. SYN_SENT to a throttling endpoint).
+            # Rotate OFF this endpoint instead of hammering it 8× — cool it briefly
+            # so _first_live_idx prefers a healthy one (Helius first).
+            _quota_dead[idx] = time.time() + _NET_COOLDOWN_SEC
+            idx = _first_live_idx()
+            if _quota_dead.get(idx, 0.0) > time.time():
+                time.sleep(min(4, 0.3 * (2 ** attempt)))
 
     return {}
 

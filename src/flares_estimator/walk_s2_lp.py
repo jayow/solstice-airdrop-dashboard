@@ -129,6 +129,14 @@ def _decode_lp_event(data: bytes, version: str = 'v1'):
     if lp_field_idx >= n_u64: return None
     lp_raw = int.from_bytes(body[lp_field_idx*8:lp_field_idx*8+8], 'little')
     lp_price = struct.unpack('<d', data[-8:])[0]
+    # Sanity-bound lp_price: it's read as a trailing f64, and a byte-misaligned
+    # decode yields garbage (NaN / inf / huge / negative). Real Exponent LP
+    # prices are ~O(1). Integration does lp_balance × sqrt(lp_price) × mult × dt,
+    # so an unbounded lp_price is the tens-of-billions blow-up class (cf. the V2
+    # withdraw decode bug). The `not (0 < x < 100)` test rejects NaN/inf/≤0/huge
+    # in one shot — drop the event rather than emit a blow-up.
+    if not (0 < lp_price < 100):
+        return None
     return event_type, user, market, lp_raw, lp_price, sign
 
 
@@ -552,6 +560,7 @@ def main():
         full_rows = _db_es.get_walker_events_by_market('walk_s2_lp', cfg['market'])
         events_by_wallet = defaultdict(list)
         n_missing_meta = 0
+        n_bad_rate = 0
         for r in full_rows:
             meta = r.get('meta') or {}
             lp_price = meta.get('lp_price')
@@ -560,6 +569,13 @@ def main():
                 # for fresh installs since we just populated above.
                 n_missing_meta += 1
                 lp_price = (r['base_amount'] / abs(r['amount_delta'])) if r['amount_delta'] else 0
+            # Sanity-bound the rate. The derived fallback blows up when
+            # amount_delta≈0 (the V2-withdraw decode bug → rate≈100K), and a bad
+            # meta value would too. Integration uses sqrt(rate), so drop any event
+            # whose rate is outside the plausible O(1) band rather than emit a blow-up.
+            if lp_price is None or not (0 < lp_price < 100):
+                n_bad_rate += 1
+                continue
             events_by_wallet[r['wallet']].append({
                 't': r['ts'], 'lp_delta': r['amount_delta'], 'rate': lp_price,
                 'sig': r['sig'], 'underlying_delta': r['base_amount'],
@@ -571,6 +587,9 @@ def main():
         if n_missing_meta:
             print(f'  ⚠️  {n_missing_meta:,} legacy walker_events rows missing meta_json '
                   f'(pre-meta-schema) — falling back to derived lp_price', flush=True)
+        if n_bad_rate:
+            print(f'  ⚠️  {n_bad_rate:,} walker_events rows dropped for out-of-range lp_price '
+                  f'(bad-decode guard, rate∉(0,100))', flush=True)
         print(f'  walker_events: {sum(len(v) for v in events_by_wallet.values()):,} total events across '
               f'{len(events_by_wallet):,} wallets (full history)', flush=True)
 

@@ -83,11 +83,22 @@ fi
 # These weren't in refresh.sh before, so HOLD flares went stale between
 # manual runs. They share the S2_HOLD_USX / S2_HOLD_EUSX cache (TWAB timelines)
 # so each pair fires the same 24h-cache check internally.
-echo "[$(date '+%H:%M:%S')] Phase 2: HOLD walkers (USX + eUSX, 6 tiers)"
-for w in gt_hold_usx_daily gt_hold_usx_1mo gt_hold_usx_3mo gt_hold_eusx_daily gt_hold_eusx_1mo gt_hold_eusx_3mo; do
-  ( cd src && python3 -u -m flares_estimator.gt_walkers.$w ) > /tmp/walker_logs/refresh_$w.log 2>&1 &
+echo "[$(date '+%H:%M:%S')] Phase 2: HOLD walkers (USX + eUSX, 6 tiers — SERIAL)"
+# Run SERIALLY, daily tiers first: the *_daily walkers build today's schema-2
+# TWAB cache; the 1MO/3MO bonus walkers then REUSE it (~30s each). Running all
+# 6 in PARALLEL makes every walker re-discover + re-walk the full holder set at
+# once (no cache reuse) — 6× the RPC load + 41GB-SQLite contention, which trips
+# silent Helius archival degradation and stalls Phase 2 for hours.
+for w in gt_hold_usx_daily gt_hold_eusx_daily \
+         gt_hold_usx_1mo gt_hold_eusx_1mo \
+         gt_hold_usx_3mo gt_hold_eusx_3mo; do
+  echo "[$(date '+%H:%M:%S')]   running $w"
+  if ( cd src && python3 -u -m flares_estimator.gt_walkers.$w ) > /tmp/walker_logs/refresh_$w.log 2>&1; then
+    echo "[$(date '+%H:%M:%S')]     ✓ $w done"
+  else
+    echo "[$(date '+%H:%M:%S')]     ✗ $w FAILED — see /tmp/walker_logs/refresh_$w.log"
+  fi
 done
-wait
 echo "[$(date '+%H:%M:%S')]   ✓ HOLD walkers done"
 
 # ── Phase 3: Kamino strategy (depends on Kamino cache) ───────
@@ -99,6 +110,29 @@ echo "[$(date '+%H:%M:%S')]   ✓ Kamino strategy done"
 echo "[$(date '+%H:%M:%S')] Phase 4: transforms"
 python3 src/flares_estimator/transform_kamino.py    > /tmp/walker_logs/refresh_xform_kam.log 2>&1
 python3 src/flares_estimator/transform_loopscale.py > /tmp/walker_logs/refresh_xform_loop.log 2>&1
+# CLMM in-range gating: Solstice credits a CLMM position only while its tick
+# range covers the pool's current tick — out-of-range positions earn 0. The
+# raw orca/raydium walkers value EVERY position (an out-of-range full-range
+# position is valued at the max-tick sqrt-price ≈ 4.29e9 → the 1e9–1e13 outlier
+# bug). These two transforms gate by in-range fraction. They were only in the
+# legacy scripts/daily_refresh.sh and never in this canonical refresh — so raw
+# blowups shipped. Non-fatal: a bad run is caught by the Phase 7 confidence gate.
+python3 src/flares_estimator/transform_clmm_inrange.py > /tmp/walker_logs/refresh_xform_clmm_inrange.log 2>&1 \
+  && echo "[$(date '+%H:%M:%S')]   ✓ CLMM in-range gating done" \
+  || echo "[$(date '+%H:%M:%S')]   ⚠️  CLMM in-range transform errored — see refresh_xform_clmm_inrange.log"
+# transform_clmm_das is the COMPLETENESS backstop (gates positions whose
+# mint_position isn't in cache) but it's SLOW (~10 min, one DAS API call per
+# wallet) — too heavy for the daily critical path. inrange (cache-based, ~2s)
+# does the primary gating daily; any out-of-range position it misses is caught
+# by the Phase-7b confidence gate. Run das weekly (or when the gate flags a
+# CLMM-only wallet): RUN_CLMM_DAS=1 bash server/refresh.sh
+if [ "${RUN_CLMM_DAS:-0}" = "1" ]; then
+  python3 src/flares_estimator/transform_clmm_das.py > /tmp/walker_logs/refresh_xform_clmm_das.log 2>&1 \
+    && echo "[$(date '+%H:%M:%S')]   ✓ CLMM DAS gating done" \
+    || echo "[$(date '+%H:%M:%S')]   ⚠️  CLMM DAS transform errored — see refresh_xform_clmm_das.log"
+else
+  echo "[$(date '+%H:%M:%S')]   • CLMM DAS gating skipped (set RUN_CLMM_DAS=1 for weekly full sweep)"
+fi
 echo "[$(date '+%H:%M:%S')]   ✓ Transforms done"
 
 # ── Phase 5: HOLD cache → wallet_quests resync ───────────────
@@ -177,6 +211,21 @@ if python3 tools/audit.py 2>&1 | tee /tmp/walker_logs/refresh_audit.log | tail -
 else
   echo "[$(date '+%H:%M:%S')]   ❌ AUDIT FAILED — see refresh_audit.log. DO NOT PUSH."
   # Continue to print summary but mark the refresh as suspect.
+fi
+
+# ── Phase 7b: confidence gate (per-quest outlier + day-over-day swing) ──────
+# The "do not push if this trips" check. Catches the recurring failure classes
+# that have shipped bad numbers: 1e9-1e13 decode blow-ups (CLMM/LP/Kamino) and
+# systemic day-over-day explosions/collapses (e.g. HOLD 20M→150B). Runs on the
+# finalized wallet_quests after rebuild. `&& ... || ...` captures the exit code
+# without `set -e` aborting the run.
+echo "[$(date '+%H:%M:%S')] Phase 7b: confidence gate"
+python3 tools/confidence_gate.py > /tmp/walker_logs/refresh_confidence.log 2>&1 && GATE_RC=0 || GATE_RC=$?
+tail -20 /tmp/walker_logs/refresh_confidence.log | sed 's/^/  /'
+if [ "${GATE_RC:-1}" -eq 0 ]; then
+  echo "[$(date '+%H:%M:%S')]   ✓ Confidence gate CLEAN — safe to push"
+else
+  echo "[$(date '+%H:%M:%S')]   ❌ CONFIDENCE GATE TRIPPED — DO NOT PUSH (see refresh_confidence.log)"
 fi
 
 # Summary

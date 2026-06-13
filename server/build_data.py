@@ -53,6 +53,11 @@ def main():
     if os.path.exists(p_pdas):
         d = json.load(open(p_pdas))
         manual_pda_labels = d.get('addresses') or {}
+        # Tolerate hand-added entries whose value is a bare label string instead
+        # of the canonical {"label": ...} dict — coerce so one malformed entry
+        # can't crash (and silently freeze) the whole dashboard build.
+        manual_pda_labels = {k: (v if isinstance(v, dict) else {'label': v})
+                             for k, v in manual_pda_labels.items()}
         for addr in manual_pda_labels:
             if wallets_meta.get(addr, {}).get('classification') != 'pda_protocol':
                 c.execute('INSERT INTO wallets(wallet, classification) VALUES (?, ?) '

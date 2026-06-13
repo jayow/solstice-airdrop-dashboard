@@ -48,14 +48,29 @@ def main():
 
     # Find all current holders via getProgramAccounts with mint filter
     print('\\nFinding all share-mint holders...', flush=True)
-    r = rpc('getProgramAccounts', ['TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA', {
+    _gpa_params = ['TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA', {
         'encoding': 'jsonParsed',
         'filters': [
             {'dataSize': 165},
             {'memcmp': {'offset': 0, 'bytes': SHARE_MINT}}
         ]
-    }], timeout=120)
-    accs = r.get('result', []) or []
+    }]
+    accs = []
+    for _attempt in range(4):
+        r = rpc('getProgramAccounts', _gpa_params, timeout=120, force_refresh=(_attempt > 0))
+        accs = r.get('result', []) or []
+        if accs:
+            break
+        print(f'  ⚠️  share-mint enumeration empty (attempt {_attempt+1}/4) — retrying', flush=True)
+        time.sleep(1.5 * (_attempt + 1))
+    if not accs:
+        # An empty enumeration would make the downstream prune+sync zero EVERY
+        # KVAULT wallet. Refuse to write — preserve existing data and bail (mirrors
+        # kamino_v3's enumerate_obligations guard; see reference_walker_rpc_retry_fix).
+        # return (not sys.exit) so a transient flake can't abort the whole refresh.
+        print('  ❌ share-mint enumeration EMPTY after retries — aborting WITHOUT '
+              'writing (would zero all S2_KAMINO_KVAULT wallets)', flush=True)
+        return
     # Map ATA -> (owner, current_balance)
     holders = {}
     for a in accs:

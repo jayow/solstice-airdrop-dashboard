@@ -10398,11 +10398,11 @@
       "source": "manual",
       "kind": "institutional"
     },
-    "DGVQ9S7nbMBKkP6f24QpF7EBUMGJDEHzGFbVr7a2zxKp": "solstice_dispensing_wallet",
-    "2WpAVkGQNPjBnUhwJgVAKzCrYUMwh1eJXEK2SvmRRTLt": "solstice_treasury_candidate",
-    "DYcvEzC1a9A511Z5uA7AnAyHYCzpruk6AvyURwfMPt7J": "solstice_treasury_candidate",
-    "2SaYqwUj4cQiYtYkjQUVHwHzKqsUJ9CKEZBcVuY8c5pX": "solstice_treasury_candidate",
-    "3MkvadT9rdbBZpsGiWUyESdGEMqUv1HCXjJTm63MwBSL": "solstice_treasury_candidate"
+    "DGVQ9S7nbMBKkP6f24QpF7EBUMGJDEHzGFbVr7a2zxKp": {"label": "solstice_dispensing_wallet", "protocol": "solstice", "source": "manual"},
+    "2WpAVkGQNPjBnUhwJgVAKzCrYUMwh1eJXEK2SvmRRTLt": {"label": "solstice_treasury_candidate", "protocol": "solstice", "source": "manual"},
+    "DYcvEzC1a9A511Z5uA7AnAyHYCzpruk6AvyURwfMPt7J": {"label": "solstice_treasury_candidate", "protocol": "solstice", "source": "manual"},
+    "2SaYqwUj4cQiYtYkjQUVHwHzKqsUJ9CKEZBcVuY8c5pX": {"label": "solstice_treasury_candidate", "protocol": "solstice", "source": "manual"},
+    "3MkvadT9rdbBZpsGiWUyESdGEMqUv1HCXjJTm63MwBSL": {"label": "solstice_treasury_candidate", "protocol": "solstice", "source": "manual"}
   },
   "_audit_note": "\n2026-05-29: Removed 1 entries \u2014 on-chain audit confirmed they are EOA (owner=SystemProgram), not PDAs. Presumption-of-innocence rule applies."
 }

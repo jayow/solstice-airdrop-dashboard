@@ -9,6 +9,8 @@
 # Both must regenerate together so dashboard's "total" and "chart" stay in sync.
 
 set -e
+set -o pipefail   # so a build_*.py crash propagates through `| tail` instead of
+                  # being masked (this silently froze data.json for a full day)
 cd "$(dirname "$0")/.."
 
 echo "=== Building data.json (current snapshot) ==="

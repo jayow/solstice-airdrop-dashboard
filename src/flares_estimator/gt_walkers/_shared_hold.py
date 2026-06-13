@@ -427,7 +427,14 @@ def build_twab_timeline(wallet: str, mint: str) -> dict:
     any_post_failed = False
     for ata in atas:
         ps = prior_per_ata.get(ata)
-        ps_schema_ok = (schema == 2) and isinstance(ps, dict) and (ps.get('last_sig') is not None)
+        # Reusable if schema-2 AND it has either a cursor (active ATA with an
+        # in-window sig) OR a recorded carry-in balance. Passive pre-S2 holders
+        # make no in-window move, so last_sig stays None forever — without the
+        # second clause ~60-75% of holders (the passive majority) COLD-walk full
+        # sig history every day, which is the 30-min HOLD tail. With it they take
+        # the FAST path (balance unchanged → reuse cached segs, zero RPC).
+        ps_schema_ok = (schema == 2) and isinstance(ps, dict) and (
+            ps.get('last_sig') is not None or 'last_known_balance' in ps)
         live_bal = live.get(ata)
         in_live = (ata in live)
         last_full_walk = int((ps or {}).get('last_full_walk_ts') or 0)
@@ -505,7 +512,11 @@ def build_twab_timeline(wallet: str, mint: str) -> dict:
         'timeline': timeline,
         'escrow_segs': escrow_segs,
         'last_event_ts': end_ts,
-        'fetch_failed': fetch_failed or any_rpc_failed,
+        # Include post-balance (getTransaction) failures: a dropped balance point
+        # yields a partial timeline, and caching that as authoritative is the
+        # silent-drop bug class (reference_walker_rpc_retry_fix — 8.25B flares
+        # once lost this way). Refuse to cache a partial walk.
+        'fetch_failed': fetch_failed or any_rpc_failed or any_post_failed,
         'per_ata': new_per_ata,
         '_schema': 2,
     }

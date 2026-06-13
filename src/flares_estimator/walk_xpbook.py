@@ -160,15 +160,26 @@ def _decode_events(tx: dict) -> list[tuple[int, int, str, str | None, bytes]]:
     return events
 
 
-def _fetch_and_decode(sig: str) -> tuple[str, int, list]:
-    """Fetch one tx, decode all Anchor events. Returns (sig, blocktime, events)."""
-    r = rpc('getTransaction',
-            [sig, {'encoding': 'jsonParsed', 'maxSupportedTransactionVersion': 0}])
-    tx = r.get('result') or {}
-    bt = tx.get('blockTime') or 0
-    if (tx.get('meta') or {}).get('err'):
-        return sig, bt, []
-    return sig, bt, _decode_events(tx)
+def _fetch_and_decode(sig: str):
+    """Fetch one tx, decode all Anchor events. Returns (sig, blocktime, events).
+
+    `events` is None ONLY on a hard RPC failure (after retries) — this is
+    DISTINCT from [] which means "fetched, but no XPBook events". The cursor must
+    never advance past a None result, or that sig's events are lost permanently
+    (the cursor never revisits it). Retries with force_refresh to defeat a stale
+    failure cached by rpc_helper. See reference_walker_rpc_retry_fix."""
+    for attempt in range(4):
+        r = rpc('getTransaction',
+                [sig, {'encoding': 'jsonParsed', 'maxSupportedTransactionVersion': 0}],
+                force_refresh=(attempt > 0))
+        tx = r.get('result') if isinstance(r, dict) else None
+        if tx:
+            bt = tx.get('blockTime') or 0
+            if (tx.get('meta') or {}).get('err'):
+                return sig, bt, []
+            return sig, bt, _decode_events(tx)
+        time.sleep(min(2, 0.3 * (2 ** attempt)))
+    return sig, 0, None   # hard failure after retries — caller must hold cursor
 
 
 def _index_program(program_name: str, program_id: str, workers: int = 8) -> dict:
@@ -188,6 +199,7 @@ def _index_program(program_name: str, program_id: str, workers: int = 8) -> dict
     con = _db.conn()
     total_events = 0
     processed = 0
+    n_failed = 0
     latest_sig_in_run = sigs[-1]['signature']
     latest_bt_in_run = sigs[-1].get('blockTime') or 0
 
@@ -198,7 +210,11 @@ def _index_program(program_name: str, program_id: str, workers: int = 8) -> dict
             try:
                 sig, bt, events = fut.result()
             except Exception as e:
+                n_failed += 1
                 print(f'  ✗ {futs[fut]["signature"][:20]}... → {e}', flush=True)
+                continue
+            if events is None:   # hard RPC failure (distinct from [] = no events)
+                n_failed += 1
                 continue
             processed += 1
             if events:
@@ -213,10 +229,20 @@ def _index_program(program_name: str, program_id: str, workers: int = 8) -> dict
                 print(f'  [{program_name}] {processed}/{len(sigs)} '
                       f'({total_events} events, {time.time()-t0:.0f}s)', flush=True)
 
+    # Only advance the cursor if the failure rate is acceptable. A failed sig we
+    # skip past would lose its events forever (the cursor never revisits it), so
+    # hold the cursor and re-walk next run — the successful inserts are
+    # INSERT-OR-IGNORE idempotent, so re-walking is a cheap no-op for them.
+    fail_pct = (n_failed / len(sigs) * 100) if sigs else 0.0
+    if fail_pct > 0.5:
+        print(f'[{program_name}] ⚠️  {n_failed}/{len(sigs)} sigs failed ({fail_pct:.2f}%) — '
+              f'HOLDING cursor (will re-walk next run); {total_events} events stored', flush=True)
+        return {'new_sigs': len(sigs), 'events': total_events, 'failed': n_failed, 'cursor_held': True}
+
     _set_cursor(program_name, latest_sig_in_run, latest_bt_in_run)
-    print(f'[{program_name}] done: {processed} sigs, {total_events} events, '
+    print(f'[{program_name}] done: {processed} sigs, {total_events} events, {n_failed} failed, '
           f'{time.time()-t0:.0f}s. Cursor → {latest_sig_in_run[:20]}...', flush=True)
-    return {'new_sigs': len(sigs), 'events': total_events}
+    return {'new_sigs': len(sigs), 'events': total_events, 'failed': n_failed}
 
 
 def main():

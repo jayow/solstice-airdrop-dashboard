@@ -74,8 +74,19 @@ def find_nft_owner(mint: str) -> str:
 
 def liquidity_to_usd(L: int, tick_lower: int, tick_upper: int, current_tick: int,
                      price_a_usd: float, price_b_usd: float, dec_a: int, dec_b: int) -> float:
-    """Compute USD value of a CLMM position with virtual liquidity L."""
+    """Compute USD value of a CLMM position with virtual liquidity L.
+
+    Out-of-range positions return 0: Solstice credits CLMM liquidity only while
+    the position's tick range covers the pool's current tick. Valuing an
+    out-of-range position via the range-edge sqrt-price (≈4.29e9 at the max tick)
+    is the 1e9–1e13 outlier-bug source. The stable USX/eUSX pools hold their tick
+    in a tight band all season, so currently-out-of-range ≈ out-of-range for the
+    whole S2 window (same assumption transform_clmm_inrange documents). Returning
+    0 here fixes EVERY position (the in-range transform only covers the minority
+    with a cached mint_position)."""
     if L == 0: return 0.0
+    if current_tick < tick_lower or current_tick >= tick_upper:
+        return 0.0
     def tick_to_sqrt_price(t):
         return math.pow(1.0001, t / 2)
     sqrt_p_lower = tick_to_sqrt_price(tick_lower)
@@ -135,7 +146,11 @@ def main():
         pool = get_pool_data(pool_addr)
         if not pool:
             print(f'  pool data unavailable\n'); continue
-        current_tick = int(pool.get('tickCurrentIndex', 0))
+        if pool.get('tickCurrentIndex') is None:
+            # No tick → skip (preserve prior data). Defaulting to 0 would, with the
+            # out-of-range→0 valuation, silently mass-zero every position in this pool.
+            print(f'  pool tick unavailable — skipping quest to avoid mass-zero\n'); continue
+        current_tick = int(pool['tickCurrentIndex'])
         price_a = cfg['price_a']; price_b = cfg['price_b']
         dec_a = cfg['dec_a']; dec_b = cfg['dec_b']
         tvl = pool.get('tvlUsdc', '0')

@@ -81,15 +81,19 @@ def get_pool_tick(pool_id: str) -> int:
     """Get current tick. Prefer on-chain PoolState (Raydium API tickCurrent
     field returns null for our S2 pools as of 2026-06-03, defeating the
     API-only path)."""
-    try:
-        r = rpc('getAccountInfo', [pool_id, {'encoding': 'base64'}], timeout=15)
-        v = (r or {}).get('result', {}).get('value')
-        if v and v.get('data'):
-            data = base64.b64decode(v['data'][0])
-            if len(data) >= 273:
-                return int.from_bytes(data[269:273], 'little', signed=True)
-    except Exception:
-        pass
+    import time as _t
+    for _attempt in range(4):
+        try:
+            r = rpc('getAccountInfo', [pool_id, {'encoding': 'base64'}], timeout=15,
+                    force_refresh=(_attempt > 0))
+            v = (r or {}).get('result', {}).get('value')
+            if v and v.get('data'):
+                data = base64.b64decode(v['data'][0])
+                if len(data) >= 273:
+                    return int.from_bytes(data[269:273], 'little', signed=True)
+        except Exception:
+            pass
+        _t.sleep(0.5 * (2 ** _attempt))
     try:
         r = requests.get(f'https://api-v3.raydium.io/pools/info/ids?ids={pool_id}', timeout=15).json()
         data = r.get('data') or []
@@ -97,7 +101,10 @@ def get_pool_tick(pool_id: str) -> int:
             return int(data[0]['tickCurrent'])
     except Exception:
         pass
-    return 0
+    # Fail loud rather than return a bogus 0: with out-of-range→0 valuation, a
+    # wrong tick would silently mass-zero every real position in this pool.
+    raise RuntimeError(f'get_pool_tick: could not determine current tick for {pool_id} '
+                       f'after retries — refusing to return 0 (would mass-zero positions)')
 
 
 def get_pool_tvl(pool_id: str) -> float:
@@ -133,6 +140,12 @@ def find_nft_owner(mint: str) -> str:
 
 def liquidity_to_usd(L, tick_lower, tick_upper, current_tick, price_a, price_b, dec_a, dec_b):
     if L == 0: return 0.0
+    # Out-of-range positions earn 0 (Solstice in-range rule). Valuing them via the
+    # range-edge sqrt-price (≈4.29e9 at max tick) is the 1e9-1e13 outlier bug —
+    # return 0 at the source so EVERY position is covered, not just the minority
+    # the in-range transform reaches. See walk_s2_orca.liquidity_to_usd.
+    if current_tick < tick_lower or current_tick >= tick_upper:
+        return 0.0
     def t2p(t): return math.pow(1.0001, t/2)
     sl, su, sp = t2p(tick_lower), t2p(tick_upper), t2p(current_tick)
     if current_tick < tick_lower:
