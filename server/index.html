@@ -1098,6 +1098,11 @@ function _partnerFor(quest) {
 // active position. Reads from p.evidence using QUEST_EV_KEY + POS_KEY mappings.
 function _rawHoldingFor(p, quest) {
   const ev = p.evidence || {};
+  // HOLD bonus tiers (_1MO/_3MO) are extra flare multipliers on the SAME balance
+  // as the DAILY tier, not a separate position. Return null so the holding isn't
+  // shown (and aggregated) 2-3× across the DAILY/1MO/3MO rows. Only HOLD quests
+  // carry these suffixes.
+  if (quest.endsWith('_1MO') || quest.endsWith('_3MO')) return null;
   // HOLD quests — read latest timeline value
   if (quest.startsWith('S2_HOLD_USX')) {
     const tl = (ev.S2_HOLD_USX || {}).timeline || [];
@@ -1164,6 +1169,10 @@ function _rawHoldingFor(p, quest) {
 //   - Kamino/Loopscale/AMM: tvl_by_quest[quest] (already in USD)
 function _dollarFor(p, quest) {
   const ev = p.evidence || {};
+  // HOLD bonus tiers (_1MO/_3MO) share the DAILY tier's underlying balance — don't
+  // report a separate dollar value or it double/triple-counts the position. The
+  // partner-aggregate TVL credits the balance once via the DAILY tier (below).
+  if (quest.endsWith('_1MO') || quest.endsWith('_3MO')) return null;
   // YT — cost basis from per-market cost_basis on the matching market
   if (quest.startsWith('S2_EXPONENT_YIELD_')) {
     const yt = ev.S2_EXPONENT_YT;
@@ -1244,10 +1253,12 @@ function renderQuestTable(p) {
     groups[partner].tvl += tvlMap[quest] || 0;
     groups[partner].flares += flares;
   }
-  // HOLD quests don't appear in tvl_by_quest. Credit the underlying balance
-  // once per HOLD partner (DAILY tier) so Current TVL reflects the live
-  // wallet position, not 3× the same balance across DAILY/1MO/3MO tiers.
+  // Credit the HOLD underlying balance once per partner (DAILY tier only — 1MO/3MO
+  // share the same balance). tvl_by_quest now carries S2_HOLD_*_DAILY, so it was
+  // ALREADY added in the loop above; only add here as a fallback when it's absent,
+  // or Current TVL double-counts the HOLD position.
   for (const [q, partner] of [['S2_HOLD_USX_DAILY', 'Solstice'], ['S2_HOLD_EUSX_DAILY', 'Yield Vault']]) {
+    if (tvlMap[q]) continue;   // already counted via tvl_by_quest — avoid double-count
     const usd = _dollarFor(p, q);
     if (usd && groups[partner]) groups[partner].tvl += usd;
   }
