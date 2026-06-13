@@ -35,7 +35,7 @@ html, body { margin: 0; background: var(--ink-950); color: var(--ink-100);
 .display { font-family: "Inter", ui-sans-serif, system-ui; font-weight: 600; letter-spacing: -0.02em; }
 .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.14em; color: var(--ink-400); }
 
-main { max-width: 1680px; margin: 0 auto; padding: 64px 24px; }
+main { max-width: 2200px; margin: 0 auto; padding: 64px 24px; }
 
 header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 40px; }
 .brand { display: flex; align-items: center; gap: 16px; color: var(--ink-300); }
@@ -166,9 +166,9 @@ section h2 { font-size: 18px; font-weight: 600; letter-spacing: -0.02em; margin:
 .multiselect-item.selected .ms-count { color: var(--accent-300); }
 .multiselect-item .ms-label { flex: 1; display: flex; align-items: center; gap: 8px; }
 
-table { width: 100%; border-collapse: collapse; font-size: 11.5px; table-layout: auto; }
-th, td { text-align: right; padding: 8px 8px; white-space: nowrap; font-variant-numeric: tabular-nums; }
-th { font-weight: 500; color: var(--ink-400); cursor: pointer; user-select: none; text-transform: uppercase; font-size: 9.5px; letter-spacing: 0.10em; }
+table { width: 100%; border-collapse: collapse; font-size: 11px; table-layout: auto; }
+th, td { text-align: right; padding: 7px 6px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+th { font-weight: 500; color: var(--ink-400); cursor: pointer; user-select: none; text-transform: uppercase; font-size: 9px; letter-spacing: 0.08em; }
 th.asc::after  { content: ' ▲'; color: var(--accent-300); }
 th.desc::after { content: ' ▼'; color: var(--accent-300); }
 td.left, th.left { text-align: left; }
@@ -332,11 +332,6 @@ footer { text-align: center; color: var(--ink-500); font-size: 11px; margin-top:
           <div class="multiselect-menu" id="cohort-multiselect-menu"></div>
         </div>
       </div>
-      <div id="table-asof" style="font-size:11px; color:var(--ink-400); margin:0 0 8px 0;"></div>
-      <!-- Wrap table in a horizontal-scroll container so the 17-col layout never
-           clips on the right (Updated/Claimed columns were getting cut off on
-           sub-2000px viewports). Vertical scroll stays at the page level. -->
-      <div style="overflow-x: auto; -webkit-overflow-scrolling: touch;">
       <table id="t">
         <thead>
           <tr>
@@ -362,7 +357,6 @@ footer { text-align: center; color: var(--ink-500); font-size: 11px; margin-top:
         </thead>
         <tbody id="tb"></tbody>
       </table>
-      </div><!-- /horizontal-scroll wrapper -->
       <div class="pagination">
         <span id="pageinfo"></span>
         <span style="display:flex; gap:8px;">
@@ -407,20 +401,6 @@ async function load() {
   populateCohortFilter();
   render();
   document.getElementById('footer-time').textContent = new Date(DATA.meta.generated_at*1000).toUTCString();
-  // Above-table "as of" line — uses the freshest snapshot ts across the
-  // universe + the data.json build time. Each row's "Updated" column shows
-  // per-wallet freshness (which can lag because not all wallets are snapshotted
-  // every cycle).
-  const asof = document.getElementById('table-asof');
-  if (asof) {
-    const snapTs = (DATA.stats && DATA.stats.last_balance_snapshot_ts) ||
-                   (DATA.meta && DATA.meta.balance_snapshot_last_ts) || 0;
-    const snapStr = snapTs
-      ? new Date(snapTs*1000).toISOString().slice(0,16).replace('T',' ') + ' UTC'
-      : '—';
-    const buildStr = new Date(DATA.meta.generated_at*1000).toISOString().slice(0,16).replace('T',' ') + ' UTC';
-    asof.textContent = `Snapshots through ${snapStr} · Build ${buildStr} · per-row Updated column = each wallet's latest snapshot date`;
-  }
 }
 
 function renderBuckets() {
@@ -482,12 +462,12 @@ function renderHero() {
       <div class="hero-stat">
         <div class="label">S1 wallets</div>
         <div class="v accent">${fmtInt(s.n_s1)}</div>
-        <div class="sub">Official S1 set fully captured</div>
+        <div class="sub">${fmtInt(s.count_claimed || 0)} claimed · ${fmtInt((s.fetched_wallets || 0) - (s.count_claimed || 0))} unclaimed</div>
       </div>
       <div class="hero-stat">
         <div class="label">Presale buyers</div>
         <div class="v">${fmtInt(s.n_presale_total)}</div>
-        <div class="sub">${fmtInt(s.n_presale_claimed)} claimed · ${fmtInt(s.n_presale_total - s.n_presale_claimed)} pending</div>
+        <div class="sub">${fmtInt(s.n_presale_claimed)} claimed · ${fmtInt(s.n_presale_total - s.n_presale_claimed)} unclaimed</div>
       </div>
       <div class="hero-stat" data-tip="${totalTip}">
         <div class="label">Total allocated <span style="color:var(--ink-500); cursor:help;">ⓘ</span></div>
@@ -503,11 +483,6 @@ function renderHero() {
         <div class="label">U2 unlocked <span style="color:var(--ink-500); cursor:help;">ⓘ</span></div>
         <div class="v" style="color:#a5b4fc;">${fmtCompact(s.sum_u2_3m)}<span class="unit">SLX · ${u2SupplyPct}%</span></div>
         <div class="sub">of 1B total supply · unlocks on 5 July 2026</div>
-      </div>
-      <div class="hero-stat" data-tip="Claimed = wallet has called the on-chain Claim instruction.\nUnclaimed wallets default to the 9-month vest schedule (selection window closed ~2026-06-04).\nNumbers from Clique acs-v4 last refreshed today via tools/refresh_unclaimed_clique.py.">
-        <div class="label">Claim status <span style="color:var(--ink-500); cursor:help;">ⓘ</span></div>
-        <div class="v good">${fmtInt(s.count_claimed || 0)}<span class="unit">claimed</span></div>
-        <div class="sub">${s.claimed_pct_by_count || 0}% of fetched · ${fmtInt((s.fetched_wallets || 0) - (s.count_claimed || 0))} unclaimed</div>
       </div>
     </div>`;
   // (Hero tooltip wiring is done below alongside donut tooltips — querySelectorAll('[data-tip]') catches both)
