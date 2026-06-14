@@ -198,16 +198,6 @@ tbody tr:hover { background: rgba(255,255,255,.015); }
 .tag.XEET            { color: #f0abfc; border-color: rgba(240, 171, 252, 0.30); }
 .tag.RIVALZ          { color: #67e8f9; border-color: rgba(103, 232, 249, 0.30); }
 .tag.EXP             { color: #fda4af; border-color: rgba(253, 164, 175, 0.30); }
-
-/* Vest plan badges in the Vest column. Same shape as .tag; no extra margin. */
-.vest-pill { display: inline-block; padding: 2px 7px; border-radius: 999px; font-size: 9.5px;
-             text-transform: uppercase; letter-spacing: 0.06em; border: 1px solid;
-             font-variant-numeric: tabular-nums; }
-.vest-3mo       { color: var(--accent-300);  border-color: rgba(245,158,11,0.32);  background: rgba(245,158,11,0.05); }
-.vest-9mo-sel   { color: var(--good-300);    border-color: rgba(110,231,183,0.30); background: rgba(110,231,183,0.04); }
-.vest-9mo-def   { color: var(--ink-300);     border-color: rgba(255,255,255,0.10); background: rgba(255,255,255,0.02); }
-.vest-u1        { color: var(--ink-400);     border-color: rgba(255,255,255,0.06); }
-.vest-unk       { color: #fda4af;            border-color: rgba(253,164,175,0.30); }
 .tag.claimed { color: var(--good-300); border-color: rgba(52, 211, 153, 0.25); }
 .tag.unclaimed { color: var(--ink-400); border-color: rgba(255,255,255,0.10); }
 .tag.dust { color: #fda4af; border-color: rgba(253, 164, 175, 0.3); }
@@ -390,15 +380,6 @@ const fmtCompact = n => {
 };
 const fmtInt = n => Number(n).toLocaleString(undefined, { maximumFractionDigits: 0 });
 const trunc = (s, n=10) => s ? (s.slice(0,n)+'…') : '';
-// Vest plan badge — vt is one of: '3mo', '9mo_default', '9mo_selected', 'u1_only', 'unknown', 'error', '' (unclaimed or pending)
-const vestBadge = vt => {
-  if (!vt) return '<span class="zero">—</span>';
-  if (vt === '3mo')          return '<span class="vest-pill vest-3mo">3mo</span>';
-  if (vt === '9mo_selected') return '<span class="vest-pill vest-9mo-sel">9mo</span>';
-  if (vt === '9mo_default')  return '<span class="vest-pill vest-9mo-def" title="No selection made — defaults to 9mo at U2">9mo def</span>';
-  if (vt === 'u1_only')      return '<span class="vest-pill vest-u1" title="No vest batch in Clique response">u1</span>';
-  return `<span class="vest-pill vest-unk" title="${vt}">?</span>`;
-};
 const fmtDateShort = iso => {
   if (!iso) return '';
   const d = new Date(iso);
@@ -463,37 +444,6 @@ function renderBuckets() {
     el.addEventListener('mousemove', e => { tip.style.left = (e.clientX+14)+'px'; tip.style.top = (e.clientY+14)+'px'; });
     el.addEventListener('mouseleave', () => tip.classList.remove('visible'));
   });
-}
-
-// Vest plan split tile — surfaces stats.vest_split which counts each claimed
-// wallet's chosen Solstice vest plan (3-month / 9-month). Derived per-wallet by
-// validating each Clique batch's Merkle proof against the on-chain ClaimRoot
-// PDA for the 3mo (FQsNXCX…) vs 9mo (GuTrjtwi…) distributors. The walker
-// (tools/refresh_vest_track.py) backfills nightly; until U2 fires on 5 July
-// 2026, this is the authoritative read.
-function renderVestSplitTile(s) {
-  const v = s.vest_split || {};
-  const n3 = (v['3mo'] || {}).count || 0;
-  const n9def = (v['9mo_default'] || {}).count || 0;
-  const n9sel = (v['9mo_selected'] || {}).count || 0;
-  const nPending = (v['pending_classification'] || {}).count || 0;
-  const nUnknown = (v['unknown'] || {}).count || 0;
-  const nErr = (v['error'] || {}).count || 0;
-  const n9 = n9def + n9sel;
-  const classified = n3 + n9 + (v['u1_only'] || {}).count || 0;
-  const tip = `3mo (explicitly selected): ${fmtInt(n3)}\n9mo defaulted: ${fmtInt(n9def)}\n9mo explicitly selected: ${fmtInt(n9sel)}\n\nDerivation: each wallet's Clique Merkle proof is validated against the on-chain ClaimRoot PDAs for the FQsNXCX (3mo) and GuTrjtwi (9mo) SLX distributors.\n\nPending classification: ${fmtInt(nPending)}\nUnknown/error: ${fmtInt(nUnknown + nErr)}`;
-  const total = n3 + n9;
-  const pct3 = total ? Math.round(n3 / total * 100) : 0;
-  return `
-    <div class="hero-stat" data-tip="${tip}">
-      <div class="label">Vest plan <span style="color:var(--ink-500); cursor:help;">ⓘ</span></div>
-      <div class="v">
-        <span style="color:var(--accent-300);">${fmtInt(n3)}</span><span class="unit" style="color:var(--ink-400);">3mo</span>
-        <span style="color:var(--ink-500); margin:0 6px;">·</span>
-        <span style="color:var(--ink-200);">${fmtInt(n9)}</span><span class="unit" style="color:var(--ink-400);">9mo</span>
-      </div>
-      <div class="sub">${pct3}% chose 3mo · ${nPending ? fmtInt(nPending) + ' pending walk' : 'fully classified'}</div>
-    </div>`;
 }
 
 function renderHero() {
