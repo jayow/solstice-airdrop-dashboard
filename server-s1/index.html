@@ -479,10 +479,10 @@ function renderHero() {
         <div class="v good">${fmtCompact(s.sum_liquid_unlock1)}<span class="unit">SLX · ${u1SupplyPct}%</span></div>
         <div class="sub">of 1B total supply · claimed at TGE (May 25)</div>
       </div>
-      <div class="hero-stat" data-tip="Estimated assuming 3-month vesting plan for all wallets.\nFormula: vested × 31/92 ≈ 33.7%\nIf all 9m: ${fmtCompact(s.sum_u2_9m)} SLX (${u2_9mSupplyPct}% of 1B)">
-        <div class="label">U2 unlocked <span style="color:var(--ink-500); cursor:help;">ⓘ</span></div>
-        <div class="v" style="color:#a5b4fc;">${fmtCompact(s.sum_u2_3m)}<span class="unit">SLX · ${u2SupplyPct}%</span></div>
-        <div class="sub">of 1B total supply · unlocks on 5 July 2026</div>
+      <div class="hero-stat" data-tip="U2 unlocks at 5 July 2026 (TGE + 41 days).\n\nBounds:\n  • Lower (all 9m):  ${fmtCompact(s.sum_u2_9m)} SLX  (${u2_9mSupplyPct}% of 1B · 11.27% of vested)\n  • Upper (all 3m):  ${fmtCompact(s.sum_u2_3m)} SLX  (${u2SupplyPct}% of 1B · 33.70% of vested)\n  • Spread:          ${fmtCompact(s.sum_u2_3m - s.sum_u2_9m)} SLX uncertainty\n\nPer-wallet 3m/9m selection is auth-gated at Solstice's backend — we can't read it in bulk pre-U2. Once claims hit on-chain on 5 July, the actual number lands inside this range.">
+        <div class="label">U2 unlock range <span style="color:var(--ink-500); cursor:help;">ⓘ</span></div>
+        <div class="v" style="color:#a5b4fc;">${fmtCompact(s.sum_u2_9m)}<span class="unit" style="color:var(--ink-400);">to</span>${fmtCompact(s.sum_u2_3m)}<span class="unit">SLX</span></div>
+        <div class="sub">5 July 2026 · range = all-9m → all-3m (real number is in between)</div>
       </div>
     </div>`;
   // (Hero tooltip wiring is done below alongside donut tooltips — querySelectorAll('[data-tip]') catches both)
