@@ -339,7 +339,7 @@ footer { text-align: center; color: var(--ink-500); font-size: 11px; margin-top:
             <th data-key="wallet" class="left">Wallet</th>
             <th data-key="t" class="desc">Total alloc</th>
             <th data-key="l">Liquid (U1)</th>
-            <th data-key="u2_3m" title="Estimated Unlock 2 amount on 5 July 2026 — vested × 31/92 (3-month plan)">U2 est. (3m)</th>
+            <th data-key="u2_3m" title="Unlock 2 lump on 5 July 2026 — vested × 31/92 ≈ 33.7%. Same for both 3m and 9m plans (the plan only affects how the remainder drips after U2).">U2 unlock</th>
             <th data-key="v">Vested</th>
             <th data-key="std">S1 base</th>
             <th data-key="exp">Exponent</th>
@@ -479,10 +479,10 @@ function renderHero() {
         <div class="v good">${fmtCompact(s.sum_liquid_unlock1)}<span class="unit">SLX · ${u1SupplyPct}%</span></div>
         <div class="sub">of 1B total supply · claimed at TGE (May 25)</div>
       </div>
-      <div class="hero-stat" data-tip="U2 unlocks at 5 July 2026 (TGE + 41 days).\n\nBounds:\n  • Lower (all 9m):  ${fmtCompact(s.sum_u2_9m)} SLX  (${u2_9mSupplyPct}% of 1B · 11.27% of vested)\n  • Upper (all 3m):  ${fmtCompact(s.sum_u2_3m)} SLX  (${u2SupplyPct}% of 1B · 33.70% of vested)\n  • Spread:          ${fmtCompact(s.sum_u2_3m - s.sum_u2_9m)} SLX uncertainty\n\nPer-wallet 3m/9m selection is auth-gated at Solstice's backend — we can't read it in bulk pre-U2. Once claims hit on-chain on 5 July, the actual number lands inside this range.">
-        <div class="label">U2 unlock range <span style="color:var(--ink-500); cursor:help;">ⓘ</span></div>
-        <div class="v" style="color:#a5b4fc;">${fmtCompact(s.sum_u2_9m)}<span class="unit" style="color:var(--ink-400);">to</span>${fmtCompact(s.sum_u2_3m)}<span class="unit">SLX</span></div>
-        <div class="sub">5 July 2026 · range = all-9m → all-3m (real number is in between)</div>
+      <div class="hero-stat" data-tip="U2 (TGE + 41 days = 5 July 2026) is a fixed lump for every wallet, regardless of 3m or 9m plan choice. Plan only affects how the *remainder* drips after U2.\n\nFormula: vested × 31/92 ≈ 33.70%\nU1 + U2 = ${fmtCompact(s.sum_liquid_unlock1 + s.sum_u2_3m)} SLX unlocked by 5 July 2026\nPost-U2 drip pool: ${fmtCompact(s.sum_total_alloc - s.sum_liquid_unlock1 - s.sum_u2_3m)} SLX over 51 (3m) or 234 (9m) more days">
+        <div class="label">U2 unlock <span style="color:var(--ink-500); cursor:help;">ⓘ</span></div>
+        <div class="v" style="color:#a5b4fc;">${fmtCompact(s.sum_u2_3m)}<span class="unit">SLX · ${u2SupplyPct}%</span></div>
+        <div class="sub">of 1B total supply · lump sum on 5 July 2026 (plan-independent)</div>
       </div>
     </div>`;
   // (Hero tooltip wiring is done below alongside donut tooltips — querySelectorAll('[data-tip]') catches both)
@@ -754,7 +754,7 @@ function render() {
       </td>
       <td><b>${fmt(r.t)}</b></td>
       <td>${r.l > 0.01 ? fmt(r.l) : '<span class="zero">—</span>'}</td>
-      <td title="9m alt: ${fmt(r.u2_9m || 0)}">${(r.u2_3m||0) > 0.01 ? fmt(r.u2_3m) : '<span class="zero">—</span>'}</td>
+      <td>${(r.u2_3m||0) > 0.01 ? fmt(r.u2_3m) : '<span class="zero">—</span>'}</td>
       <td>${r.v > 0.01 ? fmt(r.v) : '<span class="zero">—</span>'}</td>
       <td>${r.std > 0.01 ? fmt(r.std) : '<span class="zero">—</span>'}</td>
       <td>${r.exp > 0.01 ? fmt(r.exp) : '<span class="zero">—</span>'}</td>
