@@ -40,18 +40,18 @@ cur.execute("""
          a.batch, a.total_slx, a.liquid_slx, a.vested_slx,
          a.amt_standard, a.amt_exponent, a.amt_flares_bonus, a.amt_presale,
          COALESCE(a.amt_xeet, 0), COALESCE(a.amt_rivalz, 0),
-         a.schedule_code, a.claim_at
+         a.schedule_code, a.claim_at, a.vest_track
   FROM slx_allocations a
   LEFT JOIN wallets w ON w.wallet = a.wallet
   WHERE a.batch != '_NONE_'
 """)
 agg = {}
 for r in cur.fetchall():
-    w, coh, cls, is_s1, batch, tot, liq, vest, std, exp, bn, ps, xt, rv, sc, ca = r
+    w, coh, cls, is_s1, batch, tot, liq, vest, std, exp, bn, ps, xt, rv, sc, ca, vt = r
     a = agg.setdefault(w, {
         'w': w, 'c': coh or '', 'cls': cls, 'is_s1': bool(is_s1),
         't':0, 'l':0, 'v':0, 'std':0, 'exp':0, 'bn':0, 'ps':0, 'xt':0, 'rv':0,
-        'sc': '', 'ca': '', 'tags': set(),
+        'sc': '', 'ca': '', 'vt': '', 'tags': set(),
     })
     a['t']   += tot or 0
     a['l']   += liq or 0
@@ -64,6 +64,7 @@ for r in cur.fetchall():
     a['rv']  += rv or 0
     if sc and not a['sc']: a['sc'] = sc
     if ca and (not a['ca'] or ca < a['ca']): a['ca'] = ca   # earliest claim
+    if vt and not a['vt']: a['vt'] = vt
     # Add tag for batch
     if batch == 'STR9e352c':                  a['tags'].add('S1')
     if batch == 'LEGION_PRESALE':             a['tags'].add('PRESALE')
@@ -101,11 +102,12 @@ for w, a in agg.items():
     if a['rv'] > 0:  a['tags'].add('RIVALZ')
     if a['exp'] > 0: a['tags'].add('EXP')   # had Exponent V2 farming bonus
 
-    # Compute estimated Unlock 2 from vested using on-chain extracted formula:
+    # Compute estimated Unlock 2 from vested using the on-chain formulas:
     #   3m plan: vested × 31/92 ≈ 33.70%
     #   9m plan: vested × 31/275 ≈ 11.27%
-    # We don't know each wallet's plan choice; default to 3-month estimate (most common)
-    # both numbers stored for the UI to pick.
+    # vest_track column (from tools/refresh_vest_track.py via Clique Merkle-proof
+    # validation) tells us each wallet's actual selection. Both numbers are still
+    # emitted so the UI can show the alternate "what-if" estimate.
     u2_3m = round(a['v'] * 31 / 92, 4)
     u2_9m = round(a['v'] * 31 / 275, 4)
     rows.append({
@@ -126,6 +128,10 @@ for w, a in agg.items():
         'rv':  round(a['rv'], 4),
         'sc': a['sc'],
         'ca': a['ca'],
+        # vest_track: '3mo' (selected), '9mo_default' (didn't select, defaults to 9mo),
+        # '9mo_selected' (explicitly chose 9mo — none seen yet), 'u1_only' (rare),
+        # '' (unclaimed or not yet classified). Empty for unclaimed wallets by design.
+        'vt': a['vt'],
         'held':   round(bal_slx, 4)   if bal_slx   is not None else None,
         'staked': round(bal_stslx, 4) if bal_stslx is not None else None,
         'bought': round(bought, 4)    if bought    is not None else None,
@@ -210,6 +216,19 @@ for cat, n, bal, liq in cur.fetchall():
 cur.execute("SELECT MAX(ts) FROM slx_balance_snapshots")
 last_snap = cur.fetchone()[0]
 
+# Vest-track aggregate: how many claimed wallets picked each plan.
+# Source: slx_allocations.vest_track (written by tools/refresh_vest_track.py)
+cur.execute("""
+  SELECT COALESCE(vest_track,''), COUNT(DISTINCT wallet), ROUND(SUM(vested_slx), 2)
+  FROM slx_allocations
+  WHERE claim_at != '' AND batch != '_NONE_'
+  GROUP BY COALESCE(vest_track,'')
+""")
+vest_split = {}
+for vt, n, vested in cur.fetchall():
+    key = vt or 'pending_classification'
+    vest_split[key] = {'count': n, 'vested_slx': vested or 0}
+
 # Count S1-tagged and PRESALE-tagged wallets (post-rollup)
 n_s1      = sum(1 for r in rows if 'S1' in r['tags'])
 n_presale_claimed = sum(1 for r in rows if 'PRESALE' in r['tags'])
@@ -249,6 +268,11 @@ stats = {
     'cohort_population_total_db': cohort_population,
     'behavior':                  behavior,
     'last_balance_snapshot_ts':  last_snap,
+    # vest_split: per-track count + vested SLX. Keys: '3mo' (selected),
+    # '9mo_default' (didn't select; will default to 9mo), '9mo_selected'
+    # (rare), 'u1_only', 'unknown', 'error', 'pending_classification' (not
+    # yet walked). See tools/refresh_vest_track.py for the source of truth.
+    'vest_split':                vest_split,
 }
 
 # Additional freshness signals for the dashboard's "Updated" column / as-of line.
