@@ -349,7 +349,6 @@ footer { text-align: center; color: var(--ink-500); font-size: 11px; margin-top:
             <th data-key="wallet" class="left">Wallet</th>
             <th data-key="t" class="desc">Total alloc</th>
             <th data-key="l">Liquid (U1)</th>
-            <th data-key="vt" title="Vest plan: 3mo = explicitly selected 3-month plan; 9mo def = defaulted (didn't pick before window closed); 9mo sel = explicitly chose 9-month. Reverse-engineered from Clique Merkle proofs.">Vest</th>
             <th data-key="u2_3m" title="Estimated Unlock 2 amount on 5 July 2026 — vested × 31/92 (3-month plan)">U2 est. (3m)</th>
             <th data-key="v">Vested</th>
             <th data-key="std">S1 base</th>
@@ -535,7 +534,6 @@ function renderHero() {
         <div class="v" style="color:#a5b4fc;">${fmtCompact(s.sum_u2_3m)}<span class="unit">SLX · ${u2SupplyPct}%</span></div>
         <div class="sub">of 1B total supply · unlocks on 5 July 2026</div>
       </div>
-      ${renderVestSplitTile(s)}
     </div>`;
   // (Hero tooltip wiring is done below alongside donut tooltips — querySelectorAll('[data-tip]') catches both)
 
@@ -806,7 +804,6 @@ function render() {
       </td>
       <td><b>${fmt(r.t)}</b></td>
       <td>${r.l > 0.01 ? fmt(r.l) : '<span class="zero">—</span>'}</td>
-      <td>${vestBadge(r.vt)}</td>
       <td title="9m alt: ${fmt(r.u2_9m || 0)}">${(r.u2_3m||0) > 0.01 ? fmt(r.u2_3m) : '<span class="zero">—</span>'}</td>
       <td>${r.v > 0.01 ? fmt(r.v) : '<span class="zero">—</span>'}</td>
       <td>${r.std > 0.01 ? fmt(r.std) : '<span class="zero">—</span>'}</td>
