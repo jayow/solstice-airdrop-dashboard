@@ -1,15 +1,15 @@
 {
-  "generated_at": 1781400848,
+  "generated_at": 1781493980,
   "criteria": "kind=eoa AND n_sigs_seen<30 AND n_token_accts<10 AND total_tvl_usd>1_000_000",
   "note": "Informational only. These are real EOAs (not PDAs) but exhibit low-activity, high-TVL patterns typical of institutional fronting wallets.",
-  "count": 24,
+  "count": 28,
   "wallets": [
     {
       "wallet": "6SnNkBnH9ifg6vRK25rZUcHdqj6CcWJd7yQwyjVNaarA",
       "classification": "pda_protocol",
       "n_sigs_seen": 25,
       "n_token_accts": 6,
-      "total_tvl_usd": 42381540.81,
+      "total_tvl_usd": 42381654.98,
       "flag": "institutional_eoa_candidate"
     },
     {
@@ -53,6 +53,14 @@
       "flag": "institutional_eoa_candidate"
     },
     {
+      "wallet": "D9mqgz6BPEbjTTrqigvFTAyvkkzK6KUP4GzTFEdjoVg4",
+      "classification": "unclassified",
+      "n_sigs_seen": 0,
+      "n_token_accts": 0,
+      "total_tvl_usd": 17026350.0,
+      "flag": "institutional_eoa_candidate"
+    },
+    {
       "wallet": "2SaYqwUj4cQiYtYkHAkLa7E25WS5dcLizBNZUUTWFa9p",
       "classification": "unclassified",
       "n_sigs_seen": 18,
@@ -66,6 +74,14 @@
       "n_sigs_seen": 0,
       "n_token_accts": 0,
       "total_tvl_usd": 11999442.74,
+      "flag": "institutional_eoa_candidate"
+    },
+    {
+      "wallet": "GHhm1B1bwzTH47PgCVvNZ7pyXPTDZ8N8ZzCr9hnZuukb",
+      "classification": "unclassified",
+      "n_sigs_seen": 0,
+      "n_token_accts": 0,
+      "total_tvl_usd": 10091704.4,
       "flag": "institutional_eoa_candidate"
     },
     {
@@ -141,6 +157,22 @@
       "flag": "institutional_eoa_candidate"
     },
     {
+      "wallet": "ADtQeuQFVHtp1FjhSwpYAym4Mne4CwgBfee5UojxutNt",
+      "classification": "unclassified",
+      "n_sigs_seen": 0,
+      "n_token_accts": 0,
+      "total_tvl_usd": 5119804.0,
+      "flag": "institutional_eoa_candidate"
+    },
+    {
+      "wallet": "7p6LQRCo24aMkNHmiDahBXMFqkW3MFbny629qdR2J1A5",
+      "classification": "unclassified",
+      "n_sigs_seen": 0,
+      "n_token_accts": 0,
+      "total_tvl_usd": 4066655.45,
+      "flag": "institutional_eoa_candidate"
+    },
+    {
       "wallet": "7Zu2AUDeUsJG5CrmAFsEi3usvC9FitTLgLF6B3NfMwTn",
       "classification": "unclassified",
       "n_sigs_seen": 0,
@@ -181,19 +213,19 @@
       "flag": "institutional_eoa_candidate"
     },
     {
+      "wallet": "CQVM5Do4nbe2UmtrJQxQy9MeMC66cdq5P5YGzB2cwxHE",
+      "classification": "unclassified",
+      "n_sigs_seen": 0,
+      "n_token_accts": 0,
+      "total_tvl_usd": 2542437.07,
+      "flag": "institutional_eoa_candidate"
+    },
+    {
       "wallet": "4uNnzQQ2sdA2aNXJgYpxmEUCqURJvsqQjy5yZQMCEiv4",
       "classification": "unclassified",
       "n_sigs_seen": 0,
       "n_token_accts": 0,
       "total_tvl_usd": 2499774.98,
-      "flag": "institutional_eoa_candidate"
-    },
-    {
-      "wallet": "7p6LQRCo24aMkNHmiDahBXMFqkW3MFbny629qdR2J1A5",
-      "classification": "unclassified",
-      "n_sigs_seen": 0,
-      "n_token_accts": 0,
-      "total_tvl_usd": 2031536.78,
       "flag": "institutional_eoa_candidate"
     }
   ]
